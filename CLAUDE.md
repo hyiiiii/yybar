@@ -1,0 +1,68 @@
+# yybar Agent Guide
+
+本文件同时给 Claude Code 和 Codex 使用。`AGENTS.md` 应作为指向本文件的软链接，避免两份规则不一致。
+
+## 项目概况
+
+yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / SwiftUI 实现，用于展示 Codex、Claude Code 和 Grok 的额度、刷新状态、本地用量统计和桌面悬浮窗。
+
+项目主体功能已开发完成，后续以新需求和迭代为主，不再按初始里程碑推进。
+
+当前安装版本(2026-10-16 定为暂定最终版):`/Applications/yybar.app`,Release 构建。构建并安装用 `scripts/build_and_install.sh`:用本机登录钥匙串里的「yybar Local Code Signing」自签证书签名(由 `scripts/make_signing_cert.sh` 创建，20 年有效),每次构建签名身份相同(钥匙串访问列表按证书识别，不会因重新构建失效);不要再用 ad-hoc 签名(`--sign -` 每次构建都变)。但这张证书没有 Apple 团队 ID,钥匙串的分区列表只能按每次构建的 cdhash 记录，App 自己写进钥匙串的条目每次重新构建后都会再要登录密码——所以其他账号的 token 改存本用户私有文件(`Core/Credentials/AccountTokenFiles.swift`),不要再把 App 自己的数据放进钥匙串。bundle id `com.yybar.app`,数据目录 `~/Library/Application Support/yybar`(扫描进度在 `~/Library/Caches/yybar`),设置键 `yybar.settings.*`;旧版本(bundle id `com.nanvon.ccbar`、目录 `CCBar`、键 `ccbar.settings.*`)的数据由 `LegacyDataMigration`(`Core/Storage/Settings.swift`)在启动时一次性搬过来。App 图标由 `scripts/make_app_icon.swift` 生成。
+
+工程结构：
+
+- 入口：`YYBarApp.swift`
+- 全局状态：`Core/AppState.swift`
+- 菜单栏：`MenuBar/`
+- 主窗口：`Main/`
+- 悬浮窗：`Floating/`
+- 引导：`Onboarding/`
+- 设置：`Settings/`
+- 凭据 / 额度 / 调度 / 用量 / 存储：`Core/`
+- Xcode 工程：`yybar.xcodeproj`
+
+## 必读文档
+
+改动前优先阅读相关文档和现有实现。文档索引见 [docs/README.md](docs/README.md),常用入口：
+
+- `docs/产品需求.md`：产品形态、功能范围、边界
+- `docs/技术实现.md`：架构、模块、关键流程、并发与持久化
+- `docs/设计风格.md`：视觉规范、颜色、字体、状态色、组件尺寸、双语词表
+- `docs/界面布局.md`：菜单栏、Popover、主窗口、悬浮窗、设置、引导的逐界面尺寸与字段
+
+历史参考(已归档)位于 `docs/历史参考/`,含 `实施里程碑.md`、`设计稿/`、`外部项目分析/`。新需求**不**受里程碑顺序约束;需要对照外部项目行为时,优先看 `外部项目分析/` 已整理的笔记。
+
+## 协作规则
+
+- 未经明确要求“修改、实现、修复”等，不要擅自改代码。默认先分析、定位问题、给方案和风险。
+- 如果需求、边界、验收标准或影响范围不明确，并且会影响实现或引入风险，先确认。
+- 对大型项目，不要主动运行 `build`、`lint`、`type-check`、`test`、`dev` 等耗时或大量输出命令。确实需要时，先说明原因并询问。
+- 修改前先读现有实现、项目规则、公共组件、公共规范和相关文档。
+- 涉及功能、交互、数据结构、接口或配置行为变更时，必须同步更新相关文档；若判断无需更新文档，需要在回复里说明原因。
+- 遵循当前项目风格，不做无关重构。
+- 只改和当前任务直接相关的文件。不要顺手整理无关代码、格式或项目结构。
+- 工作区可能已有用户改动。不要回滚、覆盖或清理非本次任务产生的改动。
+
+## 实现约束
+
+- UI 优先使用 SwiftUI / AppKit 系统默认控件和 macOS 原生风格。
+- 视觉规则以 `docs/设计风格.md` 为准：
+  - Codex 使用石墨灰识别色，Claude Code 使用桃橙识别色，Grok 使用黑色识别色(深色模式近白)；识别色仅用于 tile / logo 等品牌识别，不再用于额度状态着色。
+  - 额度状态色按剩余比例分 4 档交通灯（统一走 `statusColor`）：剩余 `>50%` 绿、`20%~50%` 黄、`<20%` 橙、`=0` 红。
+  - 数字使用 `.monospacedDigit()`。
+  - 图标优先使用 SF Symbols。
+- 不自造大面积背景、玻璃阴影、Web 风格控件或无关装饰。
+- 菜单栏和 Popover 中 Codex 永远排在 Claude 前，Grok 排在 Claude 后。
+- 网络请求失败时保留已有快照，不要清空可展示数据。
+- 429 后必须遵守现有退避策略，不要为了手动刷新绕过限流。
+
+## 常用验证方式
+
+按任务风险选择最小验证手段：
+
+- 小范围 UI 改动：先做静态检查和代码审阅。
+- 需要编译确认时，先说明原因，再询问是否运行 Xcode 构建。
+- 需要手动验收时，说明在 Xcode 中打开 `yybar.xcodeproj` 并运行 App，按本次需求的验收点检查。
+
+不要为了验证一个小改动主动跑完整构建、完整测试或启动开发服务，除非用户明确要求。

@@ -1,0 +1,710 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4931AC592FC02A4200EE598C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4931AC522FC02A4200EE598C /* Assets.xcassets */; };
+		4931AC622FC02A4200EE598C /* MenuBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC4F2FC02A4200EE598C /* MenuBarLabel.swift */; };
+		4931AC632FC02A4200EE598C /* YYBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC412FC02A4200EE598C /* YYBarApp.swift */; };
+		4931AC642FC02A4200EE598C /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC542FC02A4200EE598C /* SettingsRootView.swift */; };
+		4931AC652FC02A4200EE598C /* AccountQuotaCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */; };
+		4931AC662FC02A4200EE598C /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC422FC02A4200EE598C /* AppState.swift */; };
+		4931AC672FC02A4200EE598C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC3E2FC02A4200EE598C /* AppDelegate.swift */; };
+		49C1B101000000000001AABB /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B101000000000001AAAA /* Models.swift */; };
+		49C1B102000000000001AABB /* JWT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B102000000000001AAAA /* JWT.swift */; };
+		49C1B103000000000001AABB /* CodexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B103000000000001AAAA /* CodexAuth.swift */; };
+		49C1B104000000000001AABB /* ClaudeAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B104000000000001AAAA /* ClaudeAuth.swift */; };
+		49C1B105000000000001AABB /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B105000000000001AAAA /* Settings.swift */; };
+		49C1B106000000000001AABB /* QuotaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B106000000000001AAAA /* QuotaCache.swift */; };
+		49C1B107000000000001AABB /* ScanCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B107000000000001AAAA /* ScanCache.swift */; };
+		49C1B108000000000001AABB /* QuotaHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B108000000000001AAAA /* QuotaHistoryStore.swift */; };
+		49C1B120000000000001AABB /* QuotaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B120000000000001AAAA /* QuotaModels.swift */; };
+		49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B121000000000001AAAA /* CodexTokenRefresher.swift */; };
+		49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B122000000000001AAAA /* CodexQuotaClient.swift */; };
+		AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092026000000000001AAAA /* GrokQuotaClient.swift */; };
+		49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */; };
+		49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */; };
+		49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */; };
+		49C1B126000000000001AABB /* ServiceStatusClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B126000000000001AAAA /* ServiceStatusClient.swift */; };
+		49C1B127000000000001AABB /* ClaudeDelegatedRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B127000000000001AAAA /* ClaudeDelegatedRefresh.swift */; };
+		49C1B130000000000001AABB /* MenuBarLabelFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B130000000000001AAAA /* MenuBarLabelFormatter.swift */; };
+		49C1B131000000000001AABB /* Scheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B131000000000001AAAA /* Scheduler.swift */; };
+		49C1B132000000000001AABB /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B132000000000001AAAA /* L10n.swift */; };
+		49C1B140000000000001AABB /* codex.svg in Resources */ = {isa = PBXBuildFile; fileRef = 49C1B140000000000001AAAA /* codex.svg */; };
+		49C1B141000000000001AABB /* claude.svg in Resources */ = {isa = PBXBuildFile; fileRef = 49C1B141000000000001AAAA /* claude.svg */; };
+		49C1B150000000000001AABB /* UsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B150000000000001AAAA /* UsageModels.swift */; };
+		49C1B151000000000001AABB /* Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B151000000000001AAAA /* Pricing.swift */; };
+		49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B152000000000001AAAA /* JSONLLineReader.swift */; };
+		49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */; };
+		49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B154000000000001AAAA /* CodexJSONLScanner.swift */; };
+		AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000001AAAA /* GrokJSONLScanner.swift */; };
+		AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000002AAAA /* UsageActivityMonitor.swift */; };
+		49C1B155000000000001AABB /* UsageAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B155000000000001AAAA /* UsageAggregator.swift */; };
+		AA092028000000000001AABB /* grok.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA092028000000000001AAAA /* grok.svg */; };
+		49C1B156000000000001AABB /* UsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B156000000000001AAAA /* UsageService.swift */; };
+		49C1B161000000000001AABB /* MainWindowRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B161000000000001AAAA /* MainWindowRootView.swift */; };
+		AA092027000000000020AABB /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000020AAAA /* WindowCoordinator.swift */; };
+		49C1B162000000000001AABB /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B162000000000001AAAA /* StatsView.swift */; };
+		AA092030000000000010AABB /* TodayFlame.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092030000000000010AAAA /* TodayFlame.swift */; };
+		49C1B163000000000001AABB /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B163000000000001AAAA /* DesignSystem.swift */; };
+		49C1B171000000000001AABB /* FloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B171000000000001AAAA /* FloatingPanel.swift */; };
+		49C1B172000000000001AABB /* FloatingContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B172000000000001AAAA /* FloatingContentView.swift */; };
+		49C1B173000000000001AABB /* FloatingPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B173000000000001AAAA /* FloatingPanelController.swift */; };
+		49C1B181000000000001AABB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B181000000000001AAAA /* OnboardingView.swift */; };
+		49C1B191000000000001AABB /* ImportedCodexAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B191000000000001AAAA /* ImportedCodexAccount.swift */; };
+		49C1B192000000000001AABB /* ImportedCodexStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B192000000000001AAAA /* ImportedCodexStore.swift */; };
+		AA092030000000000011AABB /* AccountTokenFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092030000000000011AAAA /* AccountTokenFiles.swift */; };
+		AA092027000000000011AABB /* CLILoginSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000011AAAA /* CLILoginSession.swift */; };
+		AA092027000000000010AABB /* ExtraAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000010AAAA /* ExtraAccount.swift */; };
+		AA092028000000000010AABB /* CLIAccountSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092028000000000010AAAA /* CLIAccountSwitch.swift */; };
+		49C1B194000000000001AABB /* ImportedCodexAccountsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B194000000000001AAAA /* ImportedCodexAccountsView.swift */; };
+		AA092029000000000010AABB /* ModelPricesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092029000000000010AAAA /* ModelPricesView.swift */; };
+		AA092027000000000012AABB /* AddAccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000012AAAA /* AddAccountSheet.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4931AC302FC029A000EE598C /* yybar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = yybar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4931AC3E2FC02A4200EE598C /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		4931AC3F2FC02A4200EE598C /* yybar.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = yybar.xcodeproj; sourceTree = "<group>"; };
+		4931AC402FC02A4200EE598C /* yybar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = yybar.entitlements; sourceTree = "<group>"; };
+		4931AC412FC02A4200EE598C /* YYBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YYBarApp.swift; sourceTree = "<group>"; };
+		4931AC422FC02A4200EE598C /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		4931AC4E2FC02A4200EE598C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4931AC4F2FC02A4200EE598C /* MenuBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabel.swift; sourceTree = "<group>"; };
+		4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountQuotaCard.swift; sourceTree = "<group>"; };
+		4931AC522FC02A4200EE598C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4931AC542FC02A4200EE598C /* SettingsRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRootView.swift; sourceTree = "<group>"; };
+		49C1B101000000000001AAAA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		49C1B102000000000001AAAA /* JWT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JWT.swift; sourceTree = "<group>"; };
+		49C1B103000000000001AAAA /* CodexAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexAuth.swift; sourceTree = "<group>"; };
+		49C1B104000000000001AAAA /* ClaudeAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAuth.swift; sourceTree = "<group>"; };
+		49C1B105000000000001AAAA /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		49C1B106000000000001AAAA /* QuotaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCache.swift; sourceTree = "<group>"; };
+		49C1B107000000000001AAAA /* ScanCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCache.swift; sourceTree = "<group>"; };
+		49C1B108000000000001AAAA /* QuotaHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaHistoryStore.swift; sourceTree = "<group>"; };
+		49C1B120000000000001AAAA /* QuotaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaModels.swift; sourceTree = "<group>"; };
+		49C1B121000000000001AAAA /* CodexTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexTokenRefresher.swift; sourceTree = "<group>"; };
+		49C1B122000000000001AAAA /* CodexQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexQuotaClient.swift; sourceTree = "<group>"; };
+		AA092026000000000001AAAA /* GrokQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokQuotaClient.swift; sourceTree = "<group>"; };
+		49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeQuotaClient.swift; sourceTree = "<group>"; };
+		49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIFallbackQuotaClient.swift; sourceTree = "<group>"; };
+		49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeTokenRefresher.swift; sourceTree = "<group>"; };
+		49C1B126000000000001AAAA /* ServiceStatusClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceStatusClient.swift; sourceTree = "<group>"; };
+		49C1B127000000000001AAAA /* ClaudeDelegatedRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeDelegatedRefresh.swift; sourceTree = "<group>"; };
+		49C1B130000000000001AAAA /* MenuBarLabelFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabelFormatter.swift; sourceTree = "<group>"; };
+		49C1B131000000000001AAAA /* Scheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scheduler.swift; sourceTree = "<group>"; };
+		49C1B132000000000001AAAA /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
+		49C1B140000000000001AAAA /* codex.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = codex.svg; sourceTree = "<group>"; };
+		49C1B141000000000001AAAA /* claude.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = claude.svg; sourceTree = "<group>"; };
+		AA092028000000000001AAAA /* grok.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grok.svg; sourceTree = "<group>"; };
+		49C1B150000000000001AAAA /* UsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageModels.swift; sourceTree = "<group>"; };
+		49C1B151000000000001AAAA /* Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pricing.swift; sourceTree = "<group>"; };
+		49C1B152000000000001AAAA /* JSONLLineReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLLineReader.swift; sourceTree = "<group>"; };
+		49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeJSONLScanner.swift; sourceTree = "<group>"; };
+		49C1B154000000000001AAAA /* CodexJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexJSONLScanner.swift; sourceTree = "<group>"; };
+		AA092027000000000001AAAA /* GrokJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokJSONLScanner.swift; sourceTree = "<group>"; };
+		AA092027000000000002AAAA /* UsageActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageActivityMonitor.swift; sourceTree = "<group>"; };
+		49C1B155000000000001AAAA /* UsageAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageAggregator.swift; sourceTree = "<group>"; };
+		49C1B156000000000001AAAA /* UsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageService.swift; sourceTree = "<group>"; };
+		49C1B161000000000001AAAA /* MainWindowRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowRootView.swift; sourceTree = "<group>"; };
+		AA092027000000000020AAAA /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		49C1B162000000000001AAAA /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		AA092030000000000010AAAA /* TodayFlame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayFlame.swift; sourceTree = "<group>"; };
+		49C1B163000000000001AAAA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		49C1B171000000000001AAAA /* FloatingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanel.swift; sourceTree = "<group>"; };
+		49C1B172000000000001AAAA /* FloatingContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingContentView.swift; sourceTree = "<group>"; };
+		49C1B173000000000001AAAA /* FloatingPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanelController.swift; sourceTree = "<group>"; };
+		49C1B181000000000001AAAA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		49C1B191000000000001AAAA /* ImportedCodexAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedCodexAccount.swift; sourceTree = "<group>"; };
+		49C1B192000000000001AAAA /* ImportedCodexStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedCodexStore.swift; sourceTree = "<group>"; };
+		AA092030000000000011AAAA /* AccountTokenFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountTokenFiles.swift; sourceTree = "<group>"; };
+		AA092027000000000011AAAA /* CLILoginSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLILoginSession.swift; sourceTree = "<group>"; };
+		AA092027000000000010AAAA /* ExtraAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtraAccount.swift; sourceTree = "<group>"; };
+		AA092028000000000010AAAA /* CLIAccountSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIAccountSwitch.swift; sourceTree = "<group>"; };
+		49C1B194000000000001AAAA /* ImportedCodexAccountsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedCodexAccountsView.swift; sourceTree = "<group>"; };
+		AA092029000000000010AAAA /* ModelPricesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPricesView.swift; sourceTree = "<group>"; };
+		AA092027000000000012AAAA /* AddAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheet.swift; sourceTree = "<group>"; };
+		49C1B200000000000001AAAA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4931AC2D2FC029A000EE598C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4931AC272FC029A000EE598C = {
+			isa = PBXGroup;
+			children = (
+				4931AC3E2FC02A4200EE598C /* AppDelegate.swift */,
+				4931AC3F2FC02A4200EE598C /* yybar.xcodeproj */,
+				4931AC402FC02A4200EE598C /* yybar.entitlements */,
+				4931AC412FC02A4200EE598C /* YYBarApp.swift */,
+				4931AC432FC02A4200EE598C /* Core */,
+				49C1B170000000000001AAAA /* Floating */,
+				49C1B203000000000001AAAA /* Helpers */,
+				4931AC4E2FC02A4200EE598C /* Info.plist */,
+				49C1B160000000000001AAAA /* Main */,
+				4931AC512FC02A4200EE598C /* MenuBar */,
+				49C1B180000000000001AAAA /* Onboarding */,
+				4931AC532FC02A4200EE598C /* Resources */,
+				4931AC552FC02A4200EE598C /* Settings */,
+				4931AC312FC029A000EE598C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4931AC312FC029A000EE598C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4931AC302FC029A000EE598C /* yybar.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4931AC432FC02A4200EE598C /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				4931AC422FC02A4200EE598C /* AppState.swift */,
+				49C1B131000000000001AAAA /* Scheduler.swift */,
+				49C1B132000000000001AAAA /* L10n.swift */,
+				49C1B110000000000001AAAA /* Credentials */,
+				49C1B112000000000001AAAA /* Quota */,
+				49C1B15F000000000001AAAA /* Usage */,
+				49C1B111000000000001AAAA /* Storage */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		4931AC512FC02A4200EE598C /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				4931AC4F2FC02A4200EE598C /* MenuBarLabel.swift */,
+				49C1B130000000000001AAAA /* MenuBarLabelFormatter.swift */,
+				4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */,
+			);
+			path = MenuBar;
+			sourceTree = "<group>";
+		};
+		4931AC532FC02A4200EE598C /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				4931AC522FC02A4200EE598C /* Assets.xcassets */,
+				49C1B142000000000001AAAA /* Logos */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		4931AC552FC02A4200EE598C /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				4931AC542FC02A4200EE598C /* SettingsRootView.swift */,
+				49C1B194000000000001AAAA /* ImportedCodexAccountsView.swift */,
+				AA092029000000000010AAAA /* ModelPricesView.swift */,
+				AA092027000000000012AAAA /* AddAccountSheet.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		4931AC562FC02A4200EE598C /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		49C1B110000000000001AAAA /* Credentials */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B101000000000001AAAA /* Models.swift */,
+				49C1B102000000000001AAAA /* JWT.swift */,
+				49C1B103000000000001AAAA /* CodexAuth.swift */,
+				49C1B104000000000001AAAA /* ClaudeAuth.swift */,
+				49C1B191000000000001AAAA /* ImportedCodexAccount.swift */,
+				49C1B192000000000001AAAA /* ImportedCodexStore.swift */,
+				AA092030000000000011AAAA /* AccountTokenFiles.swift */,
+				AA092027000000000011AAAA /* CLILoginSession.swift */,
+				AA092027000000000010AAAA /* ExtraAccount.swift */,
+				AA092028000000000010AAAA /* CLIAccountSwitch.swift */,
+			);
+			path = Credentials;
+			sourceTree = "<group>";
+		};
+		49C1B111000000000001AAAA /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B105000000000001AAAA /* Settings.swift */,
+				49C1B106000000000001AAAA /* QuotaCache.swift */,
+				49C1B108000000000001AAAA /* QuotaHistoryStore.swift */,
+				49C1B107000000000001AAAA /* ScanCache.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		49C1B112000000000001AAAA /* Quota */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B120000000000001AAAA /* QuotaModels.swift */,
+				49C1B121000000000001AAAA /* CodexTokenRefresher.swift */,
+				49C1B122000000000001AAAA /* CodexQuotaClient.swift */,
+				AA092026000000000001AAAA /* GrokQuotaClient.swift */,
+				49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */,
+				49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */,
+				49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */,
+				49C1B126000000000001AAAA /* ServiceStatusClient.swift */,
+				49C1B127000000000001AAAA /* ClaudeDelegatedRefresh.swift */,
+			);
+			path = Quota;
+			sourceTree = "<group>";
+		};
+		49C1B142000000000001AAAA /* Logos */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B140000000000001AAAA /* codex.svg */,
+				49C1B141000000000001AAAA /* claude.svg */,
+				AA092028000000000001AAAA /* grok.svg */,
+			);
+			path = Logos;
+			sourceTree = "<group>";
+		};
+		49C1B15F000000000001AAAA /* Usage */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B150000000000001AAAA /* UsageModels.swift */,
+				49C1B151000000000001AAAA /* Pricing.swift */,
+				49C1B152000000000001AAAA /* JSONLLineReader.swift */,
+				49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */,
+				49C1B154000000000001AAAA /* CodexJSONLScanner.swift */,
+				AA092027000000000001AAAA /* GrokJSONLScanner.swift */,
+				AA092027000000000002AAAA /* UsageActivityMonitor.swift */,
+				49C1B155000000000001AAAA /* UsageAggregator.swift */,
+				49C1B156000000000001AAAA /* UsageService.swift */,
+			);
+			path = Usage;
+			sourceTree = "<group>";
+		};
+		49C1B160000000000001AAAA /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B161000000000001AAAA /* MainWindowRootView.swift */,
+				AA092027000000000020AAAA /* WindowCoordinator.swift */,
+				49C1B162000000000001AAAA /* StatsView.swift */,
+				AA092030000000000010AAAA /* TodayFlame.swift */,
+				49C1B163000000000001AAAA /* DesignSystem.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		49C1B170000000000001AAAA /* Floating */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B171000000000001AAAA /* FloatingPanel.swift */,
+				49C1B172000000000001AAAA /* FloatingContentView.swift */,
+				49C1B173000000000001AAAA /* FloatingPanelController.swift */,
+			);
+			path = Floating;
+			sourceTree = "<group>";
+		};
+		49C1B180000000000001AAAA /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B181000000000001AAAA /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		49C1B201000000000001AAAA /* YYBarClaudeWatchdog */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B200000000000001AAAA /* main.swift */,
+			);
+			path = YYBarClaudeWatchdog;
+			sourceTree = "<group>";
+		};
+		49C1B203000000000001AAAA /* Helpers */ = {
+			isa = PBXGroup;
+			children = (
+				49C1B201000000000001AAAA /* YYBarClaudeWatchdog */,
+			);
+			path = Helpers;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4931AC2F2FC029A000EE598C /* yybar */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4931AC3B2FC029A100EE598C /* Build configuration list for PBXNativeTarget "yybar" */;
+			buildPhases = (
+				4931AC2C2FC029A000EE598C /* Sources */,
+				4931AC2D2FC029A000EE598C /* Frameworks */,
+				4931AC2E2FC029A000EE598C /* Resources */,
+				49C1B202000000000001AABB /* Embed YYBarClaudeWatchdog */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = yybar;
+			packageProductDependencies = (
+			);
+			productName = yybar;
+			productReference = 4931AC302FC029A000EE598C /* yybar.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4931AC282FC029A000EE598C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					4931AC2F2FC029A000EE598C = {
+						CreatedOnToolsVersion = 26.5;
+					};
+				};
+			};
+			buildConfigurationList = 4931AC2B2FC029A000EE598C /* Build configuration list for PBXProject "yybar" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4931AC272FC029A000EE598C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4931AC312FC029A000EE598C /* Products */;
+			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = 4931AC562FC02A4200EE598C /* Products */;
+					ProjectRef = 4931AC3F2FC02A4200EE598C /* yybar.xcodeproj */;
+				},
+			);
+			projectRoot = "";
+			targets = (
+				4931AC2F2FC029A000EE598C /* yybar */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4931AC2E2FC029A000EE598C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4931AC592FC02A4200EE598C /* Assets.xcassets in Resources */,
+				49C1B140000000000001AABB /* codex.svg in Resources */,
+				49C1B141000000000001AABB /* claude.svg in Resources */,
+				AA092028000000000001AABB /* grok.svg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		49C1B202000000000001AABB /* Embed YYBarClaudeWatchdog */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Helpers/YYBarClaudeWatchdog/main.swift",
+			);
+			name = "Embed YYBarClaudeWatchdog";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/YYBarClaudeWatchdog",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n\nSOURCE=\"${SRCROOT}/Helpers/YYBarClaudeWatchdog/main.swift\"\nOUTPUT_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nOUTPUT_BIN=\"${OUTPUT_DIR}/YYBarClaudeWatchdog\"\n\nmkdir -p \"${OUTPUT_DIR}\"\n\n# 编译为当前架构。yybar 是个人 / 单机分发,native arch 够用;\n# 真要做 universal 在这里加 lipo 即可。\nARCH=\"${NATIVE_ARCH_ACTUAL:-$(uname -m)}\"\nDEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-13.0}\"\n\nxcrun -sdk macosx swiftc -O \\\n  -target \"${ARCH}-apple-macos${DEPLOYMENT_TARGET}\" \\\n  -o \"${OUTPUT_BIN}\" \\\n  \"${SOURCE}\"\n\n# 跟父 target 同一个签名身份,签上;Debug 下 EXPANDED_CODE_SIGN_IDENTITY 可能是 -,\n# 等价 ad-hoc 签名,够用。\nIDENT=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"${IDENT}\" --options runtime --timestamp=none \"${OUTPUT_BIN}\"\n\necho \"embedded watchdog: ${OUTPUT_BIN}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4931AC2C2FC029A000EE598C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4931AC622FC02A4200EE598C /* MenuBarLabel.swift in Sources */,
+				4931AC632FC02A4200EE598C /* YYBarApp.swift in Sources */,
+				4931AC642FC02A4200EE598C /* SettingsRootView.swift in Sources */,
+				4931AC652FC02A4200EE598C /* AccountQuotaCard.swift in Sources */,
+				4931AC662FC02A4200EE598C /* AppState.swift in Sources */,
+				4931AC672FC02A4200EE598C /* AppDelegate.swift in Sources */,
+				49C1B101000000000001AABB /* Models.swift in Sources */,
+				49C1B102000000000001AABB /* JWT.swift in Sources */,
+				49C1B103000000000001AABB /* CodexAuth.swift in Sources */,
+				49C1B104000000000001AABB /* ClaudeAuth.swift in Sources */,
+				49C1B105000000000001AABB /* Settings.swift in Sources */,
+				49C1B106000000000001AABB /* QuotaCache.swift in Sources */,
+				49C1B120000000000001AABB /* QuotaModels.swift in Sources */,
+				49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */,
+				49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */,
+				AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */,
+				49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */,
+				49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */,
+				49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */,
+				49C1B126000000000001AABB /* ServiceStatusClient.swift in Sources */,
+				49C1B127000000000001AABB /* ClaudeDelegatedRefresh.swift in Sources */,
+				49C1B130000000000001AABB /* MenuBarLabelFormatter.swift in Sources */,
+				49C1B131000000000001AABB /* Scheduler.swift in Sources */,
+				49C1B132000000000001AABB /* L10n.swift in Sources */,
+				49C1B107000000000001AABB /* ScanCache.swift in Sources */,
+				49C1B108000000000001AABB /* QuotaHistoryStore.swift in Sources */,
+				49C1B150000000000001AABB /* UsageModels.swift in Sources */,
+				49C1B151000000000001AABB /* Pricing.swift in Sources */,
+				49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */,
+				49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */,
+				49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */,
+				AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */,
+				AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */,
+				49C1B155000000000001AABB /* UsageAggregator.swift in Sources */,
+				49C1B156000000000001AABB /* UsageService.swift in Sources */,
+				49C1B161000000000001AABB /* MainWindowRootView.swift in Sources */,
+				AA092027000000000020AABB /* WindowCoordinator.swift in Sources */,
+				49C1B162000000000001AABB /* StatsView.swift in Sources */,
+				AA092030000000000010AABB /* TodayFlame.swift in Sources */,
+				49C1B163000000000001AABB /* DesignSystem.swift in Sources */,
+				49C1B171000000000001AABB /* FloatingPanel.swift in Sources */,
+				49C1B172000000000001AABB /* FloatingContentView.swift in Sources */,
+				49C1B173000000000001AABB /* FloatingPanelController.swift in Sources */,
+				49C1B181000000000001AABB /* OnboardingView.swift in Sources */,
+				49C1B191000000000001AABB /* ImportedCodexAccount.swift in Sources */,
+				49C1B192000000000001AABB /* ImportedCodexStore.swift in Sources */,
+				AA092030000000000011AABB /* AccountTokenFiles.swift in Sources */,
+				AA092027000000000011AABB /* CLILoginSession.swift in Sources */,
+				AA092027000000000010AABB /* ExtraAccount.swift in Sources */,
+				AA092028000000000010AABB /* CLIAccountSwitch.swift in Sources */,
+				49C1B194000000000001AABB /* ImportedCodexAccountsView.swift in Sources */,
+				AA092029000000000010AABB /* ModelPricesView.swift in Sources */,
+				AA092027000000000012AABB /* AddAccountSheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		4931AC392FC029A100EE598C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		4931AC3A2FC029A100EE598C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		4931AC3C2FC029A100EE598C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = yybar.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 324F7B2X9T;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yybar.app;
+				PRODUCT_NAME = yybar;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		4931AC3D2FC029A100EE598C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = yybar.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 324F7B2X9T;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yybar.app;
+				PRODUCT_NAME = yybar;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4931AC2B2FC029A000EE598C /* Build configuration list for PBXProject "yybar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4931AC392FC029A100EE598C /* Debug */,
+				4931AC3A2FC029A100EE598C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4931AC3B2FC029A100EE598C /* Build configuration list for PBXNativeTarget "yybar" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4931AC3C2FC029A100EE598C /* Debug */,
+				4931AC3D2FC029A100EE598C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4931AC282FC029A000EE598C /* Project object */;
+}

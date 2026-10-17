@@ -1,0 +1,198 @@
+import Foundation
+
+/// 协调 JSONL 扫描 → 聚合 → 持久化 → 通知 AppState 的入口。
+@MainActor
+final class UsageService {
+    let aggregator = UsageAggregator()
+    private(set) var isScanning = false
+    private(set) var lastScanAt: Date?
+    private(set) var lastError: String?
+
+    private weak var appState: AppState?
+
+    func bootstrap(appState: AppState) {
+        self.appState = appState
+        // 启动同步：先把 rollup 灌进内存
+        let payload = UsageRollupCache.load()
+        aggregator.load(from: payload.buckets)
+        // 价格表(内置或自定义)在上次退出后变了：第一次扫描全量重建，保留的历史按新价格重算。
+        if !payload.buckets.isEmpty, payload.pricingFingerprint != Pricing.fingerprint {
+            pendingRebuild = .all
+        }
+        publishTotals()
+    }
+
+    /// 全量重建时，日志已不在磁盘上、只剩在汇总里的历史桶要不要按新价格重算费用。
+    enum Reprice: Sendable {
+        case none
+        case keys(Set<String>)
+        case all
+
+        func merged(with other: Reprice) -> Reprice {
+            switch (self, other) {
+            case (.all, _), (_, .all): return .all
+            case (.keys(let a), .keys(let b)): return .keys(a.union(b))
+            case (.none, let x), (let x, .none): return x
+            }
+        }
+    }
+
+    /// 待做的全量重建(启动时发现价格变了，或扫描进行中又改了价格)。
+    private var pendingRebuild: Reprice?
+
+    /// 由 Scheduler / 手动触发；防重入。
+    func scanNow() async {
+        await scan(rebuild: nil)
+    }
+
+    /// 用户改了某些模型的自定义价格后按新价格重算：重扫所有还在磁盘上的日志到一个新的聚合里，
+    /// 日志已被删除的历史保留并按新价格重算(见 mergePreservingHistory),完成后整体替换，期间界面继续显示旧数字。
+    func rescanAll(repricing keys: Set<String>) async {
+        await scan(rebuild: .keys(keys))
+    }
+
+    private func scan(rebuild: Reprice?) async {
+        guard !isScanning else {
+            if let rebuild { pendingRebuild = pendingRebuild?.merged(with: rebuild) ?? rebuild }
+            return
+        }
+        isScanning = true
+        var request = rebuild
+        if let pending = pendingRebuild {
+            request = request?.merged(with: pending) ?? pending
+            pendingRebuild = nil
+        }
+        await performScan(rebuild: request)
+        isScanning = false
+        if let next = pendingRebuild {
+            pendingRebuild = nil
+            await scan(rebuild: next)
+        }
+    }
+
+    private func performScan(rebuild requested: Reprice?) async {
+        let started = Date()
+        let prev = requested != nil ? ScanState() : await Task.detached(priority: .utility) {
+            ScanCache.load()
+        }.value
+        // 扫描进度丢了(缓存目录被清理、结构版本变了)但汇总还在：不能在旧汇总上增量叠加(会重复计数),改为全量重建。
+        var rebuild = requested
+        if rebuild == nil, prev.claude.isEmpty, prev.codex.isEmpty, prev.grok.isEmpty, !aggregator.snapshot().isEmpty {
+            rebuild = Reprice.none
+        }
+
+        let prevSeen = prev.claudeSeenMessageIds
+        async let claudeTask = Task.detached(priority: .utility) {
+            ClaudeJSONLScanner.scan(previous: prev.claude, seenMessageIds: prevSeen)
+        }.value
+        async let codexTask = Task.detached(priority: .utility) {
+            CodexJSONLScanner.scan(previous: prev.codex)
+        }.value
+
+        async let grokTask = Task.detached(priority: .utility) {
+            GrokJSONLScanner.scan(previous: prev.grok)
+        }.value
+
+        let grok = await grokTask
+        let claude = await claudeTask
+        let codex = await codexTask
+
+        if let rebuild {
+            let fresh = UsageAggregator()
+            fresh.ingest(claude.entries)
+            fresh.ingest(codex.entries)
+            fresh.ingest(grok.entries)
+            aggregator.load(from: Self.mergePreservingHistory(old: aggregator.snapshot(), fresh: fresh.snapshot(), reprice: rebuild))
+        } else {
+            aggregator.ingest(claude.entries)
+            aggregator.ingest(codex.entries)
+            aggregator.ingest(grok.entries)
+        }
+
+        // 持久化
+        let buckets = aggregator.snapshot()
+        let newScanState = ScanState(
+            pricingFingerprint: Pricing.fingerprint,
+            claude: claude.newState,
+            codex: codex.newState,
+            grok: grok.newState,
+            claudeSeenMessageIds: claude.newSeenIds
+        )
+        let rollup = UsageRollupPayload(
+            pricingFingerprint: Pricing.fingerprint,
+            buckets: buckets,
+            updatedAt: Date()
+        )
+        await Task.detached(priority: .utility) {
+            do {
+                try ScanCache.save(newScanState)
+            } catch {
+                print("[UsageScan 用量扫描] 扫描状态写盘失败 scan-state save failed: \(error)")
+            }
+            do {
+                try UsageRollupCache.save(rollup)
+            } catch {
+                print("[UsageScan 用量扫描] 汇总写盘失败 usage-rollup save failed: \(error)")
+            }
+        }.value
+
+        lastScanAt = Date()
+        lastError = nil
+        publishTotals()
+
+        let elapsed = String(format: "%.2fs", Date().timeIntervalSince(started))
+        print("[UsageScan 用量扫描] claude files=\(claude.filesScanned) lines=\(claude.linesParsed) new=\(claude.entries.count); codex files=\(codex.filesScanned) lines=\(codex.linesParsed) new=\(codex.entries.count); grok files=\(grok.filesScanned) lines=\(grok.linesParsed) new=\(grok.entries.count); elapsed=\(elapsed)")
+    }
+
+    /// 全量重建时合并新旧数据。CLI 或清理工具会删掉旧日志，那部分用量只剩在旧汇总里，重扫找不回来:
+    /// 按「天 + 服务」比较 token 合计，旧的更多(说明那天有日志被删)就保留旧桶，否则用重扫结果。
+    /// 保留的旧桶按需用新价格重算费用：按 token 合计平价计算(没有单次请求的长上下文加价);Grok 费用来自日志，不重算。
+    private static func mergePreservingHistory(old: [UsageBucket], fresh: [UsageBucket], reprice: Reprice) -> [UsageBucket] {
+        struct DayApp: Hashable {
+            let day: Date
+            let app: UsageApp
+        }
+        func tokens(_ buckets: [UsageBucket]) -> Int {
+            buckets.reduce(0) { $0 + $1.inputTokens + $1.outputTokens + $1.cacheReadTokens + $1.cacheCreationTokens }
+        }
+        let oldByDay = Dictionary(grouping: old) { DayApp(day: $0.day, app: $0.app) }
+        let freshByDay = Dictionary(grouping: fresh) { DayApp(day: $0.day, app: $0.app) }
+        var result: [UsageBucket] = []
+        for key in Set(oldByDay.keys).union(freshByDay.keys) {
+            let kept = oldByDay[key] ?? []
+            let rescanned = freshByDay[key] ?? []
+            if tokens(kept) > tokens(rescanned) {
+                result += kept.map { repriced($0, reprice) }
+            } else {
+                result += rescanned
+            }
+        }
+        return result
+    }
+
+    private static func repriced(_ bucket: UsageBucket, _ reprice: Reprice) -> UsageBucket {
+        guard bucket.app != .grok else { return bucket }
+        switch reprice {
+        case .none:
+            return bucket
+        case .keys(let keys):
+            guard keys.contains(Pricing.normalize(model: bucket.model)) else { return bucket }
+        case .all:
+            break
+        }
+        var updated = bucket
+        updated.costUSD = Pricing.cost(model: bucket.model, input: bucket.inputTokens, output: bucket.outputTokens,
+                                       cacheRead: bucket.cacheReadTokens, cacheCreation: bucket.cacheCreationTokens,
+                                       requestInputTokens: 0)
+        return updated
+    }
+
+    private func publishTotals() {
+        guard let appState else { return }
+        let today = UsageDay.startOfDay(for: Date())
+        let unpricedCodex = aggregator.snapshot().contains { $0.app == .codex && $0.day == today && !Pricing.hasPrice(model: $0.model) }
+        appState.codexTodayCost = unpricedCodex ? nil : aggregator.todayCost(for: .codex)
+        appState.claudeTodayCost = aggregator.todayCost(for: .claude)
+        appState.grokTodayCost = aggregator.todayCost(for: .grok)
+    }
+}
