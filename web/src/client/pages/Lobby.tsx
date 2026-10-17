@@ -31,7 +31,7 @@ export function LobbyPage() {
         <div className="hero-copy">
           <p className="eyebrow">
             <SuitIcon suit="gpt" /> <SuitIcon suit="claude" /> <SuitIcon suit="gemini" /> <SuitIcon suit="grok" />
-            <span>今晚营业</span>
+            <span>yybar · 德州</span>
           </p>
           <h1>
             你烧掉的 token，<br />
@@ -65,7 +65,7 @@ export function LobbyPage() {
 
       <section id="tables" className="section">
         <div className="section-head">
-          <h2>今晚开着的桌</h2>
+          <h2>开着的桌</h2>
           <p className="muted">入座时从你的筹码里带入，离桌时剩多少带回多少。</p>
         </div>
         <div className="tables">

@@ -10,7 +10,8 @@ export function Layout() {
     <div className="shell">
       <header className="topbar">
         <Link to="/" className="brand" aria-label="yybar 大厅">
-          <span className="neon">yybar</span>
+          <img src="/icon.png" alt="" width={26} height={26} />
+          <span>yybar</span>
         </Link>
         <nav>
           <NavLink to="/" end>大厅</NavLink>
