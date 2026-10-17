@@ -11,13 +11,13 @@ export function ProfileView({ profile }: { profile: Profile }) {
       <div className="stats">
         <Stat label="总花费" value={fmtUSD(totals.cost_micro)} hint={`${totals.active_days} 个活跃日`} />
         <Stat label="总 Token" value={fmtTokens(tokens)} hint={`输出 ${fmtTokens(totals.output_tokens)}`} />
-        <Stat label="积分余额" value={fmtInt(points.balance)} hint={`累计获得 ${fmtInt(points.earned)}`} />
+        <Stat label="筹码" value={fmtInt(points.balance)} hint={`累计换得 ${fmtInt(points.earned)}`} />
       </div>
-      <section className="card">
+      <section className="card-box">
         <h2>近 30 天</h2>
         <DailyChart series={profile.series} />
       </section>
-      <section className="card">
+      <section className="card-box">
         <h2>花费最多的模型</h2>
         <ModelTable models={profile.models} />
       </section>

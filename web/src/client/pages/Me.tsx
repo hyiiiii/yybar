@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type Profile } from "../api";
-import { Avatar } from "../components";
-import { loginHref, useMe } from "../useMe";
+import { Avatar, LoginButton } from "../components";
+import { notifyMeChanged, useMe } from "../useMe";
 import { ProfileView } from "./User";
 
 export function MePage() {
@@ -16,10 +16,10 @@ export function MePage() {
   if (!me) return <p className="empty">加载中…</p>;
   if (!me.user) {
     return (
-      <section className="card center">
-        <h2>先登录</h2>
+      <section className="card-box center">
+        <h2>先入场</h2>
         <p>用 GitHub 账号登录后，就能把 yybar 的用量同步上来。</p>
-        <a className="btn" href={loginHref("/me")}>用 GitHub 登录</a>
+        <LoginButton next="/me" />
       </section>
     );
   }
@@ -44,8 +44,8 @@ export function MePage() {
     });
   const revoke = (id: number) => run(async () => { await api(`/api/me/tokens/${id}`, { method: "DELETE" }); reload(); });
   const toggleBoard = () =>
-    run(async () => { await api("/api/me", { method: "PATCH", json: { showOnBoard: !me.user!.showOnBoard } }); reload(); });
-  const logout = () => run(async () => { await api("/auth/logout", { method: "POST", json: {} }); navigate("/"); location.reload(); });
+    run(async () => { await api("/api/me", { method: "PATCH", json: { showOnBoard: !me.user!.showOnBoard } }); notifyMeChanged(); });
+  const logout = () => run(async () => { await api("/auth/logout", { method: "POST", json: {} }); notifyMeChanged(); navigate("/"); });
 
   return (
     <>
@@ -59,14 +59,14 @@ export function MePage() {
       </div>
 
       {me.totals && me.totals.active_days === 0 && (
-        <section className="card notice">
+        <section className="card-box notice">
           还没有收到数据。在 yybar App 的设置里点「连接网站」，或者在下面创建一个上传令牌填进 App。
         </section>
       )}
 
       <ProfileView profile={me as Profile} />
 
-      <section className="card">
+      <section className="card-box">
         <h2>设置</h2>
         <label className="row">
           <input type="checkbox" checked={me.user.showOnBoard} onChange={toggleBoard} disabled={busy} />
@@ -74,7 +74,7 @@ export function MePage() {
         </label>
       </section>
 
-      <section className="card">
+      <section className="card-box">
         <div className="card-head">
           <h2>上传令牌</h2>
           <button className="btn btn-small" onClick={createToken} disabled={busy}>新建令牌</button>

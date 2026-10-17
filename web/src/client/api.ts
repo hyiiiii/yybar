@@ -54,6 +54,10 @@ export interface LeaderboardRow extends PublicUser {
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  if (import.meta.env.VITE_DEMO) {
+    const { demoApi } = await import("./demo");
+    return demoApi(path, init?.method ?? "GET", init?.json) as T;
+  }
   const res = await fetch(path, {
     ...init,
     headers: init?.json !== undefined ? { "content-type": "application/json" } : undefined,

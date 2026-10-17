@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply yybar --local",
     "db:migrate:remote": "wrangler d1 migrations apply yybar --remote",
-    "deploy": "vite build && wrangler d1 migrations apply yybar --remote && wrangler deploy"
+    "deploy": "vite build && wrangler d1 migrations apply yybar --remote && wrangler deploy",
+    "build:demo": "vite build --mode demo && node scripts/inline-demo.mjs"
   },
   "dependencies": {
     "hono": "^4.13.13",

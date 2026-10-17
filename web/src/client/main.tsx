@@ -1,27 +1,33 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router";
 import "./styles.css";
 import { Layout } from "./Layout";
-import { HomePage } from "./pages/Home";
+import { LobbyPage } from "./pages/Lobby";
+import { TablePage } from "./pages/Table";
+import { BoardPage } from "./pages/Board";
 import { MePage } from "./pages/Me";
 import { UserPage } from "./pages/User";
 import { ConnectPage } from "./pages/Connect";
-import { BarPage } from "./pages/Bar";
+
+// 预览版跑在没有服务端路由的环境里，用内存路由
+const Router = import.meta.env.VITE_DEMO ? MemoryRouter : BrowserRouter;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
+          <Route index element={<LobbyPage />} />
+          <Route path="table/:id" element={<TablePage />} />
+          <Route path="board" element={<BoardPage />} />
           <Route path="me" element={<MePage />} />
           <Route path="u/:login" element={<UserPage />} />
           <Route path="connect" element={<ConnectPage />} />
-          <Route path="bar" element={<BarPage />} />
-          <Route path="*" element={<p className="empty">页面不存在。</p>} />
+          <Route path="bar" element={<LobbyPage />} />
+          <Route path="*" element={<p className="empty">这里没有桌子。</p>} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </Router>
   </StrictMode>,
 );

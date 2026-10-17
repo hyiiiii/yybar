@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { api } from "../api";
-import { loginHref, useMe } from "../useMe";
+import { useMe } from "../useMe";
+import { LoginButton } from "../components";
 
 /** yybar App 打开 /connect?state=xxx，用户确认后把令牌通过 yybar:// 交回给 App。 */
 export function ConnectPage() {
@@ -15,10 +16,10 @@ export function ConnectPage() {
   if (!me) return <p className="empty">加载中…</p>;
   if (!me.user) {
     return (
-      <section className="card center">
+      <section className="card-box center">
         <h2>连接 yybar App</h2>
         <p>先用 GitHub 登录，再授权这台 Mac 上的 yybar 上传用量。</p>
-        <a className="btn" href={loginHref()}>用 GitHub 登录</a>
+        <LoginButton />
       </section>
     );
   }
@@ -35,7 +36,7 @@ export function ConnectPage() {
   };
 
   return (
-    <section className="card center">
+    <section className="card-box center">
       <h2>连接 yybar App</h2>
       {done ? (
         <>

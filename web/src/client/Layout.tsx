@@ -1,5 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router";
-import { loginHref, useMe } from "./useMe";
+import { fmtInt } from "./api";
+import { Avatar, LoginButton } from "./components";
+import { useMe } from "./useMe";
 
 export function Layout() {
   const { me } = useMe();
@@ -7,20 +9,19 @@ export function Layout() {
   return (
     <div className="shell">
       <header className="topbar">
-        <Link to="/" className="brand">
-          <img src="/icon.png" alt="" width={28} height={28} />
-          <span>yybar</span>
+        <Link to="/" className="brand" aria-label="yybar 大厅">
+          <span className="neon">yybar</span>
         </Link>
         <nav>
-          <NavLink to="/" end>排行榜</NavLink>
-          <NavLink to="/bar">Bar</NavLink>
+          <NavLink to="/" end>大厅</NavLink>
+          <NavLink to="/board">名人墙</NavLink>
           {user ? (
             <NavLink to="/me" className="me-link">
-              {user.avatarUrl && <img src={user.avatarUrl} alt="" width={22} height={22} />}
-              {user.login}
+              <span className="chip-count">{fmtInt(me?.points?.balance ?? 0)}</span>
+              <Avatar url={user.avatarUrl} login={user.login} size={26} />
             </NavLink>
           ) : (
-            me && <a href={loginHref("/me")} className="btn btn-small">GitHub 登录</a>
+            me && <LoginButton small next="/" />
           )}
         </nav>
       </header>
@@ -28,7 +29,8 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="footer">
-        yybar · 用量数据由各自的 yybar App 在本机统计后上传 · 积分仅供站内娱乐，不能充值或兑现
+        <p>筹码只能用记录下来的 AI 花费换取（$1 = 100），不能充值、购买或兑现。</p>
+        <p>用量由每个人自己的 yybar App 在本机统计后上传。</p>
       </footer>
     </div>
   );
