@@ -9,6 +9,7 @@ const css = assets.filter((f) => f.endsWith(".css")).map((f) => readFileSync(new
 const icon = `data:image/png;base64,${readFileSync(new URL("../../Resources/Assets.xcassets/AppIcon.appiconset/icon_64.png", import.meta.url)).toString("base64")}`;
 const html = `<title>yybar 酒吧预览</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
 <style>${css}</style>
 <div id="root"></div>
 <script type="module">${js.replace(/<\/script/g, "<\\/script").replaceAll("/icon.png", icon)}</script>

@@ -4,7 +4,6 @@ import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router";
 import "./styles.css";
 import { Layout } from "./Layout";
 import { LobbyPage } from "./pages/Lobby";
-import { TablePage } from "./pages/Table";
 import { BoardPage } from "./pages/Board";
 import { MePage } from "./pages/Me";
 import { UserPage } from "./pages/User";
@@ -19,7 +18,7 @@ createRoot(document.getElementById("root")!).render(
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<LobbyPage />} />
-          <Route path="table/:id" element={<TablePage />} />
+          <Route path="table/:id" element={<LobbyPage />} />
           <Route path="board" element={<BoardPage />} />
           <Route path="me" element={<MePage />} />
           <Route path="u/:login" element={<UserPage />} />

@@ -14,7 +14,7 @@ export function Layout() {
           <span>yybar</span>
         </Link>
         <nav>
-          <NavLink to="/" end>大厅</NavLink>
+          <NavLink to="/" end>牌桌</NavLink>
           <NavLink to="/board">名人墙</NavLink>
           {user ? (
             <NavLink to="/me" className="me-link">
@@ -29,10 +29,7 @@ export function Layout() {
       <main>
         <Outlet />
       </main>
-      <footer className="footer">
-        <p>筹码只能用记录下来的 AI 花费换取（$1 = 100），不能充值、购买或兑现。</p>
-        <p>用量由每个人自己的 yybar App 在本机统计后上传。</p>
-      </footer>
+      <footer className="footer">筹码只能用 AI 花费换取（$1 = 100），不能充值或兑现。</footer>
     </div>
   );
 }

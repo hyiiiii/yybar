@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type SeriesPoint } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { loginHref, notifyMeChanged } from "./useMe";
@@ -70,65 +71,85 @@ export interface Seat {
   dealer?: boolean;
 }
 
-/** 俯视的椭圆牌桌，6 个座位顺时针排列，0 号在正下方。 */
+/** 座位绕椭圆均匀分布，0 号在正下方，顺时针。 */
+function seatPosition(i: number, n: number) {
+  const angle = Math.PI / 2 + (i * 2 * Math.PI) / n;
+  return { left: `${50 + 51 * Math.cos(angle)}%`, top: `${50 + 54 * Math.sin(angle)}%` };
+}
+
+/** 俯视的椭圆牌桌。center 放在桌面正中（发牌员、公共牌）。 */
 export function FeltTable({
   seats,
-  board,
-  pot,
+  center,
   onEmptySeat,
-  label,
 }: {
   seats: Seat[];
-  board: CardSpec[];
-  pot: number;
-  onEmptySeat?: () => void;
-  label?: string;
+  center: ReactNode;
+  onEmptySeat?: (index: number) => void;
 }) {
   return (
     <div className="felt-wrap">
-      <div className="felt">
-        {label && <div className="felt-label">{label}</div>}
-        <div className="felt-center">
-          <div className="pot">
-            底池 <b>{fmtInt(pot)}</b>
-          </div>
-          <div className="board-cards">
-            {board.map((c, i) => (
-              <PlayingCard key={i} card={c} />
-            ))}
-          </div>
-        </div>
+      <div className="rail">
+        <div className="felt">{center}</div>
       </div>
       {seats.map((s, i) => (
-        <div key={i} className={`seat seat-${i}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}`}>
+        <div
+          key={i}
+          className={`seat${i === 0 ? " seat-bottom" : ""}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}`}
+          style={seatPosition(i, seats.length)}
+        >
           {s.login ? (
             <>
               {s.cards && (
                 <div className="seat-cards">
                   {s.cards.map((c, j) => (
-                    <PlayingCard key={j} card={c} size="sm" />
+                    <PlayingCard key={j} card={c} size={s.you ? "md" : "sm"} />
                   ))}
                 </div>
               )}
               <div className="seat-plate">
-                <Avatar url={null} login={s.login} size={30} />
+                <Avatar url={null} login={s.login} size={28} />
                 <div>
                   <div className="seat-name">{s.you ? "你" : s.login}</div>
                   <div className="seat-stack">{fmtInt(s.stack ?? 0)}</div>
                 </div>
-                {s.dealer && <span className="dealer">D</span>}
+                {s.dealer && <span className="dealer-chip">D</span>}
               </div>
-              {s.state && <div className="seat-state">{s.state}</div>}
-              {!!s.bet && <div className="seat-bet">{fmtInt(s.bet)}</div>}
+              {(s.state || !!s.bet) && (
+                <div className="seat-state">
+                  {s.state}
+                  {!!s.bet && <span className="seat-bet">{fmtInt(s.bet)}</span>}
+                </div>
+              )}
             </>
           ) : (
-            <button className="seat-open" onClick={onEmptySeat}>
-              空位<br />
-              <span>入座</span>
+            <button className="seat-open" onClick={() => onEmptySeat?.(i)}>
+              入座
             </button>
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** 桌子上方的 yybar 招牌，四周一圈跑马灯。 */
+export function MarqueeSign({ text }: { text: string }) {
+  const W = 300, H = 96, step = 18;
+  const bulbs: { x: number; y: number }[] = [];
+  for (let x = 10; x <= W - 10; x += step) bulbs.push({ x, y: 9 });
+  for (let y = 9 + step; y <= H - 9; y += step) bulbs.push({ x: W - 10, y });
+  for (let x = W - 10 - step; x >= 10; x -= step) bulbs.push({ x, y: H - 9 });
+  for (let y = H - 9 - step; y > 9; y -= step) bulbs.push({ x: 10, y });
+  return (
+    <div className="sign" aria-label={text}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="sign-svg" aria-hidden>
+        <rect x={1} y={1} width={W - 2} height={H - 2} rx={14} className="sign-board" />
+        {bulbs.map((b, i) => (
+          <circle key={i} cx={b.x} cy={b.y} r={3.2} className={`bulb bulb-${i % 3}`} />
+        ))}
+      </svg>
+      <span className="sign-text">{text}</span>
     </div>
   );
 }
