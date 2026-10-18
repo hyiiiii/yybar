@@ -1,0 +1,65 @@
+import type { Card } from "./cards";
+
+export const SEATS = 6;
+
+export type Street = "idle" | "preflop" | "flop" | "turn" | "river" | "showdown";
+
+/** 客户端发给牌桌的消息。amount 是这一轮下注到的总额（加注到多少），单位筹码。 */
+export type ClientMsg =
+  | { t: "sit"; seat: number }
+  | { t: "leave" }
+  | { t: "act"; action: "fold" | "check" | "call" | "raise"; amount?: number }
+  | { t: "ping" };
+
+export interface SeatView {
+  login: string;
+  avatarUrl: string | null;
+  bot: boolean;
+  stack: number;
+  bet: number;
+  inHand: boolean;
+  folded: boolean;
+  allIn: boolean;
+  /** 只有自己的牌和摊牌亮出来的牌有值；别人的暗牌是 null，没拿牌是空数组 */
+  cards: (Card | null)[];
+  away: boolean;
+  leaving: boolean;
+  /** 刚才的动作，例如「跟注」「加注到 300」 */
+  last: string | null;
+  /** 本手赢到的筹码（摊牌后） */
+  won: number;
+  hand: string | null;
+}
+
+export interface Legal {
+  canCheck: boolean;
+  /** 跟注还需要补多少（已封顶到自己剩余筹码） */
+  toCall: number;
+  canRaise: boolean;
+  /** 合法的「加注到」区间；只能全下时两者相等 */
+  minRaiseTo: number;
+  maxRaiseTo: number;
+}
+
+export interface TableView {
+  no: number;
+  blinds: [number, number];
+  bots: boolean;
+  handNo: number;
+  street: Street;
+  button: number;
+  board: Card[];
+  /** 已经收进底池的 + 这一轮桌上的下注 */
+  pot: number;
+  seats: (SeatView | null)[];
+  toAct: number;
+  /** 当前行动截止时间（毫秒时间戳，服务器时钟） */
+  deadline: number | null;
+  serverNow: number;
+  you: number | null;
+  legal: Legal | null;
+  /** 牌局播报，例如「nightowl 以两对赢下 1,200」 */
+  say: string | null;
+}
+
+export type ServerMsg = { t: "state"; view: TableView } | { t: "error"; msg: string } | { t: "pong" };

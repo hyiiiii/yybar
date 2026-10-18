@@ -75,6 +75,8 @@ export interface Seat {
   acting?: boolean;
   cards?: CardSpec[];
   dealer?: boolean;
+  /** 跟在名字后面的一句话：刚才的动作、赢了多少 */
+  note?: string;
 }
 
 /**
@@ -118,7 +120,10 @@ export function FeltTable({
                   ))}
                 </div>
               )}
-              <div className="seat-name">{s.you ? "你" : s.login}</div>
+              <div className="seat-name">
+                {s.you ? "你" : s.login}
+                {s.note && ` · ${s.note}`}
+              </div>
               {!!s.bet && <div className="seat-bet">{fmtBB(s.bet)}</div>}
             </>
           ) : (

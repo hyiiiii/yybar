@@ -1,139 +1,195 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { api, fmtInt, type LeaderboardRow } from "../api";
-import { FeltTable, MarqueeSign, PlayingCard, type CardSpec, type Seat } from "../components";
+import { api, fmtInt } from "../api";
+import { FeltTable, MarqueeSign, PlayingCard, fmtBB, type CardSpec, type Seat } from "../components";
 import { Dealer } from "../Dealer";
 import type { Suit } from "../suits";
 import { DEFAULT_TABLE, TABLES } from "../tables";
+import { useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
+import type { Card } from "../../shared/poker/cards";
+import type { TableView } from "../../shared/poker/types";
 
-const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+const DEMO = !!import.meta.env.VITE_DEMO;
+const SEAT_COUNT = 6;
 const SUITS: Suit[] = ["gpt", "claude", "gemini", "grok"];
+const RANK_LABEL: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
+const STAGE: Record<TableView["street"], number> = { idle: 0, preflop: 0, flop: 1, turn: 2, river: 3, showdown: 4 };
+/** 从庄家起顺时针，按这一手的人数叫位置 */
+const POSITION_NAMES: Record<number, string[]> = {
+  2: ["BTN", "BB"],
+  3: ["BTN", "SB", "BB"],
+  4: ["BTN", "SB", "BB", "CO"],
+  5: ["BTN", "SB", "BB", "HJ", "CO"],
+  6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
+};
 
-function shuffledDeck(): { rank: string; suit: Suit }[] {
-  const deck = SUITS.flatMap((suit) => RANKS.map((rank) => ({ rank, suit })));
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
+type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number };
+
+const toSpec = (c: Card | null): CardSpec => (c ? { rank: RANK_LABEL[c.r] ?? String(c.r), suit: SUITS[c.s] } : "back");
+
+function positions(view: TableView): (string | null)[] {
+  const out: (string | null)[] = Array(SEAT_COUNT).fill(null);
+  const playing = view.street !== "idle";
+  const ring: number[] = [];
+  for (let k = 0; k < SEAT_COUNT; k++) {
+    const i = (Math.max(view.button, 0) + k) % SEAT_COUNT;
+    const x = view.seats[i];
+    if (x && (playing ? x.inHand : true)) ring.push(i);
   }
-  return deck;
+  const names = POSITION_NAMES[ring.length];
+  if (names && playing) ring.forEach((i, k) => (out[i] = names[k]));
+  return out;
 }
 
-const SEAT_COUNT = 6;
-const DEMO = !!import.meta.env.VITE_DEMO;
+/** 加注的几个快捷额度（单位筹码）：常规、底池、全下。 */
+function raiseOptions(view: TableView) {
+  const legal = view.legal;
+  if (!legal?.canRaise) return [];
+  const [sb, bb] = view.blinds;
+  const current = Math.max(0, ...view.seats.map((x) => x?.bet ?? 0));
+  const clamp = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n / sb) * sb));
+  const standard = current <= bb ? (view.street === "preflop" ? 2.5 * bb : current + view.pot / 2) : 3 * current;
+  const potSize = current + view.pot + legal.toCall;
+  const list = [clamp(standard), clamp(potSize), legal.maxRaiseTo];
+  return [...new Set(list)].map((to) => ({
+    to,
+    label: to === legal.maxRaiseTo ? `全下 ${fmtBB(to / bb)} bb` : `${current === 0 ? "下注" : "加注到"} ${fmtBB(to / bb)} bb`,
+  }));
+}
 
 /**
- * 大厅就是一张牌桌：右下角切桌，点空位入座，点发牌员推进牌局。
- * 德州的真实逻辑（下注、比牌、结算）还没接服务端，这里先走一手演示牌。
+ * 大厅就是一张牌桌：右下角切桌，点空位入座。牌局在服务端跑（每张桌一个 Durable Object），
+ * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。
  */
 export function LobbyPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { me } = useMe();
-  const table = TABLES.find((t) => t.id === id) ?? DEFAULT_TABLE;
+  const [tables, setTables] = useState<TableEntry[]>(TABLES);
+  const table = tables.find((t) => t.id === id) ?? tables.find((t) => t.no === DEFAULT_TABLE.no) ?? tables[0];
   const [slide, setSlide] = useState<"" | "slide-next" | "slide-prev">("");
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
-  const [seatIndex, setSeatIndex] = useState<number | null>(null);
-  const [stage, setStage] = useState(0);
-  const [deck, setDeck] = useState(shuffledDeck);
-  const [top, setTop] = useState<LeaderboardRow[]>([]);
   const [note, setNote] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const conn = useTable(table);
+  const view = conn.view;
 
+  const loadTables = () =>
+    DEMO
+      ? Promise.resolve()
+      : api<{ tables: { no: number; blinds: [number, number]; bots: boolean; seated: number }[] }>("/api/tables").then(
+          (r) => r.tables.length && setTables(r.tables.map((t) => ({ ...t, id: String(t.no) }))),
+          () => {},
+        );
   useEffect(() => {
-    api<{ rows: LeaderboardRow[] }>("/api/leaderboard?range=7d").then((r) => setTop(r.rows), () => {});
+    loadTables();
   }, []);
+  useEffect(() => setNote(null), [table.no]);
   useEffect(() => {
-    setSeatIndex(null);
-    setStage(0);
-    setDeck(shuffledDeck());
-  }, [table.id]);
+    if (conn.error) setNote(conn.error);
+  }, [conn.error]);
+  // 行动倒计时
+  useEffect(() => {
+    if (!view?.deadline) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [view?.deadline]);
 
   const signedIn = !!me?.user;
+  const bb = table.blinds[1];
+  const you = view?.you ?? null;
+  // 入座后把自己转到下方中间（4 号位），其他人按顺时针相对位置排
+  const toDisplay = (i: number) => (you === null ? i : (i - you + 3 + SEAT_COUNT) % SEAT_COUNT);
+  // 入座扣了买入、离桌退回筹码，顶栏的余额跟着刷新
+  useEffect(() => {
+    if (!DEMO && view) notifyMeChanged();
+  }, [you === null]);
+  const fromDisplay = (d: number) => (you === null ? d : (d + you - 3 + SEAT_COUNT) % SEAT_COUNT);
 
   const seats: Seat[] = useMemo(() => {
-    const names = top.map((r) => r.login).filter((n) => n !== me?.user?.login);
-    const others = table.bots
-      ? ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"]
-      : names.length ? names : ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
-    // 这一手的剧本（单位：大盲）：CO 翻牌弃、HJ 转牌弃，摊牌时 BTN 亮牌
-    const BETS = [
-      [0, 0.5, 1, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0],
-      [5, 0, 5, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0],
-    ][stage];
-    const SPENT = [
-      [0, 0.5, 1, 0, 0, 0],
-      [2.5, 2.5, 2.5, 2.5, 2.5, 0],
-      [7.5, 2.5, 7.5, 7.5, 2.5, 0],
-      [7.5, 2.5, 7.5, 7.5, 2.5, 0],
-      [19, 2.5, 7.5, 19, 2.5, 0],
-    ][stage];
-    const FOLDED = [[], [5], [5, 4, 1], [5, 4, 1], [5, 4, 1, 2]][stage];
-    const ACTING = [3, 0, 2, 3, -1][stage];
-    const positions = ["BTN", "SB", "BB", "UTG", "HJ", "CO"];
-    const seatOrder = [0, 1, 2, 4, 5]; // UTG(3) 留给访客
-    const list: Seat[] = positions.map((position) => ({ position }));
-    seatOrder.slice(0, Math.min(table.seated, 5)).forEach((i, k) => {
-      list[i] = {
-        position: positions[i],
-        login: others[k],
-        stack: 100 + ((k * 37) % 60) - SPENT[i],
-        bet: BETS[i],
-        dealer: i === 0,
-        folded: FOLDED.includes(i),
-        acting: ACTING === i,
-        cards: stage === 4 && i === 0 ? [deck[7], deck[8]] : ["back", "back"],
+    const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ position: `${fromDisplay(d) + 1} 号` }));
+    if (!view) return list;
+    const pos = positions(view);
+    view.seats.forEach((x, i) => {
+      if (!x) return;
+      const showdown = view.street === "showdown";
+      let seatNote: string | undefined;
+      if (showdown && x.won) seatNote = `赢 ${fmtBB(x.won / bb)} bb`;
+      else if (x.leaving) seatNote = "离桌";
+      else if (x.away) seatNote = "掉线";
+      else if (x.last) seatNote = x.last.replace(/\d[\d,]*/g, (n) => `${fmtBB(Number(n.replace(/,/g, "")) / bb)} bb`);
+      list[toDisplay(i)] = {
+        position: pos[i] ?? (view.street === "idle" ? "等开局" : "下一手"),
+        login: x.login,
+        you: i === you,
+        stack: x.stack / bb,
+        bet: x.bet / bb,
+        dealer: view.button === i && view.street !== "idle",
+        folded: x.folded,
+        acting: view.toAct === i,
+        cards: x.cards.length ? x.cards.map(toSpec) : undefined,
+        note: showdown && x.hand && !x.folded ? `${x.hand}${seatNote ? ` · ${seatNote}` : ""}` : seatNote,
       };
     });
-    if (seatIndex !== null) {
-      list[seatIndex] = {
-        position: positions[seatIndex],
-        login: me?.user?.login ?? "guest",
-        you: true,
-        stack: 100 - SPENT[3],
-        bet: BETS[3],
-        acting: ACTING === seatIndex,
-        cards: [deck[5], deck[6]],
-      };
-    }
     return list;
-  }, [top, table, seatIndex, stage, deck, me]);
+  }, [view, you, bb]);
 
-  const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (i < [0, 3, 4, 5, 5][stage] ? deck[i] : "back"));
-  const pot = [1.5, 12.5, 32.5, 32.5, 57][stage];
-
-  const advance = () => {
-    setNote(null);
-    if (stage >= 4) {
-      setDeck(shuffledDeck());
-      setStage(0);
-    } else {
-      setStage(stage + 1);
-    }
-  };
+  const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (view?.board[i] ? toSpec(view.board[i]) : "back"));
+  const stage = view ? STAGE[view.street] : 0;
+  const lines = useMemo(() => ["", "翻牌！", "转牌～", "河牌！", view?.say ?? "摊牌，看看谁赢？"], [view?.say]);
+  const legal = view?.legal ?? null;
+  const left = view?.deadline ? Math.max(0, Math.ceil((view.deadline - (now + conn.skew)) / 1000)) : null;
 
   const switchTable = (step: number) => {
-    const i = TABLES.findIndex((t) => t.id === table.id);
+    const i = tables.findIndex((t) => t.id === table.id);
     setSlide(step > 0 ? "slide-next" : "slide-prev");
-    navigate(`/table/${TABLES[(i + step + TABLES.length) % TABLES.length].id}`);
+    navigate(`/table/${tables[(i + step + tables.length) % tables.length].id}`);
   };
 
   const findTable = () => {
     const no = query.trim().replace(/^#/, "");
     if (!no) return setSearching(false);
-    const t = TABLES.find((x) => x.id === no);
+    const t = tables.find((x) => x.id === no);
     if (!t) return setNote(`没有 #${no} 这张桌`);
-    const i = TABLES.indexOf(t), cur = TABLES.indexOf(table);
+    const i = tables.indexOf(t), cur = tables.indexOf(table);
     if (t !== table) setSlide(i > cur ? "slide-next" : "slide-prev");
     navigate(`/table/${t.id}`);
     setSearching(false);
     setQuery("");
   };
 
-  const sit = async (index: number) => {
+  /** 开桌：盲注和当前这张桌一样。 */
+  const openTable = async () => {
+    if (!signedIn && !DEMO) {
+      location.href = loginHref(`/table/${table.id}`);
+      return;
+    }
+    try {
+      let created: TableEntry;
+      if (DEMO) {
+        created = { no: Math.max(...tables.map((t) => t.no)) + 1, id: "", blinds: table.blinds, seated: 0 };
+        created.id = String(created.no);
+        setTables([...tables, created]);
+      } else {
+        const r = await api<{ table: { no: number; blinds: [number, number]; bots: boolean; seated: number } }>("/api/tables", {
+          method: "POST",
+          json: { from: table.no },
+        });
+        created = { ...r.table, id: String(r.table.no) };
+        setTables((ts) => [...ts, created]);
+      }
+      setSlide("slide-next");
+      navigate(`/table/${created.id}`);
+      setNote(`开好了 #${created.no}，盲注 ${fmtInt(created.blinds[0])}/${fmtInt(created.blinds[1])}，坐下等人来。`);
+    } catch (e) {
+      setNote((e as Error).message);
+    }
+  };
+
+  const sit = async (display: number) => {
     if (!signedIn) {
       if (!DEMO) {
         location.href = loginHref(`/table/${table.id}`);
@@ -142,14 +198,23 @@ export function LobbyPage() {
       (await import("../demo")).demoLogin();
       notifyMeChanged();
     }
-    setSeatIndex(index);
     setNote(null);
+    conn.send({ t: "sit", seat: fromDisplay(display) });
   };
 
-  const lines = useMemo(
-    () => ["", "翻牌！", "转牌～", "河牌！", seatIndex !== null ? "摊牌，看看谁赢？" : "这手结束，要不要上桌？"],
-    [seatIndex],
-  );
+  const act = (action: "fold" | "check" | "call" | "raise", amount?: number) => {
+    setNote(null);
+    conn.send({ t: "act", action, amount });
+  };
+
+  const status = (() => {
+    if (!view) return conn.connected ? null : "正在连接牌桌…";
+    if (you === null) return null;
+    if (legal) return `轮到你了${left !== null ? `，还剩 ${left} 秒` : ""}`;
+    if (view.street === "idle") return "等人入座，凑够两个人就开局";
+    if (!view.seats[you]?.inHand) return "下一手开始时发牌给你";
+    return null;
+  })();
 
   return (
     <div className="lobby">
@@ -189,14 +254,14 @@ export function LobbyPage() {
             <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label="按桌号找桌" title="按桌号找桌">
               <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
             </button>
-            <button className="icon-btn icon-btn-new" onClick={() => setNote("开桌功能还在做，先坐现成的桌吧。")} aria-label="开一张桌" title="开桌">
+            <button className="icon-btn icon-btn-new" onClick={openTable} aria-label="开一张桌" title="开一张同样盲注的桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
             </button>
           </>
         }
         center={
           <div className="felt-center">
-            <Dealer stage={stage} onAdvance={advance} lines={lines} />
+            <Dealer stage={stage} onAdvance={() => you === null && view?.street === "idle" && setNote("点空位入座，凑够两个人就开局。")} lines={lines} />
             <div className="board-cards">
               {board.map((c, i) => (
                 <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} />
@@ -204,7 +269,7 @@ export function LobbyPage() {
             </div>
             <div className="pot">
               <span>底池</span>
-              <b>{pot} bb</b>
+              <b>{fmtBB((view?.pot ?? 0) / bb)} bb</b>
               <small>盲注 {fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
             </div>
           </div>
@@ -212,16 +277,29 @@ export function LobbyPage() {
       />
 
       <div className="actions">
-        {seatIndex !== null ? (
-          <>
-            <button className="btn btn-ghost" onClick={() => { setStage(4); setNote("你弃牌了。点发牌员开下一手。"); }}>弃牌</button>
-            <button className="btn btn-ghost" onClick={advance}>{stage === 0 ? "跟注 1 bb" : "过牌"}</button>
-            <button className="btn" onClick={advance}>{stage === 0 ? "加注到 2.5 bb" : `下注 ${Math.round(pot / 2)} bb`}</button>
-            <button className="btn btn-text" onClick={() => setSeatIndex(null)}>离桌</button>
-          </>
+        {you !== null ? (
+          legal ? (
+            <>
+              <button className="btn btn-ghost" onClick={() => act("fold")}>弃牌</button>
+              <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
+                {legal.canCheck ? "过牌" : `跟注 ${fmtBB(legal.toCall / bb)} bb`}
+              </button>
+              {raiseOptions(view!).map((o) => (
+                <button key={o.to} className="btn" onClick={() => act("raise", o.to)}>{o.label}</button>
+              ))}
+              <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-ghost" disabled>弃牌</button>
+              <button className="btn btn-ghost" disabled>过牌</button>
+              <button className="btn" disabled>加注</button>
+              <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+            </>
+          )
         ) : null}
       </div>
-      {note && <p className="note" role="status">{note}</p>}
+      {(note ?? status) && <p className="note" role="status">{note ?? status}</p>}
 
     </div>
   );

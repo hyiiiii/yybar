@@ -1,0 +1,69 @@
+// 预览版的牌桌：没有服务端，直接在浏览器里跑 src/shared/poker 的牌局，其他座位是机器人。
+import { TableRoom } from "../shared/poker/room";
+import type { ClientMsg, ServerMsg } from "../shared/poker/types";
+import type { TableInfo } from "./tables";
+
+const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
+const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
+const BOTS = ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"];
+
+/** 预览里的筹码余额，和示例个人页一致 */
+let balance = 160_581;
+
+interface Local {
+  room: TableRoom;
+  timer?: ReturnType<typeof setTimeout>;
+  listeners: Set<(msg: ServerMsg) => void>;
+}
+
+// 切走的桌子照样在后台打，切回来能接着看
+const rooms = new Map<number, Local>();
+
+function emit(t: Local) {
+  const now = Date.now();
+  const view = t.room.view(YOU.userId, now);
+  for (const fn of t.listeners) fn({ t: "state", view });
+  for (const c of t.room.s.cashouts) {
+    balance += c.amount;
+    t.room.ackCashout(c.ref);
+  }
+  clearTimeout(t.timer);
+  const wake = t.room.nextWake();
+  if (wake !== null) {
+    t.timer = setTimeout(() => {
+      t.room.tick(Date.now());
+      emit(t);
+    }, Math.max(0, wake - now));
+  }
+}
+
+export function openLocalTable(info: Pick<TableInfo, "no" | "blinds" | "bots" | "seated">, onMsg: (msg: ServerMsg) => void) {
+  let t = rooms.get(info.no);
+  if (!t) {
+    const names = (info.bots ? BOTS : PEOPLE).slice(0, Math.min(info.seated, 5));
+    const room = TableRoom.create({ no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: false, fixedBots: names });
+    t = { room, listeners: new Set() };
+    rooms.set(info.no, t);
+  }
+  const local = t;
+  local.listeners.add(onMsg);
+  emit(local);
+
+  const send = (msg: ClientMsg) => {
+    const now = Date.now();
+    let err: string | null = null;
+    if (msg.t === "sit") {
+      err = local.room.canSit(YOU.userId, msg.seat);
+      const amount = local.room.buyInFor(balance);
+      if (!err && !amount) err = "筹码不够";
+      if (!err) {
+        balance -= amount;
+        err = local.room.sit(YOU, msg.seat, amount, now);
+      }
+    } else if (msg.t === "leave") err = local.room.leave(YOU.userId, now);
+    else if (msg.t === "act") err = local.room.act(YOU.userId, msg.action, msg.amount, now);
+    if (err) onMsg({ t: "error", msg: err });
+    emit(local);
+  };
+  return { send, close: () => local.listeners.delete(onMsg) };
+}

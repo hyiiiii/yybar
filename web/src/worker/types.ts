@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** 每张德州牌桌一个 Durable Object，按桌号取 */
+  TABLES: DurableObjectNamespace<import("./table").PokerTable>;
   APP_URL: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;

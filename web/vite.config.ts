@@ -10,6 +10,6 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     // 开发时前端跑在 5173，接口转给 wrangler dev（8787）
-    proxy: { "/api": "http://localhost:8787", "/auth": "http://localhost:8787" },
+    proxy: { "/api": { target: "http://localhost:8787", ws: true }, "/auth": "http://localhost:8787" },
   },
 }));

@@ -156,6 +156,10 @@ authRoutes.get("/dev-login", async (c) => {
   let hash = 0;
   for (const ch of login) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const userId = await upsertGitHubUser(c.env.DB, { id: -Math.abs(hash) - 1, login, name: login, avatar_url: null });
+  // 假账号送 20,000 筹码，方便本地开几个窗口试德州；按 ref 去重只送一次
+  await c.env.DB.prepare("INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref) VALUES (?, 20000, 'dev-grant', ?)")
+    .bind(userId, `dev-grant:${userId}`)
+    .run();
   await startSession(c, userId);
   return c.redirect(safeNext(c.req.query("next")));
 });

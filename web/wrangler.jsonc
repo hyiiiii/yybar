@@ -18,6 +18,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [{ "name": "TABLES", "class_name": "PokerTable" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PokerTable"] }],
   "vars": {
     "APP_URL": "http://localhost:8787"
   }

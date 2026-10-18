@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
+import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
 import { parseUpload, saveUpload, UploadError } from "./usage";
 import { addDays, isoDay, pointsFromMicro, randomToken, sha256 } from "./util";
@@ -212,6 +213,9 @@ v1.post("/usage", async (c) => {
 
 app.route("/api/v1", v1);
 
+app.route("/api/tables", tableRoutes);
+
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 export default app;
+export { PokerTable } from "./table";
