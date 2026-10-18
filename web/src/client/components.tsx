@@ -59,7 +59,7 @@ export function PlayingCard({ card, size = "md" }: { card: CardSpec; size?: "sm"
     <span className={`card card-${size} card-${card.suit}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
       <b className="card-rank">{card.rank}</b>
       <span className="card-icon">
-        <SuitIcon suit={card.suit} size={size === "sm" ? 14 : size === "md" ? 22 : 30} />
+        <SuitIcon suit={card.suit} size={size === "sm" ? 16 : size === "md" ? 30 : 34} />
       </span>
     </span>
   );

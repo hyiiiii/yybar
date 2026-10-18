@@ -211,33 +211,29 @@ main { min-height: 60vh; }
 .seat-open .seat-join { font-size: 13px; font-weight: 600; color: var(--accent); }
 .seat-open:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 
-/* 发牌员：Claude 星芒 + 圆心表情 */
+/* 发牌员：Claude 像素小螃蟹，系领结 */
 .dealer { position: relative; display: flex; flex-direction: column; align-items: center; }
-.bubble { position: relative; font-size: 12px; background: var(--panel); color: var(--label); padding: 4px 11px; border-radius: 999px; margin-bottom: 4px; white-space: nowrap; box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
-.dealer-btn { border: 0; background: none; padding: 0; cursor: pointer; line-height: 0; border-radius: 50%; }
-.dealer-sprite { width: 104px; height: 104px; overflow: visible; filter: drop-shadow(0 4px 8px rgb(201 100 66 / 0.25)); }
-.rays { transition: transform .7s cubic-bezier(.2, 1.5, .4, 1); transform-box: view-box; transform-origin: 0 0; }
-.ray { stroke: url(#dealer-ray); stroke-width: 6.4; stroke-linecap: round; transform-box: view-box; transform-origin: 0 0; }
-.hub { fill: url(#dealer-hub); }
-.face-fill { fill: #3a1c10; }
-.face-line { fill: none; stroke: #3a1c10; stroke-width: 1.5; stroke-linecap: round; }
-.face-blush ellipse { fill: #f7b59b; opacity: .8; }
-.mood-sleepy .ray { opacity: .75; }
+.bubble { position: relative; font-size: 12px; background: var(--panel); color: var(--label); padding: 4px 11px; border-radius: 999px; margin-bottom: 8px; white-space: nowrap; box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
+.dealer-btn { border: 0; background: none; padding: 0; cursor: pointer; line-height: 0; }
+.dealer-sprite { width: 78px; height: auto; overflow: visible; color: var(--clawd-ink); }
+.dealer-body rect, .dealer-legs rect { fill: var(--clawd); }
+.dealer-eyes rect { fill: var(--clawd-ink); }
+.dealer-tie { fill: var(--clawd-ink); }
+.dealer-blush rect { fill: #f2a08a; }
+.dealer-mouth { fill: var(--clawd-ink); }
 @media (prefers-reduced-motion: no-preference) {
-  .ray { animation: ray 2.8s ease-in-out infinite; }
-  .mood-happy .ray, .mood-wink .ray { animation-duration: 1.4s; }
-  .mood-surprised .ray { animation: ray-burst .5s ease-out; }
-  .mood-sleepy .ray { animation-duration: 6s; }
-  .dealer-sprite { animation: float 3.2s ease-in-out infinite; }
-  .hop-a .dealer-sprite { animation: hop .5s cubic-bezier(.3, 1.6, .5, 1), float 3.2s ease-in-out .5s infinite; }
-  .hop-b .dealer-sprite { animation: hop2 .5s cubic-bezier(.3, 1.6, .5, 1), float 3.2s ease-in-out .5s infinite; }
+  .dealer-sprite { animation: bob 2.4s ease-in-out infinite; }
+  .dealer-legs rect:nth-child(odd) { animation: step 0.6s steps(2) infinite; }
+  .dealer-arm-r { animation: wave 2.4s ease-in-out infinite; transform-origin: 14px 5px; transform-box: view-box; }
+  .hop-a .dealer-sprite { animation: hop-a .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
+  .hop-b .dealer-sprite { animation: hop-b .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
   .bubble { animation: pop .25s ease-out; }
   .board-cards .card:not(.card-back) { animation: flip .4s cubic-bezier(.2, .9, .3, 1.1); }
-  @keyframes ray { 50% { transform: scale(.9); } }
-  @keyframes ray-burst { 40% { transform: scale(1.12); } }
-  @keyframes float { 50% { transform: translateY(-3px); } }
-  @keyframes hop { 45% { transform: translateY(-8px) scale(1.06); } }
-  @keyframes hop2 { 45% { transform: translateY(-8px) scale(1.06); } }
+  @keyframes bob { 50% { transform: translateY(-3px); } }
+  @keyframes step { 50% { transform: translateY(-0.4px); } }
+  @keyframes wave { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-1px); } 90% { transform: translateY(0.4px); } }
+  @keyframes hop-a { 40% { transform: translateY(-14px) rotate(-4deg); } }
+  @keyframes hop-b { 40% { transform: translateY(-14px) rotate(4deg); } }
   @keyframes pop { from { transform: translateY(4px); opacity: 0; } }
   @keyframes flip { from { transform: rotateY(90deg) translateY(-4px); } }
 }
@@ -249,27 +245,26 @@ main { min-height: 60vh; }
 .mini-wall-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
 .more { color: var(--accent); text-decoration: none; font-size: 13px; }
 
-/* 扑克牌：四色牌，整面上色，左上大号点数，正中一个标 */
+/* 扑克牌：白色亮面牌，左上大号点数，正中一个 AI 标，点数和标按花色上色 */
 .card {
-  position: relative; display: inline-block; flex: none; overflow: hidden; color: #fff;
-  border-radius: 7px; background: var(--suit-bg);
-  background-image: linear-gradient(160deg, rgb(255 255 255 / 0.16), transparent 45%, rgb(0 0 0 / 0.12));
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), 0 1px 2px rgb(0 0 0 / 0.18), 0 4px 10px rgb(0 0 0 / 0.12);
+  position: relative; display: inline-block; flex: none; overflow: hidden; color: var(--suit-ink);
+  border-radius: 8px; background: linear-gradient(170deg, #ffffff 0%, #fbfbfa 55%, #ecebe8 100%);
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(0 0 0 / 0.14);
 }
 .card-sm { width: 30px; height: 42px; border-radius: 5px; }
-.card-md { width: 44px; height: 62px; }
-.card-lg { width: 56px; height: 78px; border-radius: 8px; }
-.card-rank { position: absolute; left: 5px; top: 1px; font-family: var(--font); font-weight: 700; font-size: 24px; letter-spacing: -0.04em; line-height: 1.15; }
+.card-md { width: 50px; height: 70px; }
+.card-lg { width: 58px; height: 80px; border-radius: 9px; }
+.card-rank { position: absolute; left: 5px; top: 1px; font-family: var(--font); font-weight: 700; font-size: 27px; letter-spacing: -0.04em; line-height: 1.1; }
 .card-sm .card-rank { left: 3px; font-size: 15px; }
-.card-lg .card-rank { left: 6px; top: 2px; font-size: 30px; }
-.card-icon { position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%); display: grid; }
-.card-gpt { --suit-bg: #1f9d74; }
-.card-claude { --suit-bg: #d2694a; }
-.card-gemini { --suit-bg: #3a63d8; }
-.card-grok { --suit-bg: #2d2d30; }
-.card-back { --suit-bg: #3b3a37; display: grid; place-items: center; }
-.card-back::before { content: ""; position: absolute; inset: 3px; border-radius: 4px; border: 1px solid rgb(255 255 255 / 0.12); }
-.card-back-mark { font-family: var(--serif); font-size: 18px; font-weight: 600; color: rgb(255 255 255 / 0.35); }
+.card-lg .card-rank { left: 6px; top: 2px; font-size: 32px; }
+.card-icon { position: absolute; left: 56%; top: 66%; transform: translate(-50%, -50%); display: grid; }
+.card-gpt { --suit-ink: #10a37f; }
+.card-claude { --suit-ink: #d2694a; }
+.card-gemini { --suit-ink: #3a63d8; }
+.card-grok { --suit-ink: #1d1d1f; }
+.card-back { display: grid; place-items: center; background: linear-gradient(170deg, #e48a6c, #c9603f); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.18), 0 4px 10px rgb(0 0 0 / 0.12); }
+.card-back::before { content: ""; position: absolute; inset: 3px; border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.28); }
+.card-back-mark { font-family: var(--serif); font-size: 18px; font-weight: 600; color: rgb(255 255 255 / 0.55); }
 .card-sm .card-back-mark { display: none; }
 .suit { display: inline-block; flex: none; }
 
@@ -396,7 +391,7 @@ main { min-height: 60vh; }
   .pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 6px); }
   .pos-2 .seat-bet { right: auto; left: 50%; top: calc(100% + 18px); transform: translateX(-50%); }
   .pos-5 .seat-bet { left: 50%; top: calc(100% + 18px); transform: translateX(-50%); }
-  .dealer-sprite { width: 80px; height: 80px; }
+  .dealer-sprite { width: 60px; }
   .card-md { width: 34px; height: 48px; }
   .card-md .card-rank { font-size: 18px; left: 3px; }
   .card-md .card-icon svg { width: 16px; height: 16px; }
