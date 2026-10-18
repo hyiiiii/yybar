@@ -146,10 +146,10 @@ main { min-height: 60vh; }
 .sign-svg { display: block; width: 100%; height: auto; }
 .sign-board { fill: var(--sign); stroke: var(--rail-edge); stroke-width: 2; }
 .sign-text {
-  position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 14px;
-  font-family: "Pacifico", var(--serif); font-size: clamp(38px, 12vw, 50px); font-weight: 400; line-height: 1;
-  color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 10px rgb(255 170 110 / 0.85), 0 0 22px rgb(217 119 87 / 0.7), 0 2px 0 #9c4a2f;
-  transform: rotate(-3deg) scaleX(1.45); letter-spacing: 0.02em;
+  position: absolute; left: 50%; top: 46%; white-space: nowrap;
+  font-family: "Pacifico", var(--serif); font-size: clamp(30px, 10vw, 38px); font-weight: 400; line-height: 1;
+  color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 7px rgb(255 170 110 / 0.85), 0 0 14px rgb(217 119 87 / 0.6), 0 2px 0 #9c4a2f;
+  transform: translate(-50%, -50%) rotate(-2deg) scaleX(1.8); letter-spacing: 0.02em;
 }
 .bulb { fill: var(--bulb); }
 @media (prefers-reduced-motion: no-preference) {
@@ -266,7 +266,20 @@ main { min-height: 60vh; }
 .card-gemini { --suit-ink: #3d9cf0; }
 .card-grok { --suit-ink: #1d1d1f; }
 .card-back { background: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1), 0 1px 2px rgb(0 0 0 / 0.18), 0 4px 10px rgb(0 0 0 / 0.12); }
-.card-back::before { content: ""; position: absolute; inset: 6px; border-radius: 3px; background: #cf6461; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.12); }
+/* 牌背：仿单车牌的红色花纹，白边 + 细格纹 + 内框线 + 上下两个圆章 */
+.card-back::before {
+  content: ""; position: absolute; inset: 5px; border-radius: 3px; background-color: #c1303a;
+  background-image:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.28) 0 0.6px, transparent 0.6px 3px),
+    repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.28) 0 0.6px, transparent 0.6px 3px);
+}
+.card-back::after {
+  content: ""; position: absolute; inset: 8px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.75);
+  background:
+    radial-gradient(circle at 50% 32%, rgb(255 255 255 / 0.75) 0 1.2px, transparent 1.2px 3.4px, rgb(255 255 255 / 0.55) 3.4px 4px, rgb(150 20 30 / 0.35) 4px 6.4px, rgb(255 255 255 / 0.85) 6.4px 7.2px, transparent 7.2px),
+    radial-gradient(circle at 50% 68%, rgb(255 255 255 / 0.75) 0 1.2px, transparent 1.2px 3.4px, rgb(255 255 255 / 0.55) 3.4px 4px, rgb(150 20 30 / 0.35) 4px 6.4px, rgb(255 255 255 / 0.85) 6.4px 7.2px, transparent 7.2px),
+    linear-gradient(rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.55)) 50% 50% / 1px 26% no-repeat;
+}
 .suit { display: inline-block; flex: none; }
 
 /* 区块与面板 */
@@ -396,6 +409,7 @@ main { min-height: 60vh; }
   .card-rank { font-size: 20px; left: 4px; }
   .card-icon svg { width: 22px; height: 22px; }
   .card-back::before { inset: 4px; border-radius: 2px; }
+  .card-back::after { inset: 6px; }
   .felt-corner { right: 50%; transform: translateX(50%); top: calc(100% + 44px); }
   .board-cards { gap: 3px; }
   .tables { grid-template-columns: minmax(0, 1fr); }
