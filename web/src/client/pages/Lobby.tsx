@@ -23,7 +23,7 @@ const SEAT_COUNT = 6;
 const DEMO = !!import.meta.env.VITE_DEMO;
 
 /**
- * 大厅就是一张牌桌：选桌、点空位入座，点发牌员推进牌局。
+ * 大厅就是一张牌桌：右下角切桌，点空位入座，点发牌员推进牌局。
  * 德州的真实逻辑（下注、比牌、结算）还没接服务端，这里先走一手演示牌。
  */
 export function LobbyPage() {
@@ -112,6 +112,11 @@ export function LobbyPage() {
     }
   };
 
+  const switchTable = (step: number) => {
+    const i = TABLES.findIndex((t) => t.id === table.id);
+    navigate(`/table/${TABLES[(i + step + TABLES.length) % TABLES.length].id}`);
+  };
+
   const sit = async (index: number) => {
     if (!signedIn) {
       if (!DEMO) {
@@ -134,18 +139,26 @@ export function LobbyPage() {
     <div className="lobby">
       <MarqueeSign text="yybar" />
 
-      <div className="table-picker" role="tablist" aria-label="选桌">
-        {TABLES.map((t) => (
-          <button key={t.id} role="tab" aria-selected={t.id === table.id} onClick={() => navigate(`/table/${t.id}`)}>
-            {t.name}
-            <small>{fmtInt(t.blinds[0])}/{fmtInt(t.blinds[1])}</small>
-          </button>
-        ))}
-      </div>
-
       <FeltTable
         seats={seats}
         onEmptySeat={(i) => sit(i)}
+        corner={
+          <>
+            <button className="icon-btn" onClick={() => switchTable(-1)} aria-label="上一张桌">
+              <svg viewBox="0 0 12 12" aria-hidden><path d="M8.5 1.8v8.4L2.2 6z" /></svg>
+            </button>
+            <span className="corner-label">
+              {table.name}
+              <small>{fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
+            </span>
+            <button className="icon-btn" onClick={() => switchTable(1)} aria-label="下一张桌">
+              <svg viewBox="0 0 12 12" aria-hidden><path d="M3.5 1.8v8.4L9.8 6z" /></svg>
+            </button>
+            <button className="icon-btn icon-btn-new" onClick={() => setNote("开桌功能还在做，先坐现成的桌吧。")} aria-label="开一张桌" title="开桌">
+              <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
+            </button>
+          </>
+        }
         center={
           <div className="felt-center">
             <Dealer stage={stage} onAdvance={advance} lines={lines} />

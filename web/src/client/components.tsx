@@ -47,17 +47,18 @@ export function SuitIcon({ suit, size = 16 }: { suit: Suit; size?: number }) {
 export type CardSpec = { rank: string; suit: Suit } | "back";
 
 /** 整面上色的牌（四色牌），左上角大号点数，正中一个 AI 标。 */
-export function PlayingCard({ card, size = "md" }: { card: CardSpec; size?: "sm" | "md" | "lg" }) {
+/** 所有位置的牌都用同一个尺寸。 */
+export function PlayingCard({ card }: { card: CardSpec }) {
   if (card === "back") {
     return (
-      <span className={`card card-${size} card-back`} aria-label="背面" />
+      <span className="card card-back" aria-label="背面" />
     );
   }
   return (
-    <span className={`card card-${size} card-${card.suit}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
+    <span className={`card card-${card.suit}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
       <b className="card-rank">{card.rank}</b>
       <span className="card-icon">
-        <SuitIcon suit={card.suit} size={size === "sm" ? 16 : size === "md" ? 30 : 34} />
+        <SuitIcon suit={card.suit} size={30} />
       </span>
     </span>
   );
@@ -83,15 +84,19 @@ export interface Seat {
 export function FeltTable({
   seats,
   center,
+  corner,
   onEmptySeat,
 }: {
   seats: Seat[];
   center: ReactNode;
+  /** 桌子右下角的控件（切桌、开桌） */
+  corner?: ReactNode;
   onEmptySeat?: (index: number) => void;
 }) {
   return (
     <div className="felt-wrap">
       <div className="felt">{center}</div>
+      {corner && <div className="felt-corner">{corner}</div>}
       {seats.map((s, i) => (
         <div
           key={i}
@@ -107,7 +112,7 @@ export function FeltTable({
               {s.cards && !s.folded && (
                 <div className="seat-cards">
                   {s.cards.map((c, j) => (
-                    <PlayingCard key={j} card={c} size={s.you ? "lg" : "sm"} />
+                    <PlayingCard key={j} card={c} />
                   ))}
                 </div>
               )}
@@ -128,7 +133,7 @@ export function FeltTable({
 
 /** 桌子上方的 yybar 招牌，四周一圈跑马灯。 */
 export function MarqueeSign({ text }: { text: string }) {
-  const W = 300, H = 96, step = 18;
+  const W = 440, H = 104, step = 18;
   const bulbs: { x: number; y: number }[] = [];
   for (let x = 10; x <= W - 10; x += step) bulbs.push({ x, y: 9 });
   for (let y = 9 + step; y <= H - 9; y += step) bulbs.push({ x: W - 10, y });
