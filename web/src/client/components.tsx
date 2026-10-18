@@ -135,7 +135,7 @@ export function FeltTable({
 
 /** 桌子上方的 yybar 招牌，四周一圈跑马灯。 */
 export function MarqueeSign({ text }: { text: string }) {
-  const W = 300, H = 96, step = 18;
+  const W = 300, H = 108, step = 18;
   const bulbs: { x: number; y: number }[] = [];
   for (let x = 10; x <= W - 10; x += step) bulbs.push({ x, y: 9 });
   for (let y = 9 + step; y <= H - 9; y += step) bulbs.push({ x: W - 10, y });
