@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
-import { api, fmtInt, fmtUSD, type LeaderboardRow } from "../api";
-import { Avatar, FeltTable, MarqueeSign, PlayingCard, type CardSpec, type Seat } from "../components";
+import { useNavigate, useParams } from "react-router";
+import { api, fmtInt, type LeaderboardRow } from "../api";
+import { FeltTable, MarqueeSign, PlayingCard, type CardSpec, type Seat } from "../components";
 import { Dealer } from "../Dealer";
 import type { Suit } from "../suits";
-import { TABLES } from "../tables";
+import { DEFAULT_TABLE, TABLES } from "../tables";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 
 const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
@@ -30,7 +30,10 @@ export function LobbyPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { me } = useMe();
-  const table = TABLES.find((t) => t.id === id) ?? TABLES[2];
+  const table = TABLES.find((t) => t.id === id) ?? DEFAULT_TABLE;
+  const [slide, setSlide] = useState<"" | "slide-next" | "slide-prev">("");
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
   const [seatIndex, setSeatIndex] = useState<number | null>(null);
   const [stage, setStage] = useState(0);
   const [deck, setDeck] = useState(shuffledDeck);
@@ -114,7 +117,20 @@ export function LobbyPage() {
 
   const switchTable = (step: number) => {
     const i = TABLES.findIndex((t) => t.id === table.id);
+    setSlide(step > 0 ? "slide-next" : "slide-prev");
     navigate(`/table/${TABLES[(i + step + TABLES.length) % TABLES.length].id}`);
+  };
+
+  const findTable = () => {
+    const no = query.trim().replace(/^#/, "");
+    if (!no) return setSearching(false);
+    const t = TABLES.find((x) => x.id === no);
+    if (!t) return setNote(`没有 #${no} 这张桌`);
+    const i = TABLES.indexOf(t), cur = TABLES.indexOf(table);
+    if (t !== table) setSlide(i > cur ? "slide-next" : "slide-prev");
+    navigate(`/table/${t.id}`);
+    setSearching(false);
+    setQuery("");
   };
 
   const sit = async (index: number) => {
@@ -140,6 +156,8 @@ export function LobbyPage() {
       <MarqueeSign text="yybar" />
 
       <FeltTable
+        key={table.id}
+        className={slide}
         seats={seats}
         onEmptySeat={(i) => sit(i)}
         corner={
@@ -147,12 +165,29 @@ export function LobbyPage() {
             <button className="icon-btn" onClick={() => switchTable(-1)} aria-label="上一张桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M8.5 1.8v8.4L2.2 6z" /></svg>
             </button>
-            <span className="corner-label">
-              {table.name}
-              <small>{fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
-            </span>
+            {searching ? (
+              <form className="corner-search" onSubmit={(e) => { e.preventDefault(); findTable(); }}>
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  placeholder="桌号"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setSearching(false)}
+                  aria-label="输入桌号"
+                />
+              </form>
+            ) : (
+              <span className="corner-label">
+                #{table.no}
+                <small>{fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
+              </span>
+            )}
             <button className="icon-btn" onClick={() => switchTable(1)} aria-label="下一张桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M3.5 1.8v8.4L9.8 6z" /></svg>
+            </button>
+            <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label="按桌号找桌" title="按桌号找桌">
+              <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
             </button>
             <button className="icon-btn icon-btn-new" onClick={() => setNote("开桌功能还在做，先坐现成的桌吧。")} aria-label="开一张桌" title="开桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
@@ -184,30 +219,10 @@ export function LobbyPage() {
             <button className="btn" onClick={advance}>{stage === 0 ? "加注到 2.5 bb" : `下注 ${Math.round(pot / 2)} bb`}</button>
             <button className="btn btn-text" onClick={() => setSeatIndex(null)}>离桌</button>
           </>
-        ) : (
-          <button className="btn" onClick={() => sit(seats.findIndex((s) => !s.login))}>
-            {signedIn ? `入座 · 带入 ${fmtInt(table.minBuyIn)}` : "用 GitHub 登录入座"}
-          </button>
-        )}
+        ) : null}
       </div>
       {note && <p className="note" role="status">{note}</p>}
 
-      <section className="mini-wall">
-        <div className="mini-wall-head">
-          <h2>本周名人墙</h2>
-          <Link to="/board" className="more">全部</Link>
-        </div>
-        <ol className="mini-board">
-          {top.slice(0, 5).map((r) => (
-            <li key={r.login}>
-              <span className={`rank rank-${r.rank}`}>{r.rank}</span>
-              <Avatar url={r.avatarUrl} login={r.login} size={26} />
-              <Link to={`/u/${r.login}`} className="who">{r.name || r.login}</Link>
-              <span className="num">{fmtUSD(r.costMicro)}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
     </div>
   );
 }

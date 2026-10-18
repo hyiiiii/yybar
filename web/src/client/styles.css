@@ -142,14 +142,15 @@ main { min-height: 60vh; }
 
 /* 招牌 */
 .lobby { display: flex; flex-direction: column; align-items: center; padding-block: 8px 24px; }
-.sign { position: relative; width: min(300px, 80vw); margin-bottom: 18px; }
+.sign { position: relative; overflow: hidden; border-radius: 14px; width: min(300px, 80vw); margin-bottom: 18px; }
 .sign-svg { display: block; width: 100%; height: auto; }
+.sign-bulbs { position: absolute; inset: 0; }
 .sign-board { fill: var(--sign); stroke: var(--rail-edge); stroke-width: 2; }
 .sign-text {
-  position: absolute; left: 50%; top: 46%; white-space: nowrap;
-  font-family: "Pacifico", var(--serif); font-size: clamp(30px, 10vw, 38px); font-weight: 400; line-height: 1;
-  color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 7px rgb(255 170 110 / 0.85), 0 0 14px rgb(217 119 87 / 0.6), 0 2px 0 #9c4a2f;
-  transform: translate(-50%, -50%) rotate(-2deg) scaleX(1.8); letter-spacing: 0.02em;
+  position: absolute; left: 47%; top: 40%; white-space: nowrap;
+  font-family: "Pacifico", var(--serif); font-size: clamp(36px, 11vw, 48px); font-weight: 400; line-height: 1;
+  color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 10px rgb(255 170 110 / 0.85), 0 0 22px rgb(217 119 87 / 0.7), 0 2px 0 #9c4a2f;
+  transform: translate(-50%, -50%) rotate(-3deg) scaleX(1.2); letter-spacing: 0.02em;
 }
 .bulb { fill: var(--bulb); }
 @media (prefers-reduced-motion: no-preference) {
@@ -206,12 +207,22 @@ main { min-height: 60vh; }
 .pos-3 .seat-bet, .pos-4 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .pos-2 .seat-bet, .pos-5 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .dealer-chip { position: absolute; right: -4px; bottom: -2px; width: 22px; height: 22px; border-radius: 50%; background: var(--label); color: var(--bg); font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+/* 左右切桌：桌面和座位从切换方向滑进来 */
+@media (prefers-reduced-motion: no-preference) {
+  .slide-next > .felt, .slide-next > .seat { animation: slide-next .45s cubic-bezier(.22, .9, .3, 1) both; }
+  .slide-prev > .felt, .slide-prev > .seat { animation: slide-prev .45s cubic-bezier(.22, .9, .3, 1) both; }
+  .slide-next > .seat, .slide-prev > .seat { animation-delay: .04s; }
+  @keyframes slide-next { from { translate: 90px 0; opacity: 0; } }
+  @keyframes slide-prev { from { translate: -90px 0; opacity: 0; } }
+}
 .felt-corner { position: absolute; right: 0; top: calc(100% + 50px); display: flex; align-items: center; gap: 6px; }
 .corner-label { min-width: 92px; text-align: center; font-size: 13px; color: var(--label); white-space: nowrap; }
 .corner-label small { margin-left: 6px; color: var(--label-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .icon-btn { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: var(--panel); color: var(--label); box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
 .icon-btn svg { width: 12px; height: 12px; fill: currentColor; stroke: currentColor; stroke-width: 0; }
 .icon-btn:hover { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
+.icon-btn svg.stroke { fill: none; stroke-width: 1.6; stroke-linecap: round; }
+.corner-search input { width: 92px; height: 30px; box-sizing: border-box; border: 0; border-radius: 999px; padding: 0 12px; font: inherit; font-size: 13px; text-align: center; color: var(--label); background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); outline: none; font-variant-numeric: tabular-nums; }
 .icon-btn-new { margin-left: 6px; background: var(--accent); color: #fff; box-shadow: none; }
 .icon-btn-new svg { fill: none; stroke-width: 1.8; stroke-linecap: round; }
 .icon-btn-new:hover { color: #fff; filter: brightness(1.08); box-shadow: none; }
@@ -248,8 +259,6 @@ main { min-height: 60vh; }
 .actions { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
 .note { text-align: center; color: var(--label-2); margin: 12px 0 0; }
 
-.mini-wall { width: min(460px, 100%); margin-top: 40px; background: var(--panel); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
-.mini-wall-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
 .more { color: var(--accent); text-decoration: none; font-size: 13px; }
 
 /* 扑克牌：白色亮面牌，左上大号点数，正中一个 AI 标，点数和标按花色上色 */

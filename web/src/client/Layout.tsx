@@ -29,7 +29,6 @@ export function Layout() {
       <main>
         <Outlet />
       </main>
-      <footer className="footer">筹码只能用 AI 花费换取（$1 = 100），不能充值或兑现。</footer>
     </div>
   );
 }

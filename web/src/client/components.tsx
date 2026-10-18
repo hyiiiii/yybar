@@ -85,16 +85,18 @@ export function FeltTable({
   seats,
   center,
   corner,
+  className = "",
   onEmptySeat,
 }: {
   seats: Seat[];
+  className?: string;
   center: ReactNode;
   /** 桌子右下角的控件（切桌、开桌） */
   corner?: ReactNode;
   onEmptySeat?: (index: number) => void;
 }) {
   return (
-    <div className="felt-wrap">
+    <div className={`felt-wrap ${className}`}>
       <div className="felt">{center}</div>
       {corner && <div className="felt-corner">{corner}</div>}
       {seats.map((s, i) => (
@@ -143,11 +145,14 @@ export function MarqueeSign({ text }: { text: string }) {
     <div className="sign" aria-label={text}>
       <svg viewBox={`0 0 ${W} ${H}`} className="sign-svg" aria-hidden>
         <rect x={1} y={1} width={W - 2} height={H - 2} rx={14} className="sign-board" />
+      </svg>
+      <span className="sign-text">{text}</span>
+      {/* 灯泡单独一层压在字上面，字的光晕不会把灯挡住 */}
+      <svg viewBox={`0 0 ${W} ${H}`} className="sign-svg sign-bulbs" aria-hidden>
         {bulbs.map((b, i) => (
           <circle key={i} cx={b.x} cy={b.y} r={3.2} className={`bulb bulb-${i % 3}`} />
         ))}
       </svg>
-      <span className="sign-text">{text}</span>
     </div>
   );
 }
