@@ -50,9 +50,7 @@ export type CardSpec = { rank: string; suit: Suit } | "back";
 export function PlayingCard({ card, size = "md" }: { card: CardSpec; size?: "sm" | "md" | "lg" }) {
   if (card === "back") {
     return (
-      <span className={`card card-${size} card-back`} aria-label="背面">
-        <span className="card-back-mark">y</span>
-      </span>
+      <span className={`card card-${size} card-back`} aria-label="背面" />
     );
   }
   return (

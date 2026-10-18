@@ -145,7 +145,12 @@ main { min-height: 60vh; }
 .sign { position: relative; width: min(300px, 80vw); margin-bottom: 18px; }
 .sign-svg { display: block; width: 100%; height: auto; }
 .sign-board { fill: var(--sign); stroke: var(--rail-edge); stroke-width: 2; }
-.sign-text { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--serif); font-size: clamp(34px, 9vw, 46px); font-weight: 500; letter-spacing: 0.02em; color: var(--sign-text); padding-bottom: 4px; }
+.sign-text {
+  position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 14px;
+  font-family: "Pacifico", var(--serif); font-size: clamp(32px, 9vw, 44px); font-weight: 400; line-height: 1;
+  color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 10px rgb(255 170 110 / 0.85), 0 0 22px rgb(217 119 87 / 0.7), 0 2px 0 #9c4a2f;
+  transform: rotate(-3deg);
+}
 .bulb { fill: var(--bulb); }
 @media (prefers-reduced-motion: no-preference) {
   .bulb { animation: bulb 1.2s steps(1) infinite; }
@@ -218,7 +223,6 @@ main { min-height: 60vh; }
 .dealer-sprite { width: 78px; height: auto; overflow: visible; color: var(--clawd-ink); }
 .dealer-body rect, .dealer-legs rect { fill: var(--clawd); }
 .dealer-eyes rect { fill: var(--clawd-ink); }
-.dealer-tie { fill: var(--clawd-ink); }
 .dealer-blush rect { fill: #f2a08a; }
 .dealer-mouth { fill: var(--clawd-ink); }
 @media (prefers-reduced-motion: no-preference) {
@@ -262,10 +266,10 @@ main { min-height: 60vh; }
 .card-claude { --suit-ink: #d2694a; }
 .card-gemini { --suit-ink: #3a63d8; }
 .card-grok { --suit-ink: #1d1d1f; }
-.card-back { display: grid; place-items: center; background: linear-gradient(170deg, #e48a6c, #c9603f); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 1px 2px rgb(0 0 0 / 0.18), 0 4px 10px rgb(0 0 0 / 0.12); }
-.card-back::before { content: ""; position: absolute; inset: 3px; border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.28); }
-.card-back-mark { font-family: var(--serif); font-size: 18px; font-weight: 600; color: rgb(255 255 255 / 0.55); }
-.card-sm .card-back-mark { display: none; }
+.card-back { background: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.18), 0 4px 10px rgb(0 0 0 / 0.12); }
+.card-back::before { content: ""; position: absolute; inset: 3px; border-radius: 5px; background: linear-gradient(170deg, #e0453b, #b3261e); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.card-sm.card-back::before { inset: 2px; border-radius: 3px; }
+.card-lg.card-back::before { inset: 4px; }
 .suit { display: inline-block; flex: none; }
 
 /* 区块与面板 */

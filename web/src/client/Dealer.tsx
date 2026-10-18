@@ -29,7 +29,7 @@ function Eyes({ mood }: { mood: Mood }) {
   );
 }
 
-/** Claude 风格的像素小家伙，系着领结当发牌员。 */
+/** Claude 风格的像素小家伙，当发牌员。 */
 export function DealerSprite({ mood }: { mood: Mood }) {
   return (
     <svg className="dealer-sprite" viewBox="0 0 16 13" shapeRendering="crispEdges" aria-hidden>
@@ -52,7 +52,6 @@ export function DealerSprite({ mood }: { mood: Mood }) {
         </g>
       )}
       {mood === "surprised" && <rect className="dealer-mouth" x={7.4} y={6} width={1.2} height={1.2} rx={0.5} />}
-      <path className="dealer-tie" d="M6.4 7.1 L8 7.8 L9.6 7.1 L9.6 8.7 L8 8 L6.4 8.7 Z" shapeRendering="geometricPrecision" />
     </svg>
   );
 }
