@@ -46,38 +46,42 @@ export function SuitIcon({ suit, size = 16 }: { suit: Suit; size?: number }) {
 
 export type CardSpec = { rank: string; suit: Suit } | "back";
 
+/** 整面上色的牌（四色牌），左上角大号点数，正中一个 AI 标。 */
 export function PlayingCard({ card, size = "md" }: { card: CardSpec; size?: "sm" | "md" | "lg" }) {
-  if (card === "back") return <span className={`card card-${size} card-back`} aria-label="背面" />;
+  if (card === "back") {
+    return (
+      <span className={`card card-${size} card-back`} aria-label="背面">
+        <span className="card-back-mark">y</span>
+      </span>
+    );
+  }
   return (
     <span className={`card card-${size} card-${card.suit}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
-      <span className="card-corner">
-        <b>{card.rank}</b>
-        <SuitIcon suit={card.suit} size={size === "sm" ? 9 : 12} />
-      </span>
-      <span className="card-pip">
-        <SuitIcon suit={card.suit} size={size === "sm" ? 18 : size === "md" ? 26 : 34} />
+      <b className="card-rank">{card.rank}</b>
+      <span className="card-icon">
+        <SuitIcon suit={card.suit} size={size === "sm" ? 14 : size === "md" ? 22 : 30} />
       </span>
     </span>
   );
 }
 
 export interface Seat {
+  position: string;
   login?: string;
+  /** 以大盲为单位的筹码 */
   stack?: number;
   bet?: number;
-  state?: string;
   you?: boolean;
+  folded?: boolean;
+  acting?: boolean;
   cards?: CardSpec[];
   dealer?: boolean;
 }
 
-/** 座位绕椭圆均匀分布，0 号在正下方，顺时针。 */
-function seatPosition(i: number, n: number) {
-  const angle = Math.PI / 2 + (i * 2 * Math.PI) / n;
-  return { left: `${50 + 51 * Math.cos(angle)}%`, top: `${50 + 54 * Math.sin(angle)}%` };
-}
-
-/** 俯视的椭圆牌桌。center 放在桌面正中（发牌员、公共牌）。 */
+/**
+ * 跑道形牌桌：上下两条直边、左右半圆。6 个座位按 BTN → SB → BB → UTG → HJ → CO 顺时针排列，
+ * 0 号在左上。center 放在桌面正中（发牌员、公共牌、底池）。
+ */
 export function FeltTable({
   seats,
   center,
@@ -89,42 +93,33 @@ export function FeltTable({
 }) {
   return (
     <div className="felt-wrap">
-      <div className="rail">
-        <div className="felt">{center}</div>
-      </div>
+      <div className="felt">{center}</div>
       {seats.map((s, i) => (
         <div
           key={i}
-          className={`seat${i === 0 ? " seat-bottom" : ""}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}`}
-          style={seatPosition(i, seats.length)}
+          className={`seat pos-${i}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}`}
         >
           {s.login ? (
             <>
-              {s.cards && (
+              <div className="seat-disc" title={s.you ? "你" : s.login}>
+                <span className="seat-pos">{s.position}</span>
+                <span className="seat-stack">{fmtBB(s.stack ?? 0)}</span>
+                {s.dealer && <span className="dealer-chip">D</span>}
+              </div>
+              {s.cards && !s.folded && (
                 <div className="seat-cards">
                   {s.cards.map((c, j) => (
-                    <PlayingCard key={j} card={c} size={s.you ? "md" : "sm"} />
+                    <PlayingCard key={j} card={c} size={s.you ? "lg" : "sm"} />
                   ))}
                 </div>
               )}
-              <div className="seat-plate">
-                <Avatar url={null} login={s.login} size={28} />
-                <div>
-                  <div className="seat-name">{s.you ? "你" : s.login}</div>
-                  <div className="seat-stack">{fmtInt(s.stack ?? 0)}</div>
-                </div>
-                {s.dealer && <span className="dealer-chip">D</span>}
-              </div>
-              {(s.state || !!s.bet) && (
-                <div className="seat-state">
-                  {s.state}
-                  {!!s.bet && <span className="seat-bet">{fmtInt(s.bet)}</span>}
-                </div>
-              )}
+              <div className="seat-name">{s.you ? "你" : s.login}</div>
+              {!!s.bet && <div className="seat-bet">{fmtBB(s.bet)}</div>}
             </>
           ) : (
-            <button className="seat-open" onClick={() => onEmptySeat?.(i)}>
-              入座
+            <button className="seat-disc seat-open" onClick={() => onEmptySeat?.(i)}>
+              <span className="seat-pos">{s.position}</span>
+              <span className="seat-join">入座</span>
             </button>
           )}
         </div>
@@ -152,6 +147,10 @@ export function MarqueeSign({ text }: { text: string }) {
       <span className="sign-text">{text}</span>
     </div>
   );
+}
+
+export function fmtBB(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

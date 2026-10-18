@@ -46,37 +46,61 @@ export function LobbyPage() {
     setDeck(shuffledDeck());
   }, [table.id]);
 
-  const bb = table.blinds[1];
   const signedIn = !!me?.user;
-  const buyIn = Math.min(Math.max(me?.points?.balance ?? 0, 0), table.minBuyIn * 5);
 
   const seats: Seat[] = useMemo(() => {
     const names = top.map((r) => r.login).filter((n) => n !== me?.user?.login);
-    const others = table.bots ? ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"] : names.length ? names : ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
-    const list: Seat[] = Array.from({ length: SEAT_COUNT }, () => ({}));
-    // 0 号位（正下方）留给访客，其余按桌上人数坐人
-    let k = 0;
-    for (let i = 1; i < SEAT_COUNT && k < Math.min(table.seated, SEAT_COUNT - 1); i++) {
-      if (i === seatIndex) continue;
-      const showdown = stage === 4 && k === 0;
+    const others = table.bots
+      ? ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"]
+      : names.length ? names : ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
+    // 这一手的剧本（单位：大盲）：CO 翻牌弃、HJ 转牌弃，摊牌时 BTN 亮牌
+    const BETS = [
+      [0, 0.5, 1, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [5, 0, 5, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+    ][stage];
+    const SPENT = [
+      [0, 0.5, 1, 0, 0, 0],
+      [2.5, 2.5, 2.5, 2.5, 2.5, 0],
+      [7.5, 2.5, 7.5, 7.5, 2.5, 0],
+      [7.5, 2.5, 7.5, 7.5, 2.5, 0],
+      [19, 2.5, 7.5, 19, 2.5, 0],
+    ][stage];
+    const FOLDED = [[], [5], [5, 4, 1], [5, 4, 1], [5, 4, 1, 2]][stage];
+    const ACTING = [3, 0, 2, 3, -1][stage];
+    const positions = ["BTN", "SB", "BB", "UTG", "HJ", "CO"];
+    const seatOrder = [0, 1, 2, 4, 5]; // UTG(3) 留给访客
+    const list: Seat[] = positions.map((position) => ({ position }));
+    seatOrder.slice(0, Math.min(table.seated, 5)).forEach((i, k) => {
       list[i] = {
+        position: positions[i],
         login: others[k],
-        stack: table.minBuyIn * (2 + ((k * 7) % 5)),
-        bet: stage < 4 && k % 2 === 0 ? bb * (stage + 1) : undefined,
-        state: stage === 4 ? (showdown ? "亮牌" : undefined) : ["跟注", "加注", "思考中…", "弃牌", "过牌"][(k + stage) % 5],
-        dealer: k === 1,
-        cards: k < 3 ? (showdown ? [deck[7 + k * 2], deck[8 + k * 2]] : ["back", "back"]) : undefined,
+        stack: 100 + ((k * 37) % 60) - SPENT[i],
+        bet: BETS[i],
+        dealer: i === 0,
+        folded: FOLDED.includes(i),
+        acting: ACTING === i,
+        cards: stage === 4 && i === 0 ? [deck[7], deck[8]] : ["back", "back"],
       };
-      k++;
-    }
+    });
     if (seatIndex !== null) {
-      list[seatIndex] = { login: me?.user?.login ?? "guest", you: true, stack: buyIn, cards: [deck[5], deck[6]] };
+      list[seatIndex] = {
+        position: positions[seatIndex],
+        login: me?.user?.login ?? "guest",
+        you: true,
+        stack: 100 - SPENT[3],
+        bet: BETS[3],
+        acting: ACTING === seatIndex,
+        cards: [deck[5], deck[6]],
+      };
     }
     return list;
-  }, [top, table, seatIndex, stage, deck, me, buyIn, bb]);
+  }, [top, table, seatIndex, stage, deck, me]);
 
   const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (i < [0, 3, 4, 5, 5][stage] ? deck[i] : "back"));
-  const pot = bb * [1.5, 6, 12, 20, 20][stage];
+  const pot = [1.5, 12.5, 32.5, 32.5, 57][stage];
 
   const advance = () => {
     setNote(null);
@@ -131,7 +155,9 @@ export function LobbyPage() {
               ))}
             </div>
             <div className="pot">
-              底池 <b>{fmtInt(pot)}</b>
+              <span>底池</span>
+              <b>{pot} bb</b>
+              <small>盲注 {fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
             </div>
           </div>
         }
@@ -141,12 +167,12 @@ export function LobbyPage() {
         {seatIndex !== null ? (
           <>
             <button className="btn btn-ghost" onClick={() => { setStage(4); setNote("你弃牌了。点发牌员开下一手。"); }}>弃牌</button>
-            <button className="btn btn-ghost" onClick={advance}>跟注 {fmtInt(bb * (stage + 1))}</button>
-            <button className="btn" onClick={advance}>加注到 {fmtInt(bb * (stage + 1) * 3)}</button>
+            <button className="btn btn-ghost" onClick={advance}>{stage === 0 ? "跟注 1 bb" : "过牌"}</button>
+            <button className="btn" onClick={advance}>{stage === 0 ? "加注到 2.5 bb" : `下注 ${Math.round(pot / 2)} bb`}</button>
             <button className="btn btn-text" onClick={() => setSeatIndex(null)}>离桌</button>
           </>
         ) : (
-          <button className="btn" onClick={() => sit(seats.findIndex((s, i) => i === 0 || !s.login))}>
+          <button className="btn" onClick={() => sit(seats.findIndex((s) => !s.login))}>
             {signedIn ? `入座 · 带入 ${fmtInt(table.minBuyIn)}` : "用 GitHub 登录入座"}
           </button>
         )}

@@ -2,57 +2,70 @@ import { useEffect, useRef, useState } from "react";
 
 export type Mood = "idle" | "blink" | "happy" | "surprised" | "wink" | "sleepy" | "focus";
 
-/** 眼睛：16×13 像素网格里的左右眼，按表情换形状。 */
-function Eyes({ mood }: { mood: Mood }) {
+// 发牌员造型：Claude 的放射星芒，中间圆心是脸。星芒每根轻微伸缩，表情只靠眼睛和嘴。
+const RAYS = [40, 33, 43, 31, 39, 34, 44, 30, 38, 35, 42, 32];
+
+function Face({ mood }: { mood: Mood }) {
   const eye = (x: number, kind: Mood) => {
     switch (kind) {
       case "blink":
       case "sleepy":
-        return <rect x={x - 0.3} y={4.4} width={1.6} height={0.45} rx={0.2} />;
+        return <path d={`M${x - 2} -1 Q${x} ${kind === "sleepy" ? 0.4 : -0.2} ${x + 2} -1`} className="face-line" />;
       case "happy":
-        return <path d={`M${x - 0.4} 4.9 L${x + 0.5} 3.9 L${x + 1.4} 4.9`} fill="none" stroke="currentColor" strokeWidth={0.55} strokeLinecap="round" strokeLinejoin="round" />;
+        return <path d={`M${x - 2.1} 0 Q${x} -3.2 ${x + 2.1} 0`} className="face-line" />;
       case "surprised":
-        return <rect x={x - 0.25} y={3.2} width={1.5} height={1.9} rx={0.2} />;
+        return <circle cx={x} cy={-1.2} r={2.1} className="face-fill" />;
       case "focus":
-        return <rect x={x} y={3.6} width={1} height={1.4} />;
+        return <ellipse cx={x} cy={-0.6} rx={1.5} ry={1.7} className="face-fill" />;
       default:
-        return <rect x={x} y={3} width={1} height={2} />;
+        return <ellipse cx={x} cy={-1.2} rx={1.45} ry={2.3} className="face-fill" />;
     }
   };
   const left = mood === "wink" ? "idle" : mood;
   const right = mood === "wink" ? "happy" : mood;
   return (
-    <g className="dealer-eyes">
-      {eye(4.6, left)}
-      {eye(10.4, right)}
+    <g className="face">
+      {eye(-4.6, left)}
+      {eye(4.6, right)}
+      {mood === "surprised" ? (
+        <ellipse cx={0} cy={5.2} rx={1.5} ry={1.8} className="face-fill" />
+      ) : mood === "sleepy" ? (
+        <path d="M-1.6 5.2 L1.6 5.2" className="face-line" />
+      ) : (
+        <path d={mood === "happy" || mood === "wink" ? "M-3.2 3.6 Q0 7.4 3.2 3.6" : "M-2.4 4.2 Q0 6 2.4 4.2"} className="face-line" />
+      )}
+      {(mood === "happy" || mood === "wink") && (
+        <g className="face-blush">
+          <ellipse cx={-8} cy={3} rx={2.2} ry={1.2} />
+          <ellipse cx={8} cy={3} rx={2.2} ry={1.2} />
+        </g>
+      )}
     </g>
   );
 }
 
-/** Claude 风格的像素小家伙，系着领结当发牌员。 */
-export function DealerSprite({ mood }: { mood: Mood }) {
+export function DealerSprite({ mood, spin = 0 }: { mood: Mood; spin?: number }) {
   return (
-    <svg className="dealer-sprite" viewBox="0 0 16 13" shapeRendering="crispEdges" aria-hidden>
-      <g className="dealer-body">
-        <rect x={2} y={1} width={12} height={8} />
-        <rect x={0} y={4} width={2} height={2} className="dealer-arm dealer-arm-l" />
-        <rect x={14} y={4} width={2} height={2} className="dealer-arm dealer-arm-r" />
+    <svg className={`dealer-sprite mood-${mood}`} viewBox="-50 -50 100 100" aria-hidden>
+      <defs>
+        <radialGradient id="dealer-hub" cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#ec9a7b" />
+          <stop offset="100%" stopColor="#c8603d" />
+        </radialGradient>
+        <linearGradient id="dealer-ray" gradientUnits="userSpaceOnUse" x1="14" y1="0" x2="44" y2="0">
+          <stop offset="0%" stopColor="#d36e4c" />
+          <stop offset="100%" stopColor="#e2896a" />
+        </linearGradient>
+      </defs>
+      <g className="rays" style={{ transform: `rotate(${spin}deg)` }}>
+        {RAYS.map((len, i) => (
+          <g key={i} transform={`rotate(${i * 30 + (i % 2 ? 4 : -3)})`}>
+            <line className="ray" x1={14} y1={0} x2={len} y2={0} style={{ animationDelay: `${(i % 6) * -0.35}s` }} />
+          </g>
+        ))}
       </g>
-      <g className="dealer-legs">
-        <rect x={3} y={9} width={1} height={3} />
-        <rect x={5} y={9} width={1} height={3} />
-        <rect x={10} y={9} width={1} height={3} />
-        <rect x={12} y={9} width={1} height={3} />
-      </g>
-      <Eyes mood={mood} />
-      {(mood === "happy" || mood === "wink") && (
-        <g className="dealer-blush">
-          <rect x={3} y={5.6} width={1.4} height={0.7} rx={0.3} />
-          <rect x={11.6} y={5.6} width={1.4} height={0.7} rx={0.3} />
-        </g>
-      )}
-      {mood === "surprised" && <rect className="dealer-mouth" x={7.4} y={6} width={1.2} height={1.2} rx={0.5} />}
-      <path className="dealer-tie" d="M6.4 7.1 L8 7.8 L9.6 7.1 L9.6 8.7 L8 8 L6.4 8.7 Z" shapeRendering="geometricPrecision" />
+      <circle r={15.5} className="hub" />
+      <Face mood={mood} />
     </svg>
   );
 }
@@ -67,6 +80,7 @@ export function Dealer({ stage, onAdvance, lines }: { stage: number; onAdvance: 
   const [mood, setMood] = useState<Mood>("idle");
   const [bubble, setBubble] = useState<string>(IDLE_LINES[0]);
   const [hop, setHop] = useState(0);
+  const [spin, setSpin] = useState(0);
   const base = useRef<Mood>("idle");
   const pokes = useRef(0);
 
@@ -114,6 +128,7 @@ export function Dealer({ stage, onAdvance, lines }: { stage: number; onAdvance: 
   const poke = () => {
     pokes.current += 1;
     setHop((h) => h + 1);
+    setSpin((r) => r + 60);
     onAdvance();
   };
 
@@ -125,9 +140,9 @@ export function Dealer({ stage, onAdvance, lines }: { stage: number; onAdvance: 
         onClick={poke}
         onPointerEnter={() => base.current === "idle" && setMood("happy")}
         onPointerLeave={() => setMood(base.current)}
-        aria-label="发牌员 Claude，点一下发下一张牌"
+        aria-label="发牌员 Claude，点一下发下一条街"
       >
-        <DealerSprite mood={mood} />
+        <DealerSprite mood={mood} spin={spin} />
       </button>
     </div>
   );
