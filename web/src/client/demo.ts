@@ -1,6 +1,7 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
-import type { LeaderboardRow, MeResponse, Profile, SeriesPoint } from "./api";
-import { localBalance } from "./localTable";
+import type { MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
+import { localBalance, spendLocal } from "./localTable";
+import { COSMETICS, findCosmetic, type CosmeticKind } from "../shared/cosmetics";
 
 const PEOPLE = [
   { login: "hyiiiii", name: "hyi", cost: 1_842.31, tokens: 912_000_000 },
@@ -15,16 +16,27 @@ const PEOPLE = [
 
 const SCALE: Record<string, number> = { today: 0.035, "7d": 0.24, "30d": 0.82, all: 1 };
 
-function board(range: string): LeaderboardRow[] {
+const TOP: [TokenRow["topApp"], string][] = [
+  ["claude", "claude-opus-4.5"], ["codex", "gpt-5-codex"], ["claude", "claude-sonnet-4.5"], ["claude", "claude-opus-4.5"],
+  ["grok", "grok-4"], ["codex", "gpt-5-codex"], ["codex", "gpt-5"], ["grok", "grok-4"],
+];
+
+function tokenBoard(range: string): TokenRow[] {
   const k = SCALE[range] ?? 1;
   return PEOPLE.map((p, i) => ({
     rank: i + 1,
     login: p.login,
     name: p.name,
     avatarUrl: null,
-    costMicro: Math.round(p.cost * k * (1 - i * 0.012) * 1e6),
     tokens: Math.round(p.tokens * k),
+    topApp: TOP[i][0],
+    topModel: TOP[i][1],
   }));
+}
+
+function wealthBoard(): WealthRow[] {
+  const rows = PEOPLE.map((p, i) => ({ login: p.login, name: p.name, avatarUrl: null, balance: p.login === "hyiiiii" ? localBalance() : Math.floor(p.cost * 100 * (0.7 + ((i * 37) % 60) / 100)) }));
+  return rows.sort((a, b) => b.balance - a.balance).map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
 function series(seed: number): SeriesPoint[] {
@@ -69,10 +81,38 @@ function profile(login: string): Profile {
 
 let loggedIn = false;
 let showOnBoard = true;
+/** 预览里的商场：买过的款式和正在用的 */
+const owned = new Set<string>();
+const look = { back: "classic", face: "classic" };
+
+export function demoLook() {
+  return look;
+}
 
 export function demoApi(path: string, method: string, _json?: unknown): unknown {
   const url = new URL(path, "https://demo.local");
-  if (url.pathname === "/api/leaderboard") return { range: url.searchParams.get("range"), rows: board(url.searchParams.get("range") ?? "7d") };
+  if (url.pathname === "/api/leaderboard") {
+    return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard() } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d") };
+  }
+  if (url.pathname === "/api/shop") {
+    return {
+      items: COSMETICS.map((x) => ({ ...x, owned: loggedIn && (x.price === 0 || owned.has(`${x.kind}:${x.id}`)) })),
+      equipped: loggedIn ? look : null,
+    };
+  }
+  if (url.pathname === "/api/shop/buy" || url.pathname === "/api/shop/equip") {
+    const { kind, id } = (_json ?? {}) as { kind: CosmeticKind; id: string };
+    const item = findCosmetic(kind, id);
+    if (!item) throw new Error("没有这件商品");
+    const key = `${kind}:${id}`;
+    if (url.pathname.endsWith("buy") && item.price && !owned.has(key)) {
+      if (localBalance() < item.price) throw new Error("筹码不够");
+      spendLocal(item.price);
+      owned.add(key);
+    }
+    if (url.pathname.endsWith("equip")) look[kind] = id;
+    return { ok: true };
+  }
   if (url.pathname.startsWith("/api/users/")) return profile(decodeURIComponent(url.pathname.slice(11)));
   if (url.pathname === "/api/me" && method === "PATCH") return (showOnBoard = !showOnBoard), { ok: true };
   if (url.pathname === "/api/me") {
@@ -81,6 +121,7 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     return {
       ...p,
       user: { ...p.user, showOnBoard },
+      look: { ...look },
       // 余额跟着预览牌桌的带入、离桌变
       points: { ...p.points, balance: localBalance() },
       tokens: [{ id: 1, label: "yybar App", created_at: "2026-10-17T08:00:00Z", last_used_at: "2026-10-17T16:05:00Z" }],

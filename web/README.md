@@ -1,6 +1,6 @@
 # yybar 网站
 
-用 GitHub 登录，接收 yybar App 上传的每日 token 用量和花费，做排行榜和积分。跑在 Cloudflare Workers 上，数据库是 D1（SQLite）。
+用 GitHub 登录，接收 yybar App 上传的每日 token 用量和花费，做排行榜和积分；积分当筹码在 Bar 里打德州、在商场里买牌背牌面。顶栏三个图标入口：Bar（酒杯）、商场（购物车）、排行榜（奖杯）。跑在 Cloudflare Workers 上，数据库是 D1（SQLite）。
 
 ## 结构
 
@@ -75,6 +75,20 @@ npm test && npm run typecheck
 - 字段与 App 里的 `UsageBucket` 一致；`day` 是用户本地日期，`costUSD` 用十进制字符串。
 - 每个出现的 `day` 都是那天的**完整快照**：服务端先删掉那天的旧数据再写入，所以重复上传同一天不会重复计数。`entries` 为空表示清空那天。
 - 限制：一次最多 120 天、每天 300 条；日期不早于 2023-01-01、不晚于明天；单日总花费超过 $5000 整个请求拒收（422）。
+
+## 排行榜
+
+- 用图标切换两种排法，只列在「我的」里打开了「在排行榜和公开主页上显示我」的人。
+- 燃烧 token（火苗）：按时间段（今天 / 7 天 / 30 天 / 总榜）内的 token 数排名，每行带最常用的模型。`GET /api/leaderboard?by=tokens&range=7d`。
+- 财富（筹码）：按筹码余额排名（坐在桌上的筹码不算，离桌退回后才算）。`GET /api/leaderboard?by=wealth`。
+
+## 商场
+
+- 用筹码买牌背和牌面，买过的随时换。款式和价格在 `src/shared/cosmetics.ts`，样式在 `styles.css` 的 `.back-<款式>` / `.face-<款式>`。
+- 牌背：同桌的人看到的你的暗牌、你自己屏幕上桌面中间的背面牌，都是你换上的牌背。换了之后下次连上牌桌时生效。
+- 牌面：只改你自己屏幕上的正面牌，别人看不到。
+- 买东西记在 `points_ledger`（`reason = 'shop'`，`ref = shop:<用户>:<种类>:<款式>`），余额判断和扣款是同一条 SQL，同一款不会扣两次。正在用的款式在 `users.card_back` / `users.card_face`（迁移 `0004_cosmetics.sql`）。
+- 接口：`GET /api/shop`、`POST /api/shop/buy {"kind":"back|face","id":…}`、`POST /api/shop/equip {…}`；`GET /api/me` 带 `look: {back, face}`。
 
 ## 积分
 

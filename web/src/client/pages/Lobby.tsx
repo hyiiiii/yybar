@@ -9,6 +9,7 @@ import { useSeatWatch, useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
 import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
+import { DEFAULT_BACK, DEFAULT_FACE } from "../../shared/cosmetics";
 import type { TableView } from "../../shared/poker/types";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -173,6 +174,8 @@ export function LobbyPage() {
   }, [conn.closed]);
 
   const signedIn = !!me?.user;
+  /** 自己在商场换上的牌背（桌上的背面牌都用它）和牌面（只有自己看得到） */
+  const look = me?.look ?? { back: DEFAULT_BACK, face: DEFAULT_FACE };
   // 登录后发牌员打个招呼，几秒后气泡自己消失
   const [greet, setGreet] = useState<string | null>(null);
   useEffect(() => {
@@ -326,6 +329,7 @@ export function LobbyPage() {
         folded: x.folded,
         acting: view.toAct === i,
         cards,
+        back: x.back,
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
         timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
         win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand } : undefined,
@@ -524,7 +528,7 @@ export function LobbyPage() {
   const leaveButton = <button className="btn btn-text" onClick={() => setConfirmLeave(true)}>离桌</button>;
 
   return (
-    <div className="lobby">
+    <div className={`lobby face-${look.face}`}>
       <MarqueeSign text="yybar" />
 
       <FeltTable
@@ -584,7 +588,7 @@ export function LobbyPage() {
             <Dealer stage={stage} say={greet} />
             <div className="board-cards">
               {board.map((c, i) => (
-                <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} />
+                <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} back={look.back} />
               ))}
             </div>
             <div className="pot">

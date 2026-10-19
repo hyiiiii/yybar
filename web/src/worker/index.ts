@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
+import { lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
 import { parseUpload, saveUpload, UploadError } from "./usage";
@@ -77,25 +78,48 @@ function publicUser(u: { login: string; name: string | null; avatar_url: string 
 
 // ---------- 公开接口 ----------
 
+/**
+ * 排行榜：by=tokens 按烧掉的 token 数（可选时间段），顺带最常用的模型；by=wealth 按筹码余额。
+ */
 app.get("/api/leaderboard", async (c) => {
+  const by = c.req.query("by") ?? "tokens";
+  if (by === "wealth") {
+    const { results } = await c.env.DB.prepare(
+      `SELECT * FROM (
+         SELECT u.login, u.name, u.avatar_url,
+           (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 10000
+             + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger l WHERE l.user_id = u.id) AS balance
+         FROM users u WHERE u.show_on_board = 1
+       ) WHERE balance > 0 ORDER BY balance DESC LIMIT 100`,
+    ).all<{ login: string; name: string | null; avatar_url: string | null; balance: number }>();
+    return c.json({ by, rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance })) });
+  }
+  if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
   const range = c.req.query("range") ?? "7d";
   if (!(range in RANGES)) return c.json({ error: "range 只能是 today / 7d / 30d / all" }, 400);
   const start = rangeStart(range);
   const { results } = await c.env.DB.prepare(
-    `SELECT u.login, u.name, u.avatar_url,
-       SUM(d.cost_micro) AS cost_micro,
-       SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens) AS tokens
-     FROM daily_usage d JOIN users u ON u.id = d.user_id
-     WHERE u.show_on_board = 1 AND d.day >= ?
-     GROUP BY u.id HAVING cost_micro > 0
-     ORDER BY cost_micro DESC, tokens DESC LIMIT 100`,
+    `WITH per AS (
+       SELECT d.user_id, d.app, d.model,
+         SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens) AS tokens
+       FROM daily_usage d JOIN users u ON u.id = d.user_id
+       WHERE u.show_on_board = 1 AND d.day >= ?
+       GROUP BY d.user_id, d.app, d.model
+     )
+     SELECT u.login, u.name, u.avatar_url, SUM(per.tokens) AS tokens,
+       (SELECT p2.model FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_model,
+       (SELECT p2.app FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_app
+     FROM per JOIN users u ON u.id = per.user_id
+     GROUP BY per.user_id HAVING tokens > 0
+     ORDER BY tokens DESC LIMIT 100`,
   )
     .bind(start ?? "0000-00-00")
-    .all<{ login: string; name: string | null; avatar_url: string | null; cost_micro: number; tokens: number }>();
+    .all<{ login: string; name: string | null; avatar_url: string | null; tokens: number; top_model: string; top_app: string }>();
   return c.json({
+    by,
     range,
     since: start,
-    rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), costMicro: r.cost_micro, tokens: r.tokens })),
+    rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), tokens: r.tokens, topModel: r.top_model, topApp: r.top_app })),
   });
 });
 
@@ -131,6 +155,7 @@ app.get("/api/me", async (c) => {
   ]);
   return c.json({
     user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at },
+    look: lookOf(user),
     totals,
     series,
     models,
@@ -214,6 +239,8 @@ v1.post("/usage", async (c) => {
 app.route("/api/v1", v1);
 
 app.route("/api/tables", tableRoutes);
+
+app.route("/api/shop", shopRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

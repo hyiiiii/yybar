@@ -37,7 +37,10 @@ export class PokerTable extends DurableObject<Env> {
     const att: Attachment = user ?? { userId: 0, login: "", avatarUrl: null };
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment(att);
-    if (att.userId) this.room.setAway(att.userId, false, Date.now());
+    if (att.userId) {
+      this.room.setAway(att.userId, false, Date.now());
+      this.room.setBack(att.userId, att.back);
+    }
     await this.commit();
     return new Response(null, { status: 101, webSocket: client });
   }

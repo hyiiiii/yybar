@@ -42,15 +42,30 @@ export interface Profile {
   points: Points;
 }
 
+/** 商场里换上的牌背、牌面 */
+export interface Look {
+  back: string;
+  face: string;
+}
+
 export interface MeResponse extends Partial<Omit<Profile, "user">> {
   user: (PublicUser & { joinedAt: string; showOnBoard: boolean }) | null;
+  look?: Look;
   tokens?: { id: number; label: string; created_at: string; last_used_at: string | null }[];
 }
 
-export interface LeaderboardRow extends PublicUser {
+/** 燃烧 token 榜的一行：token 数和最常用的模型 */
+export interface TokenRow extends PublicUser {
   rank: number;
-  costMicro: number;
   tokens: number;
+  topModel: string;
+  topApp: App;
+}
+
+/** 财富榜的一行：筹码余额 */
+export interface WealthRow extends PublicUser {
+  rank: number;
+  balance: number;
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {

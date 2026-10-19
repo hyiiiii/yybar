@@ -1,11 +1,13 @@
-import { Link, NavLink, Outlet } from "react-router";
+import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { fmtInt } from "./api";
 import { Avatar, LoginButton } from "./components";
+import { BarIcon, CartIcon, TrophyIcon } from "./icons";
 import { useMe } from "./useMe";
 
 export function Layout() {
   const { me } = useMe();
   const user = me?.user;
+  const location = useLocation();
   return (
     <div className="shell">
       <header className="topbar">
@@ -14,8 +16,16 @@ export function Layout() {
           <span>yybar</span>
         </Link>
         <nav>
-          <NavLink to="/" end>牌桌</NavLink>
-          <NavLink to="/board">名人墙</NavLink>
+          {/* 三个入口都只用图标：Bar（牌桌）、商场、排行榜 */}
+          <NavLink to="/" end className={({ isActive }) => `nav-icon${isActive || /^\/(table|bar)/.test(location.pathname) ? " active" : ""}`} aria-label="Bar" title="Bar">
+            <BarIcon />
+          </NavLink>
+          <NavLink to="/shop" className="nav-icon" aria-label="商场" title="商场">
+            <CartIcon />
+          </NavLink>
+          <NavLink to="/board" className="nav-icon" aria-label="排行榜" title="排行榜">
+            <TrophyIcon />
+          </NavLink>
           {user ? (
             <NavLink to="/me" className="me-link">
               <span className="chip-count">{fmtInt(me?.points?.balance ?? 0)}</span>

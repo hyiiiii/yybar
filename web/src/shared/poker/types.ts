@@ -28,6 +28,8 @@ export interface SeatView {
   allIn: boolean;
   /** 只有自己的牌和摊牌亮出来的牌有值；别人的暗牌是 null，没拿牌是空数组 */
   cards: (Card | null)[];
+  /** 这个人的牌背款式（商场里换的），null 是默认款 */
+  back: string | null;
   away: boolean;
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */

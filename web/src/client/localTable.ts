@@ -2,6 +2,7 @@
 import { TableRoom } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { TableInfo } from "./tables";
+import { demoLook } from "./demo";
 
 const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
 const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
@@ -12,6 +13,11 @@ let balance = 160_581;
 
 export function localBalance() {
   return balance;
+}
+
+/** 预览里在商场买东西 */
+export function spendLocal(n: number) {
+  balance -= n;
 }
 
 interface Local {
@@ -75,7 +81,7 @@ export function openLocalTable(
       if (!err && typeof amount === "string") err = amount;
       if (!err && typeof amount === "number") {
         balance -= amount;
-        err = local.room.sit(YOU, msg.seat, amount, now);
+        err = local.room.sit({ ...YOU, back: demoLook().back }, msg.seat, amount, now);
       }
     } else if (msg.t === "leave") err = local.room.leave(YOU.userId, now);
     else if (msg.t === "hold") err = local.room.hold(YOU, msg.seat, now);

@@ -1,5 +1,5 @@
 /* 版式：Claude 官网的暖白底、衬线标题和陶土色强调。首页只有一件事：一张能直接入座的牌桌，
-   上方挂跑马灯招牌，桌心是 Claude 发牌员；名人墙压到下面。 */
+   上方挂跑马灯招牌，桌心是 Claude 发牌员。顶栏三个图标入口：Bar、商场、排行榜。 */
 :root {
   --bg: #faf9f5;
   --panel: #ffffff;
@@ -119,6 +119,9 @@ nav { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-con
 nav a { text-decoration: none; padding: 6px 12px; border-radius: 8px; color: var(--label-2); }
 nav a:hover { background: var(--fill); }
 nav a.active { color: var(--label); background: var(--fill); }
+/* 顶栏三个入口只用图标 */
+.nav-icon { display: inline-grid; place-items: center; padding: 7px 11px; }
+.icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; display: block; }
 .me-link { display: inline-flex; align-items: center; gap: 8px; }
 .chip-count { font-weight: 600; color: var(--label); }
 .chip-count::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--chip); }
@@ -441,6 +444,66 @@ main { min-height: 60vh; }
 }
 .suit { display: inline-block; flex: none; }
 
+/* 商场的牌背：在默认红色单车花纹的基础上换颜色和花纹，同桌的人都看得到 */
+.back-navy::before { background-color: #24489a; }
+.back-jade::before { background-color: #1f7a55; background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.22) 0 1px, transparent 1px 5px); }
+.back-terracotta::before { background-color: #d97757; background-image: radial-gradient(rgb(255 255 255 / 0.3) 0.8px, transparent 1px); background-size: 5px 5px; }
+.back-terracotta::after { content: "✻"; display: grid; place-items: center; color: #fff; font-size: 20px; line-height: 1; background: none; text-shadow: 0 1px 0 rgb(120 40 20 / 0.4); }
+.back-midnight::before {
+  background-color: #17171b;
+  background-image:
+    repeating-linear-gradient(45deg, rgb(226 186 92 / 0.35) 0 0.6px, transparent 0.6px 4px),
+    repeating-linear-gradient(-45deg, rgb(226 186 92 / 0.35) 0 0.6px, transparent 0.6px 4px);
+}
+.back-midnight::after { box-shadow: inset 0 0 0 1px rgb(226 186 92 / 0.9); filter: sepia(1) saturate(2.5); }
+.back-neon::before {
+  background-color: #3b0f63;
+  background-image: linear-gradient(rgb(255 255 255 / 0.16) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.16) 1px, transparent 1px), linear-gradient(160deg, #6a2bd9, #e2398f);
+  background-size: 6px 6px, 6px 6px, 100% 100%;
+}
+.back-neon::after { box-shadow: inset 0 0 0 1px #ffd0f0, 0 0 6px #ff6ad5; }
+
+/* 商场的牌面：只改自己屏幕上的正面牌（牌桌外层带 face-<款式>） */
+.face-ink .card:not(.card-back) { --suit-ink: #1a1a1a; background: #fff; }
+.face-vintage .card:not(.card-back) { background: linear-gradient(170deg, #fbf3df 0%, #efe2c2 100%); box-shadow: inset 0 0 0 1px rgb(120 90 40 / 0.25), 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(0 0 0 / 0.12); }
+.face-vintage .card-gpt { --suit-ink: #5e5a52; }
+.face-vintage .card-claude { --suit-ink: #a8573a; }
+.face-vintage .card-gemini { --suit-ink: #4a6f91; }
+.face-vintage .card-grok { --suit-ink: #2b2620; }
+.face-night .card:not(.card-back) { background: linear-gradient(170deg, #3d3d42 0%, #232326 100%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 14px rgb(0 0 0 / 0.2); }
+.face-night .card-gpt { --suit-ink: #d0d0d5; }
+.face-night .card-claude { --suit-ink: #f0916f; }
+.face-night .card-gemini { --suit-ink: #6cb6ff; }
+.face-night .card-grok { --suit-ink: #f4f4f4; }
+.face-gold .card:not(.card-back) { background: linear-gradient(170deg, #fffaf0 0%, #f5e7c4 100%); box-shadow: inset 0 0 0 2px #d6a842, inset 0 0 0 3px #fff6dc, 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(120 80 0 / 0.18); }
+.face-gold .card-gpt { --suit-ink: #8a6d2b; }
+.face-gold .card-claude { --suit-ink: #b5652f; }
+.face-gold .card-gemini { --suit-ink: #3c74a8; }
+.face-gold .card-grok { --suit-ink: #3a2c10; }
+
+/* 商场 */
+.shop-section { margin-bottom: 28px; }
+.shop-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.shop-head p { margin: 0; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.shop-item { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--panel); box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
+.shop-item.equipped { box-shadow: var(--shadow), 0 0 0 1.5px var(--accent); }
+.shop-preview { display: flex; justify-content: center; padding: 16px 0 14px; border-radius: 10px; background: var(--table-top); box-shadow: inset 0 0 0 1px var(--table-line-2); }
+.shop-preview .card:first-child { rotate: -6deg; }
+.shop-preview .card + .card { margin-left: -12px; rotate: 7deg; }
+.shop-info h3 { font-size: 15px; }
+.shop-info p { margin: 2px 0 0; font-size: 13px; color: var(--label-2); }
+.shop-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.shop-login { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shop-note { text-align: left; margin: 0 0 14px; }
+
+/* 排行榜：图标切换燃烧 token / 财富 */
+.seg-icons button { display: grid; place-items: center; padding: 4px 14px; }
+.seg-icons .icon { width: 18px; height: 18px; }
+.board-head { align-items: center; }
+.top-model { font-size: 12px; color: var(--label-2); white-space: nowrap; max-width: 14em; overflow: hidden; text-overflow: ellipsis; background: var(--fill); padding: 2px 9px; border-radius: 999px; }
+.board.board-wealth li { grid-template-columns: 28px 32px minmax(0, 1fr) auto; }
+
 /* 区块与面板 */
 .section { padding-block: 24px; }
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -582,4 +645,10 @@ main { min-height: 60vh; }
   .stats { grid-template-columns: minmax(0, 1fr); }
   .board li { grid-template-columns: 22px 32px minmax(0, 1fr) 84px; }
   .board .tokens { display: none; }
+}
+
+@media (max-width: 600px) {
+  .board.board-tokens li { grid-template-columns: 22px 32px minmax(0, 1fr) auto auto; gap: 8px; }
+  .board.board-wealth li { grid-template-columns: 22px 32px minmax(0, 1fr) auto; }
+  .top-model { max-width: 7em; }
 }

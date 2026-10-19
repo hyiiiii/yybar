@@ -18,6 +18,9 @@ export interface UserRow {
   avatar_url: string | null;
   show_on_board: number;
   created_at: string;
+  /** 商场里换上的牌背、牌面 */
+  card_back: string;
+  card_face: string;
 }
 
 export type AppEnv = { Bindings: Env; Variables: { user: UserRow } };

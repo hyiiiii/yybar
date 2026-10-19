@@ -22,6 +22,8 @@ export interface Player {
   userId: number;
   login: string;
   avatarUrl: string | null;
+  /** 商场里换上的牌背，同桌的人都看得到；机器人和旧存档没有 */
+  back?: string;
 }
 
 interface RoomSeat extends Player {
@@ -284,6 +286,12 @@ export class TableRoom {
     return this.apply(i, action, amount, now);
   }
 
+  /** 重新连上时带来最新的牌背（在商场换了之后） */
+  setBack(userId: number, back: string | undefined) {
+    const i = this.seatOf(userId);
+    if (i >= 0 && back) this.s.seats[i]!.back = back;
+  }
+
   setAway(userId: number, away: boolean, now: number) {
     const i = this.seatOf(userId);
     if (i < 0) return;
@@ -373,6 +381,7 @@ export class TableRoom {
         folded: x.folded,
         allIn: x.allIn,
         cards,
+        back: x.back ?? null,
         showMask: x.shown ? 3 : (x.showMask ?? 0),
         away: x.away !== null,
         leaving: x.leaving,

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type SeriesPoint } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
+import { DEFAULT_BACK } from "../shared/cosmetics";
 import { loginHref, notifyMeChanged } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -48,10 +49,10 @@ export type CardSpec = { rank: string; suit: Suit } | "back";
 
 /** 整面上色的牌（四色牌），左上角大号点数，正中一个 AI 标。 */
 /** 所有位置的牌都用同一个尺寸。 */
-export function PlayingCard({ card }: { card: CardSpec }) {
+export function PlayingCard({ card, back }: { card: CardSpec; back?: string | null }) {
   if (card === "back") {
     return (
-      <span className="card card-back" aria-label="背面" />
+      <span className={`card card-back back-${back || DEFAULT_BACK}`} aria-label="背面" />
     );
   }
   return (
@@ -90,6 +91,8 @@ export interface Seat {
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
+  /** 这个人的牌背（商场里换的） */
+  back?: string | null;
 }
 
 /**
@@ -144,10 +147,10 @@ export function FeltTable({
                         onClick={() => s.onShow?.(j)}
                         aria-label={s.onShow ? "把这张牌亮到桌上" : undefined}
                       >
-                        <PlayingCard card={c} />
+                        <PlayingCard card={c} back={s.back} />
                       </button>
                     ) : (
-                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} />
+                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} back={s.back} />
                     ),
                   )}
                 </div>
@@ -161,7 +164,7 @@ export function FeltTable({
               {s.mucked && (
                 <div className="seat-cards seat-cards-muck" aria-hidden>
                   {s.mucked.map((c, j) => (
-                    <PlayingCard key={j} card={c} />
+                    <PlayingCard key={j} card={c} back={s.back} />
                   ))}
                 </div>
               )}
