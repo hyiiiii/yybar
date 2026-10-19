@@ -95,7 +95,7 @@ function greeting(name: string) {
 }
 
 /** 入座后桌子转动时每走一格的时长，和 styles.css 里 .seat 的 transition 一致 */
-const ROTATE_STEP_MS = 240;
+const ROTATE_STEP_MS = 360;
 
 /**
  * 大厅就是一张牌桌：右下角切桌、开桌、铃铛，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），

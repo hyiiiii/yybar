@@ -154,7 +154,8 @@ export function FeltTable({
               )}
               {!!s.tossed && s.cards && (
                 <div className="seat-tossed">
-                  {s.cards.map((c, j) => (((s.tossed ?? 0) >> j) & 1 ? <PlayingCard key={j} card={c} /> : null))}
+                  {/* 两张牌各占固定的位置：先丢一张、再丢一张时，桌上那张不会挪 */}
+                  {s.cards.map((c, j) => (((s.tossed ?? 0) >> j) & 1 ? <PlayingCard key={j} card={c} /> : <span key={`slot-${j}`} className="card card-slot" />))}
                 </div>
               )}
               {s.mucked && (

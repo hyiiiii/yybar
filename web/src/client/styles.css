@@ -178,7 +178,7 @@ main { min-height: 60vh; }
 .board-cards { display: flex; gap: 6px; }
 
 /* 入座后桌子转一圈把自己转到下方：座位一格一格沿着桌边走过去（每格的时长和 Lobby 里的 ROTATE_STEP_MS 一致） */
-.seat { position: absolute; transform: translate(-50%, -50%); z-index: 2; transition: left .24s linear, top .24s linear, opacity .35s ease; }
+.seat { position: absolute; transform: translate(-50%, -50%); z-index: 2; transition: left .36s linear, top .36s linear, opacity .5s ease; }
 .pos-0 { left: 31%; top: 0; }
 .pos-1 { left: 69%; top: 0; }
 .pos-2 { left: 100%; top: 50%; }
@@ -224,7 +224,7 @@ main { min-height: 60vh; }
 .win-amount { font-size: 15px; font-weight: 700; color: #c88a0e; font-variant-numeric: tabular-nums; }
 .seat-plate-win small { font-size: 11px; color: var(--label-2); white-space: nowrap; }
 @media (prefers-reduced-motion: no-preference) {
-  .win-mark { animation: win-pop .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .win-mark { animation: win-pop .75s cubic-bezier(.2, 1.4, .4, 1) both; }
   @keyframes win-pop { from { scale: .3; opacity: 0; } }
 }
 .seat-you .seat-disc { box-shadow: inset 0 0 0 3px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -244,24 +244,25 @@ main { min-height: 60vh; }
 .seat-you.seat-acting .seat-cards .card { box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 0 0 2px rgb(255 205 110 / 0.75), 0 0 18px 3px rgb(255 190 80 / 0.5); }
 .seat-cards-showable .card-btn:not(:disabled) { cursor: pointer; }
 .seat-cards-showable .card-btn:not(:disabled):hover .card { translate: 0 -5px; }
-.card-btn .card { transition: translate .2s ease; }
+.card-btn .card { transition: translate .3s ease; }
 /* 赢了没摊牌时亮的牌：丢到自己面前的桌面上，正面朝上 */
 .seat-tossed { position: absolute; display: flex; gap: 6px; z-index: 1; pointer-events: none; }
 .pos-0 .seat-tossed, .pos-1 .seat-tossed { top: calc(100% + 66px); left: 50%; transform: translateX(-50%); }
 .pos-3 .seat-tossed, .pos-4 .seat-tossed { bottom: calc(100% + 44px); left: 50%; transform: translateX(-50%); }
 .pos-2 .seat-tossed { right: calc(100% + 108px); top: 50%; transform: translateY(-50%); }
 .pos-5 .seat-tossed { left: calc(100% + 108px); top: 50%; transform: translateY(-50%); }
+.seat-tossed .card-slot { visibility: hidden; }
 .seat-tossed .card:nth-child(1) { rotate: -6deg; }
 .seat-tossed .card:nth-child(2) { rotate: 5deg; }
 @media (prefers-reduced-motion: no-preference) {
-  .seat-tossed .card { animation: toss .5s cubic-bezier(.2, .8, .3, 1) both; }
+  .seat-tossed .card { animation: toss .8s cubic-bezier(.2, .8, .3, 1) both; }
   .pos-0 .seat-tossed, .pos-1 .seat-tossed { --toss-from: 0 -60px; }
   .pos-3 .seat-tossed, .pos-4 .seat-tossed { --toss-from: 0 60px; }
   .pos-2 .seat-tossed { --toss-from: 90px 0; }
   .pos-5 .seat-tossed { --toss-from: -90px 0; }
   @keyframes toss { from { translate: var(--toss-from, 0 40px); transform: rotateY(180deg) scale(.9); opacity: .4; } 60% { transform: rotateY(0) scale(1.05); } }
   /* 翻开别人的牌（摊牌）、发到自己的牌：翻过来 */
-  .seat-cards .card:not(.card-back) { animation: flip .45s cubic-bezier(.2, .9, .3, 1.1); }
+  .seat-cards .card:not(.card-back) { animation: flip .7s cubic-bezier(.2, .9, .3, 1.1); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .seat-cards-showable .card-btn:not(:disabled) .card { animation: show-hint 1.6s ease-in-out infinite; }
@@ -276,21 +277,21 @@ main { min-height: 60vh; }
 .pos-5 .seat-bet { left: calc(100% + 20px); top: calc(100% - 4px); }
 /* 下注、弃牌、过牌的小过渡：筹码从座位推出去，弃掉的牌往桌心收走，动作文字轻轻弹出来 */
 @media (prefers-reduced-motion: no-preference) {
-  .seat-bet { animation: bet-in .32s cubic-bezier(.2, .9, .3, 1.2) both; }
+  .seat-bet { animation: bet-in .55s cubic-bezier(.2, .9, .3, 1.2) both; }
   .pos-0 .seat-bet, .pos-1 .seat-bet { --bet-from: 0 -16px; }
   .pos-3 .seat-bet, .pos-4 .seat-bet { --bet-from: 0 16px; }
   .pos-2 .seat-bet { --bet-from: 16px 0; }
   .pos-5 .seat-bet { --bet-from: -16px 0; }
   @keyframes bet-in { from { translate: var(--bet-from, 0 0); opacity: 0; scale: .7; } }
-  .seat-cards-muck { animation: muck .45s ease-in both; }
+  .seat-cards-muck { animation: muck .75s ease-in both; }
   .pos-0 .seat-cards-muck, .pos-1 .seat-cards-muck { --muck-to: 0 40px; }
   .pos-3 .seat-cards-muck, .pos-4 .seat-cards-muck { --muck-to: 0 -40px; }
   .pos-2 .seat-cards-muck { --muck-to: -40px 0; }
   .pos-5 .seat-cards-muck { --muck-to: 40px 0; }
   @keyframes muck { to { translate: var(--muck-to, 0 0); rotate: 8deg; opacity: 0; } }
-  .seat-note { display: inline-block; animation: note-in .3s ease-out; }
+  .seat-note { animation: note-in .45s ease-out; }
   @keyframes note-in { from { translate: 0 3px; opacity: 0; } }
-  .pot b { animation: pot-in .3s ease-out; }
+  .pot b { animation: pot-in .5s ease-out; }
   @keyframes pot-in { from { scale: 1.12; } }
 }
 .seat-cards-muck { pointer-events: none; }
@@ -302,7 +303,7 @@ main { min-height: 60vh; }
   box-shadow: 0 0 0 2px var(--bg), 0 2px 6px rgb(0 0 0 / 0.2);
   transition: left .7s cubic-bezier(.4, 0, .2, 1), top .7s cubic-bezier(.4, 0, .2, 1);
 }
-.dealer-chip { transition-duration: .45s; }
+.dealer-chip { transition-duration: .8s; }
 .dealer-at-0 { left: calc(31% + 70px); top: 24px; }
 .dealer-at-1 { left: calc(69% - 70px); top: 24px; }
 .dealer-at-2 { left: calc(100% - 50px); top: calc(50% - 54px); }
@@ -311,8 +312,8 @@ main { min-height: 60vh; }
 .dealer-at-5 { left: 50px; top: calc(50% - 54px); }
 /* 左右切桌：桌面和座位从切换方向滑进来 */
 @media (prefers-reduced-motion: no-preference) {
-  .slide-next > .felt, .slide-next > .seat { animation: slide-next .45s cubic-bezier(.22, .9, .3, 1) both; }
-  .slide-prev > .felt, .slide-prev > .seat { animation: slide-prev .45s cubic-bezier(.22, .9, .3, 1) both; }
+  .slide-next > .felt, .slide-next > .seat { animation: slide-next .6s cubic-bezier(.22, .9, .3, 1) both; }
+  .slide-prev > .felt, .slide-prev > .seat { animation: slide-prev .6s cubic-bezier(.22, .9, .3, 1) both; }
   .slide-next > .seat, .slide-prev > .seat { animation-delay: .04s; }
   @keyframes slide-next { from { translate: 90px 0; opacity: 0; } }
   @keyframes slide-prev { from { translate: -90px 0; opacity: 0; } }
@@ -361,8 +362,8 @@ main { min-height: 60vh; }
   .dealer-arm-r { animation: wave 2.4s ease-in-out infinite; transform-origin: 14px 5px; transform-box: view-box; }
   .hop-a .dealer-sprite { animation: hop-a .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
   .hop-b .dealer-sprite { animation: hop-b .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
-  .bubble { animation: pop .25s ease-out; }
-  .board-cards .card:not(.card-back) { animation: flip .4s cubic-bezier(.2, .9, .3, 1.1); }
+  .bubble { animation: pop .4s ease-out; }
+  .board-cards .card:not(.card-back) { animation: flip .65s cubic-bezier(.2, .9, .3, 1.1); }
   @keyframes bob { 50% { transform: translateY(-3px); } }
   @keyframes step { 50% { transform: translateY(-0.4px); } }
   @keyframes wave { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-1px); } 90% { transform: translateY(0.4px); } }
