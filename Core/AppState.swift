@@ -79,8 +79,11 @@ final class AppState {
     var grokBotQuota: QuotaSnapshot?
     var grokBotQuotaError: String?
     var grokBotRefreshState = QuotaRefreshState()
-    /// agy 每次查询要起一个 CLI 进程(约 10 秒),定时刷新最快 5 分钟一次;手动刷新不受此限(429 退避仍然生效)。
-    private let googleMinPeriodicInterval: TimeInterval = 5 * 60
+    /// 本机 agy 登录的 Google 邮箱(从 agy 日志读，只用于显示和识别重复账号)。
+    var googleEmail: String?
+    /// agy 每次查询要起一个 CLI 进程(约 10~15 秒),定时刷新至少间隔 100 秒(默认 2 分钟一次);
+    /// 手动刷新不受此限(429 退避仍然生效)。
+    private let googleMinPeriodicInterval: TimeInterval = 100
 
     /// OpenAI / Anthropic statuspage.io 最新快照,失败时保留上一份。
     var codexServiceStatus: ServiceStatus?
@@ -498,6 +501,8 @@ final class AppState {
             switch target.provider {
             case .claude: try await self.switchClaude(to: target)
             case .grok: try await self.switchGrok(to: target)
+            case .google:
+                throw CLIAccountSwitch.SwitchError.message("Google 账号不支持切换本机 agy 登录")
             }
         }
     }
@@ -674,7 +679,8 @@ final class AppState {
 
     func reloadExtraAccounts() {
         extraAccounts = ExtraAccountStore.loadAll()
-        let alive = Set(extraAccounts.map(\.id))
+        // Google 账号的 Antigravity 池存在 id#3p 下，也算在用。
+        let alive = Set(extraAccounts.map(\.id) + extraAccounts.filter { $0.provider == .google }.map(\.antigravityQuotaKey))
         extraQuotas = extraQuotas.filter { alive.contains($0.key) }
         extraErrors = extraErrors.filter { alive.contains($0.key) }
         extraRefreshStates = extraRefreshStates.filter { alive.contains($0.key) }
@@ -706,6 +712,9 @@ final class AppState {
         case .grok:
             guard let local = grokAccount?.identity else { return false }
             return account.id == "grok:" + local
+        case .google:
+            guard let local = googleEmail, let email = account.email else { return false }
+            return local.caseInsensitiveCompare(email) == .orderedSame
         }
     }
 
@@ -740,8 +749,14 @@ final class AppState {
                 .map { OtherAccountQuota(id: $0.id, app: app,
                                          name: shortName(alias: $0.alias, email: $0.email, fallback: app == .claude ? "Claude" : "Grok"),
                                          snapshot: extraQuotas[$0.id]) }
-        case .grokBot, .gemini, .agy:
-            // 这三个服务只有本机账号。
+        case .gemini, .agy:
+            return extraAccounts(for: .google)
+                .filter { $0.visibleInPopover && ((inMenuBar ? $0.showInMenuBar : $0.showInFloating) ?? false) }
+                .map { OtherAccountQuota(id: app == .gemini ? $0.id : $0.antigravityQuotaKey, app: app,
+                                         name: shortName(alias: $0.alias, email: $0.email, fallback: "Google"),
+                                         snapshot: extraQuotas[app == .gemini ? $0.id : $0.antigravityQuotaKey]) }
+        case .grokBot:
+            // Grok Bot 只能读本机 app 的登录。
             return []
         }
     }
@@ -774,6 +789,7 @@ final class AppState {
             switch account.provider {
             case .claude: ExtraAccountStore.deleteClaudeTokens(id: id)
             case .grok: if let folder = account.homeFolder { ExtraAccountStore.removeGrokHome(folder: folder) }
+            case .google: if let folder = account.homeFolder { ExtraAccountStore.removeAgyHome(folder: folder) }
             }
         }
         do { try ExtraAccountStore.saveAll(list.filter { $0.id != id }) } catch {
@@ -781,6 +797,7 @@ final class AppState {
         }
         var cache = quotaCache.extra ?? [:]
         cache.removeValue(forKey: id)
+        cache.removeValue(forKey: id + "#3p")
         quotaCache.extra = cache.isEmpty ? nil : cache
         saveQuotaCache()
         reloadExtraAccounts()
@@ -793,6 +810,9 @@ final class AppState {
             let old = list[idx]
             if old.provider == .grok, let oldFolder = old.homeFolder, oldFolder != account.homeFolder {
                 ExtraAccountStore.removeGrokHome(folder: oldFolder)
+            }
+            if old.provider == .google, let oldFolder = old.homeFolder, oldFolder != account.homeFolder {
+                ExtraAccountStore.removeAgyHome(folder: oldFolder)
             }
             var merged = account
             merged.alias = old.alias
@@ -929,6 +949,8 @@ final class AppState {
         guard !state.inFlight else { return }
         if let until = state.backoffUntil, until > now { return }
         if reason == .periodic, let last = state.lastSuccessAt, now.timeIntervalSince(last) < minSuccessInterval { return }
+        if account.provider == .google, reason == .periodic, let last = state.lastAttemptAt,
+           now.timeIntervalSince(last) < googleMinPeriodicInterval { return }
         state.inFlight = true
         state.lastAttemptAt = now
         extraRefreshStates[account.id] = state
@@ -939,6 +961,9 @@ final class AppState {
             switch account.provider {
             case .claude: snapshot = try await fetchExtraClaudeQuota(id: account.id)
             case .grok: snapshot = try await fetchExtraGrokQuota(account: account)
+            case .google:
+                try await loadExtraGoogleQuota(account: account)
+                return
             }
             storeExtraQuota(id: account.id, snapshot: snapshot)
             recordExtraQuotaHistory(account: account, snapshot: snapshot, sampledAt: Date())
@@ -1012,6 +1037,46 @@ final class AppState {
             if plan != extra.plan { updateExtraAccount(id: extra.id) { $0.plan = plan } }
         }
         return snapshot
+    }
+
+    /// 其他 Google 账号：用它自己的 agy 目录跑一次 `/usage`,Gemini 池存在 id 下，Antigravity 池存在 id#3p 下。
+    private func loadExtraGoogleQuota(account: ExtraAccount) async throws {
+        guard let folder = account.homeFolder else { throw QuotaError.missingToken }
+        let result = try await GoogleQuotaClient.fetch(home: ExtraAccountStore.agyHome(folder: folder)).get()
+        if let gemini = result.gemini { storeExtraQuota(id: account.id, snapshot: gemini) }
+        if let agy = result.agy {
+            storeExtraQuota(id: account.antigravityQuotaKey, snapshot: agy)
+            // 刷新状态统一记在账号 id 上。
+            if result.gemini == nil { extraRefreshStates[account.id] = extraRefreshStates[account.antigravityQuotaKey] }
+        }
+    }
+
+    /// 在终端登录完独立 agy 目录后添加 Google 账号。登录没完成时抛出可读的错误，目录保留以便重试。
+    func addExtraGoogle(folder: String) async throws -> String {
+        let home = ExtraAccountStore.agyHome(folder: folder)
+        let result: GoogleQuotaClient.Result
+        switch await GoogleQuotaClient.fetch(home: home) {
+        case .success(let value): result = value
+        case .failure(let error):
+            if case .missingToken = error {
+                throw AddAccountError.message(tr("Not signed in yet. Finish signing in in Terminal, then try again.",
+                                                 "还没有登录成功：请在终端里完成登录后再点「完成添加」。"))
+            }
+            throw AddAccountError.message(error.description)
+        }
+        let email = GoogleQuotaClient.signedInEmail(home: home)
+        if let email, let local = googleEmail, email.caseInsensitiveCompare(local) == .orderedSame {
+            throw AddAccountError.message(tr("This is the Google account agy on this Mac already uses.",
+                                             "这就是本机 agy 正在使用的 Google 账号，不需要重复添加。"))
+        }
+        let id = "google:" + (email?.lowercased() ?? folder)
+        let extra = ExtraAccount(id: id, provider: .google, alias: "", email: email, plan: nil,
+                                 visibleInPopover: true, addedAt: Date(), homeFolder: folder)
+        try upsertExtraAccount(extra)
+        if let gemini = result.gemini { storeExtraQuota(id: id, snapshot: gemini) }
+        if let agy = result.agy { storeExtraQuota(id: extra.antigravityQuotaKey, snapshot: agy) }
+        try? FileManager.default.removeItem(at: home.appendingPathComponent("yybar-agy-login.command"))
+        return extra.displayName
     }
 
     private func storeExtraQuota(id: String, snapshot: QuotaSnapshot) {
@@ -1634,6 +1699,9 @@ final class AppState {
         defer { googleRefreshState.inFlight = false }
         switch await GoogleQuotaClient.fetch() {
         case .success(let result):
+            markActivityIfConsumed(.gemini, old: geminiQuota, new: result.gemini)
+            markActivityIfConsumed(.agy, old: agyQuota, new: result.agy)
+            googleEmail = GoogleQuotaClient.signedInEmail(home: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini"))
             if let gemini = result.gemini {
                 geminiQuota = gemini
                 quotaCache.gemini = QuotaCacheRecord(snapshot: gemini, source: .api, updatedAt: gemini.fetchedAt)
@@ -1656,13 +1724,27 @@ final class AppState {
             if case .missingToken = error {
                 message = GoogleQuotaClient.isAgyInstalled
                     ? "agy 未登录，请在终端运行 agy 用 Google 账号登录"
-                    : "没有找到 agy CLI(Gemini / agy 额度通过它读取)"
+                    : "没有找到 agy CLI(Gemini / Antigravity 额度通过它读取)"
             } else {
                 message = error.description
             }
             googleQuotaError = message
             googleRefreshState.lastError = message
         }
+    }
+
+    /// 没有本地会话日志的服务：两次刷新之间剩余减少了(5H 或 WK),就让菜单栏图标呼吸到下次刷新之后。
+    private func markActivityIfConsumed(_ app: UsageApp, old: QuotaSnapshot?, new: QuotaSnapshot?) {
+        guard let old, let new else { return }
+        func dropped(_ a: QuotaWindow?, _ b: QuotaWindow?) -> Bool {
+            guard let a, let b else { return false }
+            // 新窗口(重置后)不算消耗。
+            if let ra = a.resetsAt, let rb = b.resetsAt, rb.timeIntervalSince(ra) > 60 { return false }
+            return b.usedPercent - a.usedPercent > 0.05
+        }
+        guard dropped(old.fiveHour, new.fiveHour) || dropped(old.weekly, new.weekly) else { return }
+        let hold = max(180, (SettingsStore.shared.quotaInterval.seconds ?? 120) * 1.5)
+        UsageActivityMonitor.shared.markQuotaActivity(app, until: Date().addingTimeInterval(hold))
     }
 
     private func loadClaudeQuota(reason: QuotaRefreshReason) async {

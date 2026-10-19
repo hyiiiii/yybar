@@ -119,6 +119,23 @@ struct OtherAccountQuotaCard: View {
                 refreshState: appState.importedCodexRefreshState(for: imported),
                 error: appState.importedCodexError(for: imported)
             )
+        case .extra(let extra) where extra.provider == .google:
+            // 一个 Google 账号两个池子：Gemini 和 Antigravity 各一张卡。
+            VStack(spacing: 0) {
+                QuotaCardView(
+                    title: "Gemini", subtitle: subtitle(email: extra.email, plan: nil, fallback: extra.displayName),
+                    tint: .googleAccent, logoName: "gemini", fallback: "G",
+                    windows: QuotaCardView.standardWindows(appState.extraQuotas[extra.id]),
+                    refreshState: appState.extraRefreshStates[extra.id] ?? QuotaRefreshState(),
+                    error: appState.extraErrors[extra.id]
+                )
+                Divider()
+                QuotaCardView(
+                    title: "Antigravity", subtitle: tr("Claude and GPT models", "Claude · GPT 模型共用"),
+                    tint: .googleAccent, logoName: "agy", fallback: "A",
+                    windows: QuotaCardView.standardWindows(appState.extraQuotas[extra.antigravityQuotaKey])
+                )
+            }
         case .extra(let extra):
             let isClaude = extra.provider == .claude
             let snapshot = appState.extraQuotas[extra.id]

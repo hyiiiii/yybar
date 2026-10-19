@@ -35,6 +35,14 @@ struct GoogleQuotaRegression {
             preconditionFailure("expected decode error")
         } catch let error as QuotaError { if case .decode = error {} else { preconditionFailure("\(error)") } }
 
+        // 独立目录没登录：先打印提示，最后一行是 ERROR JSON → 视为未登录。
+        let unauth = "Error: authentication required. Run 'agy' to log in, then retry.\nerror: authentication failed or timed out\n"
+            + #"{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out"}"#
+        do {
+            _ = try GoogleQuotaClient.parse(data: Data(unauth.utf8))
+            preconditionFailure("expected missing token")
+        } catch let error as QuotaError { if case .missingToken = error {} else { preconditionFailure("\(error)") } }
+
         // Grok Bot:GetSandUsageStatusResponse(Connect JSON)。
         let sand = """
         {"currentPeriodStart":"2026-10-17T00:00:00Z","nextResetTimestampUtc":"2026-10-24T00:00:00Z",

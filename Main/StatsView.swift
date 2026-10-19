@@ -110,14 +110,25 @@ enum StatsServiceFilter: Hashable, CaseIterable {
     case codex
     case claude
     case grok
+    case grokBot
+    case gemini
+    case agy
+
+    /// 单个服务的筛选对应的服务;「全部」为 nil。
+    var app: UsageApp? {
+        switch self {
+        case .all: return nil
+        case .codex: return .codex
+        case .claude: return .claude
+        case .grok: return .grok
+        case .grokBot: return .grokBot
+        case .gemini: return .gemini
+        case .agy: return .agy
+        }
+    }
 
     var englishLabel: String {
-        switch self {
-        case .all: return "All"
-        case .codex: return "Codex"
-        case .claude: return "Claude Code"
-        case .grok: return "Grok"
-        }
+        app?.displayName ?? "All"
     }
 
     var chineseLabel: String {
@@ -126,26 +137,19 @@ enum StatsServiceFilter: Hashable, CaseIterable {
         case .codex: return "OpenAI"
         case .claude: return "Anthropic"
         case .grok: return "xAI"
+        case .grokBot: return "Cursor"
+        case .gemini, .agy: return "Google"
         }
     }
 
     /// 工具栏筛选按钮上的文字。
     var chipLabel: String {
-        switch self {
-        case .all: return tr("All", "全部")
-        case .codex: return "Codex"
-        case .claude: return "Claude"
-        case .grok: return "Grok"
-        }
+        guard let app else { return tr("All", "全部") }
+        return app == .claude ? "Claude" : app.displayName
     }
 
     var tint: Color? {
-        switch self {
-        case .all: return nil
-        case .codex: return .codexAccent
-        case .claude: return .claudeAccent
-        case .grok: return .grokAccent
-        }
+        app?.accent
     }
 }
 
@@ -370,7 +374,9 @@ struct StatsView: View {
 
     private var serviceChips: some View {
         HStack(spacing: 6) {
-            ForEach(StatsServiceFilter.allCases, id: \.self) { item in
+            // Grok Bot / Gemini / Antigravity 的按钮只在设置里启用时出现。
+            ForEach(StatsServiceFilter.allCases.filter { $0.app.map { [.codex, .claude, .grok].contains($0) || SettingsStore.shared.isEnabled($0) } ?? true },
+                    id: \.self) { item in
                 serviceChip(item)
             }
         }
@@ -429,6 +435,8 @@ struct StatsView: View {
             case .codex: return appState.codexServiceStatus
             case .claude: return appState.claudeServiceStatus
             case .grok: return appState.grokServiceStatus
+            // 这三个没有接官方状态源，显示灰点。
+            case .grokBot, .gemini, .agy: return nil
             }
         }()
         Circle()
@@ -791,7 +799,7 @@ struct StatsView: View {
                                     .lineLimit(1)
                                 if group.count == 2 { pairButton(group) }
                             }
-                            .frame(width: 172, alignment: .leading)
+                            .frame(width: 196, alignment: .leading)
 
                             // 合并时一整条(两者相加，单色)。
                             singleDayBar(value: value, average: average, maxValue: maxValue, tint: group[0].statsTint)
@@ -1376,9 +1384,8 @@ struct StatsView: View {
         switch serviceFilter {
         // Grok Bot / Gemini / agy 只有在设置里启用(默认：本机装了才启用)时才出现。
         case .all: return UsageApp.allCases.filter { [.codex, .claude, .grok].contains($0) || SettingsStore.shared.isEnabled($0) }
-        case .codex: return [.codex]
-        case .claude: return [.claude]
-        case .grok: return [.grok]
+        case .codex, .claude, .grok, .grokBot, .gemini, .agy:
+            return serviceFilter.app.map { [$0] } ?? []
         }
     }
 

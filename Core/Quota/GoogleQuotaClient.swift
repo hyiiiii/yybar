@@ -10,7 +10,11 @@ import Darwin
 //
 // 数据来源：本机 agy CLI 的只读命令 `agy -p /usage --output-format json`(agy ≥ 1.1.11)。
 // 它用 agy 自己的登录(钥匙串里的 Google 账号)查额度，不发模型请求、不消耗额度，yybar 不碰任何凭据。
-// 在私有临时目录里运行，避免在用户目录留下会话文件。一次约 10 秒，所以定时刷新最快 5 分钟一次(见 AppState)。
+// 在私有临时目录里运行，日志也写到这个临时目录(--log-file),不在 ~/.gemini 留文件。一次约 10~15 秒，
+// 定时刷新最快 2 分钟一次(见 AppState)。
+// 其他 Google 账号：每个账号一个独立目录，用 GEMINI_CLI_HOME 指过去(agy 用它替代 ~/.gemini),
+// 同时设 SSH_TTY 让 agy 把登录存成该目录里的文件，不碰钥匙串里本机 agy 的登录。登录只能在终端里
+// 交互完成(print 模式不接受授权码),见 `loginCommand(home:)`。
 // 实测返回(2026-10, agy 1.3.5):
 // {"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models",
 //   "buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":1,"reset_time":"…Z"},
@@ -39,15 +43,77 @@ enum GoogleQuotaClient {
         isAgyInstalled || FileManager.default.fileExists(atPath: "/Applications/Gemini.app")
     }
 
-    nonisolated static func fetch() async -> Swift.Result<Result, QuotaError> {
+    /// `home` 为 nil 时用本机 agy 的登录;否则用该独立目录(其他账号)。
+    nonisolated static func fetch(home: URL? = nil) async -> Swift.Result<Result, QuotaError> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
-                continuation.resume(returning: runUsage())
+                continuation.resume(returning: runUsage(home: home))
             }
         }
     }
 
-    nonisolated private static func runUsage() -> Swift.Result<Result, QuotaError> {
+    /// 独立目录下的 agy 环境变量。SSH_TTY 让 agy 把登录存成文件(不进钥匙串)。
+    nonisolated static func isolatedEnvironment(home: URL) -> [String: String] {
+        ["GEMINI_CLI_HOME": home.path, "SSH_TTY": "/dev/ttys000"]
+    }
+
+    /// 在终端里给独立目录登录的命令(交互式 agy,按提示在浏览器登录后把授权码粘贴回终端，登录完成后退出 agy)。
+    nonisolated static func loginCommand(home: URL) -> String {
+        let env = isolatedEnvironment(home: home).sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(shellQuote($0.value))" }.joined(separator: " ")
+        let binary = binaryURL()?.path ?? "agy"
+        return "cd \(shellQuote(home.path)) && \(env) \(shellQuote(binary))"
+    }
+
+    /// 在「终端」里打开登录命令(写一个临时 .command 文件交给终端运行)。
+    nonisolated static func openLoginInTerminal(home: URL) throws {
+        let script = home.appendingPathComponent("yybar-agy-login.command")
+        let text = """
+        #!/bin/bash
+        echo "yybar: 为新的 Google 账号登录 Antigravity(agy)。按提示在浏览器登录，把授权码粘贴回这里;"
+        echo "       登录成功后输入 /exit 退出 agy,再回到 yybar 点「完成添加」。"
+        echo
+        \(loginCommand(home: home))
+
+        """
+        try text.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Terminal", script.path]
+        try process.run()
+    }
+
+    /// agy 日志里记录的登录邮箱(`applyAuthResult: email=…`)。只用来给账号起名字，读不到就返回 nil。
+    nonisolated static func signedInEmail(home: URL) -> String? {
+        let fm = FileManager.default
+        var logs: [URL] = []
+        for dir in ["antigravity-cli/log", "antigravity/log"] {
+            let url = home.appendingPathComponent(dir, isDirectory: true)
+            let items = (try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            logs += items.filter { $0.pathExtension == "log" }
+        }
+        logs.sort {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a > b
+        }
+        for log in logs.prefix(5) {
+            guard let text = try? String(contentsOf: log, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n").reversed() {
+                guard let range = line.range(of: "applyAuthResult: email=") else { continue }
+                let email = line[range.upperBound...].prefix { $0 != "," && $0 != " " }
+                if email.contains("@") { return String(email) }
+            }
+        }
+        return nil
+    }
+
+    nonisolated private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    nonisolated private static func runUsage(home: URL?) -> Swift.Result<Result, QuotaError> {
         guard let binary = binaryURL() else { return .failure(.missingToken) }
         let fm = FileManager.default
         let workDir = fm.temporaryDirectory.appendingPathComponent("yybar-agy-\(UUID().uuidString)", isDirectory: true)
@@ -57,11 +123,12 @@ enum GoogleQuotaClient {
 
         let process = Process()
         process.executableURL = binary
-        process.arguments = ["-p", "/usage", "--output-format", "json"]
+        process.arguments = ["-p", "/usage", "--output-format", "json",
+                             "--log-file", workDir.appendingPathComponent("agy.log").path]
         process.currentDirectoryURL = workDir
         var env = ProcessInfo.processInfo.environment
-        let home = fm.homeDirectoryForCurrentUser.path
-        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "/usr/bin", "/bin"].joined(separator: ":")
+        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "\(fm.homeDirectoryForCurrentUser.path)/.local/bin", "/usr/bin", "/bin"].joined(separator: ":")
+        if let home { env.merge(isolatedEnvironment(home: home)) { _, new in new } }
         process.environment = env
         let out = Pipe()
         process.standardInput = FileHandle.nullDevice
@@ -103,7 +170,11 @@ enum GoogleQuotaClient {
 
     /// 解析 `agy -p /usage --output-format json` 的输出。
     nonisolated static func parse(data: Data, now: Date = Date()) throws -> Result {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        // 没登录时 agy 会先打印几行提示(登录链接等),最后一行才是 JSON。
+        func object(_ data: Data) -> [String: Any]? { try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
+        let lastJSONLine = String(decoding: data, as: UTF8.self).split(separator: "\n").reversed()
+            .first { $0.hasPrefix("{") }.flatMap { object(Data($0.utf8)) }
+        guard let root = object(data) ?? lastJSONLine else {
             throw QuotaError.decode("agy /usage output is not JSON")
         }
         let status = root["status"] as? String ?? ""
@@ -114,6 +185,7 @@ enum GoogleQuotaClient {
                 throw QuotaError.http(429, "agy usage rate limited")
             }
             if message.localizedCaseInsensitiveContains("login") || message.localizedCaseInsensitiveContains("auth") {
+                // 例:"authentication failed or timed out"(独立目录还没登录)。
                 throw QuotaError.missingToken
             }
             throw QuotaError.decode("agy /usage status \(status.isEmpty ? "unknown" : status)")

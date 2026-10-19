@@ -11,6 +11,8 @@ import SwiftUI
 struct OtherAccountRows: View {
     @Environment(AppState.self) private var appState
     let provider: AccountProvider
+    /// 指定时改为列这个类型的其他账号(Google:Gemini · Antigravity,没有对应的 AccountProvider)。
+    var extraProvider: ExtraProvider? = nil
     /// 本机账号行被删除时，第一行前不再画分隔线(上方已有服务之间的分隔线)。
     var leadingDivider: Bool = true
 
@@ -21,7 +23,7 @@ struct OtherAccountRows: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if provider == .codex {
+            if extraProvider == nil && provider == .codex {
                 ForEach(Array(appState.otherCodexAccounts.enumerated()), id: \.element.id) { idx, account in
                     if idx > 0 || leadingDivider { Divider().padding(.leading, ServiceMatrixColumn.textInset) }
                     codexRow(account)
@@ -52,7 +54,7 @@ struct OtherAccountRows: View {
                         }
                 }
             } else {
-                ForEach(Array(appState.extraAccounts(for: provider == .claude ? .claude : .grok).enumerated()), id: \.element.id) { idx, account in
+                ForEach(Array(appState.extraAccounts(for: extraProvider ?? (provider == .claude ? .claude : .grok)).enumerated()), id: \.element.id) { idx, account in
                     if idx > 0 || leadingDivider { Divider().padding(.leading, ServiceMatrixColumn.textInset) }
                     extraRow(account)
                 }
@@ -138,15 +140,17 @@ struct OtherAccountRows: View {
 
     private func extraRow(_ account: ExtraAccount) -> some View {
         let isClaude = account.provider == .claude
+        let isGoogle = account.provider == .google
         return ServiceMatrixRow(
-            title: (isClaude ? "Claude Code" : "Grok") + (account.alias.isEmpty ? "" : " · \(account.alias)"),
-            logoName: account.provider.rawValue,
+            title: (isClaude ? "Claude Code" : (isGoogle ? "Gemini · Antigravity" : "Grok")) + (account.alias.isEmpty ? "" : " · \(account.alias)"),
+            logoName: isGoogle ? "gemini" : account.provider.rawValue,
             fallback: isClaude ? "K" : "G",
-            tint: isClaude ? .claudeAccent : .grokAccent,
+            tint: isClaude ? .claudeAccent : (isGoogle ? .googleAccent : .grokAccent),
             email: account.email ?? account.displayName,
             plan: account.plan,
             renewal: isClaude ? .monthly(from: account.subscriptionStartedAt) : nil,
-            switchState: switchState(id: account.id) { await appState.switchCLI(toExtra: account) },
+            // Google 账号不能切换本机 agy 的登录(agy 的登录在钥匙串里),没有单选。
+            switchState: isGoogle ? .none : switchState(id: account.id) { await appState.switchCLI(toExtra: account) },
             enabled: Binding(
                 get: { account.visibleInPopover },
                 set: { newValue in

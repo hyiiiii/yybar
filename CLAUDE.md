@@ -4,7 +4,7 @@
 
 ## 项目概况
 
-yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / SwiftUI 实现，用于展示 Codex、Claude Code、Grok(以及只显示额度的 Grok Bot、Gemini、agy)的额度、刷新状态、本地用量统计和桌面悬浮窗。
+yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / SwiftUI 实现，用于展示 Codex、Claude Code、Grok(以及只显示额度的 Grok Bot、Gemini、Antigravity / agy)的额度、刷新状态、本地用量统计和桌面悬浮窗。
 
 项目主体功能已开发完成，后续以新需求和迭代为主，不再按初始里程碑推进。
 

@@ -1,0 +1,45 @@
+<svg width="100" height="100" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- 占位图形(像素拱形「A」彩虹版，示意 Antigravity),不是官方 logo,后续可替换。用于 tile 和统计页。 -->
+<rect x="8.20" y="1.00" width="1.80" height="1.80" fill="#E8613C"/>
+<rect x="10.00" y="1.00" width="1.80" height="1.80" fill="#E8613C"/>
+<rect x="6.40" y="2.80" width="1.80" height="1.80" fill="#EE7A3A"/>
+<rect x="8.20" y="2.80" width="1.80" height="1.80" fill="#EE7A3A"/>
+<rect x="10.00" y="2.80" width="1.80" height="1.80" fill="#EE7A3A"/>
+<rect x="11.80" y="2.80" width="1.80" height="1.80" fill="#EE7A3A"/>
+<rect x="4.60" y="4.60" width="1.80" height="1.80" fill="#E3A33A"/>
+<rect x="6.40" y="4.60" width="1.80" height="1.80" fill="#F08A3C"/>
+<rect x="8.20" y="4.60" width="1.80" height="1.80" fill="#F08A3C"/>
+<rect x="10.00" y="4.60" width="1.80" height="1.80" fill="#F08A3C"/>
+<rect x="11.80" y="4.60" width="1.80" height="1.80" fill="#F08A3C"/>
+<rect x="13.60" y="4.60" width="1.80" height="1.80" fill="#D9594F"/>
+<rect x="4.60" y="6.40" width="1.80" height="1.80" fill="#D9B13C"/>
+<rect x="6.40" y="6.40" width="1.80" height="1.80" fill="#D9B13C"/>
+<rect x="8.20" y="6.40" width="1.80" height="1.80" fill="#D9B13C"/>
+<rect x="10.00" y="6.40" width="1.80" height="1.80" fill="#D9594F"/>
+<rect x="11.80" y="6.40" width="1.80" height="1.80" fill="#D9594F"/>
+<rect x="13.60" y="6.40" width="1.80" height="1.80" fill="#D9594F"/>
+<rect x="4.60" y="8.20" width="1.80" height="1.80" fill="#A9BE4A"/>
+<rect x="6.40" y="8.20" width="1.80" height="1.80" fill="#A9BE4A"/>
+<rect x="11.80" y="8.20" width="1.80" height="1.80" fill="#C25A78"/>
+<rect x="13.60" y="8.20" width="1.80" height="1.80" fill="#C25A78"/>
+<rect x="2.80" y="10.00" width="1.80" height="1.80" fill="#7CB85A"/>
+<rect x="4.60" y="10.00" width="1.80" height="1.80" fill="#7CB85A"/>
+<rect x="13.60" y="10.00" width="1.80" height="1.80" fill="#9E62A8"/>
+<rect x="15.40" y="10.00" width="1.80" height="1.80" fill="#9E62A8"/>
+<rect x="2.80" y="11.80" width="1.80" height="1.80" fill="#5DB37A"/>
+<rect x="4.60" y="11.80" width="1.80" height="1.80" fill="#5DB37A"/>
+<rect x="13.60" y="11.80" width="1.80" height="1.80" fill="#8A6FD0"/>
+<rect x="15.40" y="11.80" width="1.80" height="1.80" fill="#8A6FD0"/>
+<rect x="2.80" y="13.60" width="1.80" height="1.80" fill="#5AAE9E"/>
+<rect x="4.60" y="13.60" width="1.80" height="1.80" fill="#5AAE9E"/>
+<rect x="13.60" y="13.60" width="1.80" height="1.80" fill="#6E79DE"/>
+<rect x="15.40" y="13.60" width="1.80" height="1.80" fill="#6E79DE"/>
+<rect x="1.00" y="15.40" width="1.80" height="1.80" fill="#6FB0E8"/>
+<rect x="2.80" y="15.40" width="1.80" height="1.80" fill="#6FB0E8"/>
+<rect x="15.40" y="15.40" width="1.80" height="1.80" fill="#4F82E6"/>
+<rect x="17.20" y="15.40" width="1.80" height="1.80" fill="#4F82E6"/>
+<rect x="1.00" y="17.20" width="1.80" height="1.80" fill="#7DB6F0"/>
+<rect x="2.80" y="17.20" width="1.80" height="1.80" fill="#7DB6F0"/>
+<rect x="15.40" y="17.20" width="1.80" height="1.80" fill="#4A86E8"/>
+<rect x="17.20" y="17.20" width="1.80" height="1.80" fill="#4A86E8"/>
+</svg>

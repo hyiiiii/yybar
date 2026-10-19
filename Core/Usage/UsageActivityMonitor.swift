@@ -28,6 +28,9 @@ final class UsageActivityMonitor {
     static let pendingLimit: TimeInterval = 30 * 60
 
     @ObservationIgnored private var lastWrite: [UsageApp: Date] = [:]
+    /// 没有本地会话日志的服务(Gemini / Antigravity / Grok Bot):额度刷新时发现剩余比上次少，
+    /// 就算「使用中」到这个时间(见 `markQuotaActivity`)。
+    @ObservationIgnored private var quotaActiveUntil: [UsageApp: Date] = [:]
     /// 最近写入的会话日志结尾是否为「未完成的工具调用」。
     @ObservationIgnored private var pendingTool: [UsageApp: Bool] = [:]
     @ObservationIgnored private var roots: [(app: UsageApp, path: String)] = []
@@ -90,9 +93,17 @@ final class UsageActivityMonitor {
         recompute(now: now)
     }
 
+    /// 额度刷新发现该服务的剩余减少了：呼吸到 `until`(通常到下一次刷新之后)。
+    func markQuotaActivity(_ app: UsageApp, until: Date) {
+        quotaActiveUntil[app] = max(quotaActiveUntil[app] ?? .distantPast, until)
+        recompute()
+    }
+
     private func recompute(now: Date = Date()) {
         var active: Set<UsageApp> = []
         var waiting: Set<UsageApp> = []
+        for (app, until) in quotaActiveUntil where until > now { active.insert(app) }
+        quotaActiveUntil = quotaActiveUntil.filter { $0.value > now }
         for (app, date) in lastWrite {
             let quiet = now.timeIntervalSince(date)
             if pendingTool[app] == true, quiet >= Self.pendingDelay, quiet < Self.pendingLimit {

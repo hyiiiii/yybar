@@ -77,7 +77,7 @@ extension UsageApp {
         case .grok: return "Grok"
         case .grokBot: return "Grok Bot"
         case .gemini: return "Gemini"
-        case .agy: return "agy"
+        case .agy: return "Antigravity"
         }
     }
 
@@ -241,8 +241,11 @@ struct ServiceTile: View {
     /// Grok 的 tile 固定黑底:深色模式下 `grokAccent` 是近白，直接拿来当底色会吃掉白色 logo。
     private var isGrokBrand: Bool { logoName == "grok" || logoName == "grokBot" }
 
+    /// 有彩色版 logo 的服务(Antigravity):白底 + 原色 logo,和 OpenAI 的做法一样。
+    private var colorLogo: NSImage? { LogoCache.colorImage(named: logoName) }
+
     private var background: Color {
-        if isOpenAIBrand { return .white }
+        if isOpenAIBrand || colorLogo != nil { return .white }
         if isGrokBrand { return Color(red: 29 / 255, green: 29 / 255, blue: 31 / 255) }
         return tint
     }
@@ -253,7 +256,7 @@ struct ServiceTile: View {
             .fill(background)
             .frame(width: size, height: size)
             .overlay {
-                if isOpenAIBrand {
+                if isOpenAIBrand || colorLogo != nil {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
                 }
@@ -263,7 +266,11 @@ struct ServiceTile: View {
 
     @ViewBuilder
     private var logoView: some View {
-        if let nsImage = LogoCache.image(named: logoName) {
+        if let colorLogo {
+            Image(nsImage: colorLogo)
+                .resizable()
+                .frame(width: logoSize, height: logoSize)
+        } else if let nsImage = LogoCache.image(named: logoName) {
             Image(nsImage: nsImage)
                 .resizable()
                 .renderingMode(.template)
@@ -284,7 +291,13 @@ struct ServiceLogoImage: View {
     var size: CGFloat = 14
 
     var body: some View {
-        if let image = LogoCache.image(named: logoName) {
+        if let color = LogoCache.colorImage(named: logoName) {
+            // 有彩色版(如 Antigravity 的像素彩虹 A)时直接用原色，不染识别色。
+            Image(nsImage: color)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else if let image = LogoCache.image(named: logoName) {
             Image(nsImage: image)
                 .resizable()
                 .renderingMode(.template)
@@ -299,6 +312,21 @@ struct ServiceLogoImage: View {
 
 private enum LogoCache {
     private static let cache = NSCache<NSString, NSImage>()
+    private static let colorCache = NSCache<NSString, NSImage>()
+    private static var missingColor: Set<String> = []
+
+    /// `<name>-color.svg`(彩色版 logo,非模板图);没有时返回 nil。
+    static func colorImage(named name: String) -> NSImage? {
+        if let cached = colorCache.object(forKey: name as NSString) { return cached }
+        guard !missingColor.contains(name) else { return nil }
+        guard let url = Bundle.main.url(forResource: name + "-color", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            missingColor.insert(name)
+            return nil
+        }
+        colorCache.setObject(image, forKey: name as NSString)
+        return image
+    }
 
     static func image(named name: String) -> NSImage? {
         if let cached = cache.object(forKey: name as NSString) { return cached }

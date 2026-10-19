@@ -108,6 +108,8 @@ struct SettingsRootView: View {
             quotaOnlyRow(.gemini, settings: settings)
             Divider()
             quotaOnlyRow(.agy, settings: settings)
+            // 其他 Google 账号(Gemini · Antigravity 两个池子一起)。
+            OtherAccountRows(provider: .claude, extraProvider: .google)
             Divider()
             AddAccountButton()
             if appState.hasRemovedLocalAccounts {
@@ -234,7 +236,7 @@ struct SettingsRootView: View {
             floating = floatingBinding(get: { settings.floatingShowGrokBot }, set: { settings.floatingShowGrokBot = $0 })
         case .gemini:
             detected = GoogleQuotaClient.isGeminiInstalled
-            detail = tr("Google account · Gemini models (via agy)", "Google 账号 · Gemini 模型(经 agy 读取)")
+            detail = appState.googleEmail ?? tr("Google account · Gemini models (via agy)", "Google 账号 · Gemini 模型(经 agy 读取)")
             enabled = Binding(get: { settings.showGemini }, set: {
                 settings.showGemini = $0
                 if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
@@ -243,7 +245,7 @@ struct SettingsRootView: View {
             floating = floatingBinding(get: { settings.floatingShowGemini }, set: { settings.floatingShowGemini = $0 })
         default:
             detected = GoogleQuotaClient.isAgyInstalled
-            detail = tr("Google account · Claude + GPT models", "Google 账号 · Claude + GPT 模型")
+            detail = appState.googleEmail ?? tr("Google account · Claude + GPT models", "Google 账号 · Claude + GPT 模型")
             enabled = Binding(get: { settings.showAgy }, set: {
                 settings.showAgy = $0
                 if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }

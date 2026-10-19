@@ -48,6 +48,7 @@
 		AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000002AAAA /* UsageActivityMonitor.swift */; };
 		49C1B155000000000001AABB /* UsageAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B155000000000001AAAA /* UsageAggregator.swift */; };
 		AA092028000000000001AABB /* grok.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA092028000000000001AAAA /* grok.svg */; };
+		AA101910000000000006AABB /* agy-color.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000006AAAA /* agy-color.svg */; };
 		AA101910000000000005AABB /* agy.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000005AAAA /* agy.svg */; };
 		AA101910000000000004AABB /* gemini.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000004AAAA /* gemini.svg */; };
 		AA101910000000000003AABB /* grokBot.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000003AAAA /* grokBot.svg */; };
@@ -109,6 +110,7 @@
 		49C1B140000000000001AAAA /* codex.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = codex.svg; sourceTree = "<group>"; };
 		49C1B141000000000001AAAA /* claude.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = claude.svg; sourceTree = "<group>"; };
 		AA092028000000000001AAAA /* grok.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grok.svg; sourceTree = "<group>"; };
+		AA101910000000000006AAAA /* agy-color.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = agy-color.svg; sourceTree = "<group>"; };
 		AA101910000000000005AAAA /* agy.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = agy.svg; sourceTree = "<group>"; };
 		AA101910000000000004AAAA /* gemini.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = gemini.svg; sourceTree = "<group>"; };
 		AA101910000000000003AAAA /* grokBot.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grokBot.svg; sourceTree = "<group>"; };
@@ -283,6 +285,7 @@
 				49C1B140000000000001AAAA /* codex.svg */,
 				49C1B141000000000001AAAA /* claude.svg */,
 				AA092028000000000001AAAA /* grok.svg */,
+				AA101910000000000006AAAA /* agy-color.svg */,
 				AA101910000000000005AAAA /* agy.svg */,
 				AA101910000000000004AAAA /* gemini.svg */,
 				AA101910000000000003AAAA /* grokBot.svg */,
@@ -425,6 +428,7 @@
 				49C1B140000000000001AABB /* codex.svg in Resources */,
 				49C1B141000000000001AABB /* claude.svg in Resources */,
 				AA092028000000000001AABB /* grok.svg in Resources */,
+				AA101910000000000006AABB /* agy-color.svg in Resources */,
 				AA101910000000000005AABB /* agy.svg in Resources */,
 				AA101910000000000004AABB /* gemini.svg in Resources */,
 				AA101910000000000003AABB /* grokBot.svg in Resources */,
