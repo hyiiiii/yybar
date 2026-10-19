@@ -1090,7 +1090,7 @@ struct StatsView: View {
                 cacheReadTokens: entry.totals.cacheReadTokens,
                 cacheCreationTokens: entry.totals.cacheCreationTokens,
                 cost: entry.totals.costUSD,
-                isPriced: entry.app == .grok || Pricing.hasPrice(model: entry.model)
+                isPriced: entry.app == .grok || entry.totals.costUSD > 0 || Pricing.hasPrice(model: entry.model)
             )
         }
     }
@@ -1339,7 +1339,7 @@ struct StatsView: View {
             let value: Double
             switch metric {
             case .cost:
-                guard b.app == .grok || Pricing.hasPrice(model: b.model) else { continue }
+                guard b.app == .grok || b.costUSD > 0 || Pricing.hasPrice(model: b.model) else { continue }
                 value = b.costUSD.doubleValue
             case .tokens:
                 value = Double(b.inputTokens + b.outputTokens + b.cacheCreationTokens + (mergeTokens ? b.cacheReadTokens : 0))
@@ -1413,7 +1413,7 @@ final class StatsDataIndex {
         for b in buckets {
             var day = grouped[b.app]?[b.day] ?? DayTotals()
             day.totals.add(b)
-            if b.app == .grok || Pricing.hasPrice(model: b.model) {
+            if b.app == .grok || b.costUSD > 0 || Pricing.hasPrice(model: b.model) {
                 day.knownCost += b.costUSD
                 day.hasKnown = true
             } else {

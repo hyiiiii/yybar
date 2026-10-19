@@ -369,6 +369,29 @@ struct SettingsRootView: View {
                 }
             }
 
+            PrefsGroup(title: "Claude Projects", chinese: "Claude 云端项目") {
+                PrefsRow(
+                    label: "Sync cloud usage", chinese: "同步云端用量",
+                    desc: "Uses the local Claude Code account. First sync starts yesterday; checks at least 5 minutes apart.",
+                    chineseDesc: "使用本机 Claude Code 账号。首次回补昨天起的记录，至少间隔 5 分钟同步"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.claudeCloudUsageEnabled },
+                        set: { enabled in
+                            settings.claudeCloudUsageEnabled = enabled
+                            if enabled { Task { await appState.usageService.scanNow() } }
+                        }
+                    )).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                }
+                Text(tr("Usage is assigned to each turn's completion date. Disabling sync keeps recovered history.",
+                        "按每轮结束日期统计，跨午夜任务计入结束当天；关闭同步会保留已恢复的历史。"))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                if settings.claudeCloudUsageEnabled {
+                    Text(appState.usageService.cloudStatus)
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+
             PrefsGroup(title: "Status", chinese: "状态") {
                 PrefsRow(label: "Last refresh", chinese: "上次刷新") {
                     HStack(spacing: 10) {

@@ -95,9 +95,12 @@ Codex 会把旧会话压缩成 `.jsonl.zst`,需要本机有 `zstd` 命令(`brew 
 **Codex / Grok 的缓存写入为什么是「—」?**
 这两家的日志不单独记录缓存写入，无法统计，不是漏算。
 
+**额度在掉，统计里却没有对应的用量?**
+本机 CLI 和 Claude 桌面 App 的 Cowork 会话从日志统计。Claude 桌面端「项目（测试）」可在「设置 → 刷新 → Claude 云端项目」开启同步，复用本机 Claude Code 登录，首次回补昨天起的记录。普通网页 / App 对话仍未接入。云端按每轮结束日期归档，跨午夜任务计入结束当天；与本机重复的消息会扣除，关闭同步保留历史。
+
 ## 数据与隐私
 
-- 用量统计只读本机日志:`~/.codex/sessions`、`~/.codex/archived_sessions`、`~/.claude/projects`、`~/.grok/sessions`。
+- 本地用量读取日志:`~/.codex/sessions`、`~/.codex/archived_sessions`、`~/.claude/projects`(以及 Claude 桌面 App Cowork 会话的日志)、`~/.grok/sessions`。Claude 云端 Projects 可额外开启同步；普通网页对话未接入。
 - 网络请求只发往各服务自己的接口(查询额度、续期登录)和官方状态页，没有任何统计或上报。
 - 本地数据位置：
   - `~/Library/Application Support/yybar/`:额度缓存、用量汇总、其他账号的 token(`account-tokens/`,只有本用户可读)

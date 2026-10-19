@@ -40,6 +40,7 @@
 		49C1B151000000000001AABB /* Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B151000000000001AAAA /* Pricing.swift */; };
 		49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B152000000000001AAAA /* JSONLLineReader.swift */; };
 		49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */; };
+		AA101900000000000001AABB /* ClaudeCloudUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101900000000000001AAAA /* ClaudeCloudUsage.swift */; };
 		49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B154000000000001AAAA /* CodexJSONLScanner.swift */; };
 		AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000001AAAA /* GrokJSONLScanner.swift */; };
 		AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000002AAAA /* UsageActivityMonitor.swift */; };
@@ -105,6 +106,7 @@
 		49C1B151000000000001AAAA /* Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pricing.swift; sourceTree = "<group>"; };
 		49C1B152000000000001AAAA /* JSONLLineReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLLineReader.swift; sourceTree = "<group>"; };
 		49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeJSONLScanner.swift; sourceTree = "<group>"; };
+		AA101900000000000001AAAA /* ClaudeCloudUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCloudUsage.swift; sourceTree = "<group>"; };
 		49C1B154000000000001AAAA /* CodexJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexJSONLScanner.swift; sourceTree = "<group>"; };
 		AA092027000000000001AAAA /* GrokJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokJSONLScanner.swift; sourceTree = "<group>"; };
 		AA092027000000000002AAAA /* UsageActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageActivityMonitor.swift; sourceTree = "<group>"; };
@@ -280,6 +282,7 @@
 				49C1B151000000000001AAAA /* Pricing.swift */,
 				49C1B152000000000001AAAA /* JSONLLineReader.swift */,
 				49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */,
+				AA101900000000000001AAAA /* ClaudeCloudUsage.swift */,
 				49C1B154000000000001AAAA /* CodexJSONLScanner.swift */,
 				AA092027000000000001AAAA /* GrokJSONLScanner.swift */,
 				AA092027000000000002AAAA /* UsageActivityMonitor.swift */,
@@ -470,6 +473,7 @@
 				49C1B151000000000001AABB /* Pricing.swift in Sources */,
 				49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */,
 				49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */,
+				AA101900000000000001AABB /* ClaudeCloudUsage.swift in Sources */,
 				49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */,
 				AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */,
 				AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */,

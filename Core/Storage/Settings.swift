@@ -118,6 +118,7 @@ final class SettingsStore {
     var floatingShowGrok: Bool { didSet { defaults.set(floatingShowGrok, forKey: Keys.floatingShowGrok) } }
 
     // 刷新
+    var claudeCloudUsageEnabled: Bool { didSet { defaults.set(claudeCloudUsageEnabled, forKey: Keys.claudeCloudUsageEnabled) } }
     var quotaInterval: QuotaIntervalChoice { didSet { defaults.set(quotaInterval.rawValue, forKey: Keys.quotaInterval) } }
     var usageInterval: UsageIntervalChoice { didSet { defaults.set(usageInterval.rawValue, forKey: Keys.usageInterval) } }
     var resetTimeDisplay: ResetTimeDisplay { didSet { defaults.set(resetTimeDisplay.rawValue, forKey: Keys.resetTimeDisplay) } }
@@ -163,6 +164,7 @@ final class SettingsStore {
         let qiRaw = defaults.string(forKey: Keys.quotaInterval) ?? QuotaIntervalChoice.m2.rawValue
         quotaInterval = QuotaIntervalChoice(rawValue: qiRaw) ?? .m2
         let uiRaw = defaults.string(forKey: Keys.usageInterval) ?? UsageIntervalChoice.m2.rawValue
+        claudeCloudUsageEnabled = defaults.bool(forKey: Keys.claudeCloudUsageEnabled)
         usageInterval = UsageIntervalChoice(rawValue: uiRaw) ?? .m2
         let rtdRaw = defaults.string(forKey: Keys.resetTimeDisplay) ?? ResetTimeDisplay.relative.rawValue
         resetTimeDisplay = ResetTimeDisplay(rawValue: rtdRaw) ?? .relative
@@ -262,6 +264,7 @@ final class SettingsStore {
         static let floatingShowClaude = "yybar.settings.floatingShowClaude"
         static let floatingShowGrok = "yybar.settings.floatingShowGrok"
         static let quotaInterval = "yybar.settings.quotaInterval"
+        static let claudeCloudUsageEnabled = "yybar.settings.claudeCloudUsageEnabled"
         static let usageInterval = "yybar.settings.usageInterval"
         static let resetTimeDisplay = "yybar.settings.resetTimeDisplay"
         static let showServiceStatus = "yybar.settings.showServiceStatus"

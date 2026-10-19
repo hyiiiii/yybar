@@ -1,9 +1,16 @@
 import Foundation
+import Observation
 
 /// 协调 JSONL 扫描 → 聚合 → 持久化 → 通知 AppState 的入口。
 @MainActor
+@Observable
 final class UsageService {
     let aggregator = UsageAggregator()
+    private let localAggregator = UsageAggregator()
+    private var cloudLedger = ClaudeCloudLedger()
+    private var cloudLoadFailed = false
+    private(set) var cloudStatus = "尚未同步 / Not synced"
+
     private(set) var isScanning = false
     private(set) var lastScanAt: Date?
     private(set) var lastError: String?
@@ -14,7 +21,15 @@ final class UsageService {
         self.appState = appState
         // 启动同步：先把 rollup 灌进内存
         let payload = UsageRollupCache.load()
-        aggregator.load(from: payload.buckets)
+        localAggregator.load(from: payload.buckets)
+        do {
+            cloudLedger = try ClaudeCloudLedger.load()
+            updateCloudStatus()
+        } catch {
+            cloudLoadFailed = true
+            cloudStatus = "云端账本读取失败，保留文件 / Cloud ledger unreadable"
+        }
+        refreshCombinedTotals()
         // 价格表(内置或自定义)在上次退出后变了：第一次扫描全量重建，保留的历史按新价格重算。
         if !payload.buckets.isEmpty, payload.pricingFingerprint != Pricing.fingerprint {
             pendingRebuild = .all
@@ -77,11 +92,24 @@ final class UsageService {
         }.value
         // 扫描进度丢了(缓存目录被清理、结构版本变了)但汇总还在：不能在旧汇总上增量叠加(会重复计数),改为全量重建。
         var rebuild = requested
-        if rebuild == nil, prev.claude.isEmpty, prev.codex.isEmpty, prev.grok.isEmpty, !aggregator.snapshot().isEmpty {
+        if rebuild == nil, prev.claude.isEmpty, prev.codex.isEmpty, prev.grok.isEmpty, !localAggregator.snapshot().isEmpty {
             rebuild = Reprice.none
         }
 
         let prevSeen = prev.claudeSeenMessageIds
+        var pendingCloud = cloudLedger
+        if SettingsStore.shared.claudeCloudUsageEnabled, !cloudLoadFailed {
+            cloudStatus = "同步中… / Syncing…"
+            let prior = cloudLedger
+            pendingCloud = await Task.detached(priority: .utility) {
+                await ClaudeCloudUsageClient.sync(prior)
+            }.value
+        }
+        let coveredIDs = pendingCloud.messageIDs
+        async let overlapTask = Task.detached(priority: .utility) {
+            coveredIDs.isEmpty ? [:] : ClaudeJSONLScanner.scan(
+                previous: [:], seenMessageIds: [], includingMessageIDs: coveredIDs).messageEntries
+        }.value
         async let claudeTask = Task.detached(priority: .utility) {
             ClaudeJSONLScanner.scan(previous: prev.claude, seenMessageIds: prevSeen)
         }.value
@@ -96,21 +124,33 @@ final class UsageService {
         let grok = await grokTask
         let claude = await claudeTask
         let codex = await codexTask
+        let overlapping = await overlapTask
+        pendingCloud.reconcile(local: overlapping)
+        if !cloudLoadFailed, !coveredIDs.isEmpty || SettingsStore.shared.claudeCloudUsageEnabled {
+            let ready = pendingCloud
+            do {
+                try await Task.detached(priority: .utility) { try ready.save() }.value
+                cloudLedger = ready
+                updateCloudStatus()
+            } catch {
+                cloudStatus = "云端账本保存失败，保留上次统计 / Cloud save failed"
+            }
+        }
 
         if let rebuild {
             let fresh = UsageAggregator()
             fresh.ingest(claude.entries)
             fresh.ingest(codex.entries)
             fresh.ingest(grok.entries)
-            aggregator.load(from: Self.mergePreservingHistory(old: aggregator.snapshot(), fresh: fresh.snapshot(), reprice: rebuild))
+            localAggregator.load(from: Self.mergePreservingHistory(old: localAggregator.snapshot(), fresh: fresh.snapshot(), reprice: rebuild))
         } else {
-            aggregator.ingest(claude.entries)
-            aggregator.ingest(codex.entries)
-            aggregator.ingest(grok.entries)
+            localAggregator.ingest(claude.entries)
+            localAggregator.ingest(codex.entries)
+            localAggregator.ingest(grok.entries)
         }
 
         // 持久化
-        let buckets = aggregator.snapshot()
+        let buckets = localAggregator.snapshot()
         let newScanState = ScanState(
             pricingFingerprint: Pricing.fingerprint,
             claude: claude.newState,
@@ -138,6 +178,7 @@ final class UsageService {
 
         lastScanAt = Date()
         lastError = nil
+        refreshCombinedTotals()
         publishTotals()
 
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(started))
@@ -185,6 +226,21 @@ final class UsageService {
                                        cacheRead: bucket.cacheReadTokens, cacheCreation: bucket.cacheCreationTokens,
                                        requestInputTokens: 0)
         return updated
+    }
+
+    private func updateCloudStatus() {
+        if let error = cloudLedger.lastError {
+            cloudStatus = error
+        } else if let time = cloudLedger.lastSuccess {
+            cloudStatus = "已同步 / Synced " + time.formatted(date: .omitted, time: .standard)
+        } else {
+            cloudStatus = "尚未同步 / Not synced"
+        }
+    }
+
+    private func refreshCombinedTotals() {
+        aggregator.load(from: localAggregator.snapshot())
+        aggregator.ingest(cloudLedger.entries)
     }
 
     private func publishTotals() {
