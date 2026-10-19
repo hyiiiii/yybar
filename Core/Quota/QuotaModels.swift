@@ -4,18 +4,24 @@ enum QuotaApp: String, Sendable, Codable {
     case codex
     case claude
     case grok
+    case grokBot
+    case gemini
+    case agy
 }
 
 enum QuotaSnapshotSource: String, Sendable, Codable {
     case api
     case cache
     case cliFallback
+    /// `agy -p /usage`(Gemini / agy 额度)。
+    case agyCLI
 
     var displayName: String {
         switch self {
         case .api: return "API"
         case .cache: return "缓存"
         case .cliFallback: return "Claude CLI"
+        case .agyCLI: return "agy CLI"
         }
     }
 }

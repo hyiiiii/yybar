@@ -124,6 +124,8 @@ final class UsageActivityMonitor {
     /// 返回 nil 表示这个文件判断不了(如 Grok 的非 updates.jsonl),保持原状态。
     nonisolated static func endsWithPendingToolCall(path: String, app: UsageApp) -> Bool? {
         if app == .grok, !path.hasSuffix("updates.jsonl") { return nil }
+        // Grok Bot / Gemini / agy 不监听本地日志。
+        if app == .grokBot || app == .gemini || app == .agy { return nil }
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
@@ -161,6 +163,8 @@ final class UsageActivityMonitor {
                 default:
                     continue
                 }
+            case .grokBot, .gemini, .agy:
+                return nil
             }
         }
         return nil

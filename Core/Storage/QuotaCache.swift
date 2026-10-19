@@ -17,6 +17,9 @@ struct QuotaCachePayload: Sendable, Equatable, Codable {
     var importedCodex: [String: QuotaCacheRecord]?
     /// 额外 Claude / Grok 账号配额缓存,key = ExtraAccount.id。字段缺失时为 nil,旧缓存兼容。
     var extra: [String: QuotaCacheRecord]?
+    /// Gemini / agy(Google 账号的两个额度池，来自 `agy -p /usage`)。字段缺失时为 nil,旧缓存兼容。
+    var gemini: QuotaCacheRecord?
+    var agy: QuotaCacheRecord?
 }
 
 enum QuotaCache {

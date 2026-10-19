@@ -50,6 +50,51 @@ extension Color {
         light: (red: 29, green: 29, blue: 31),    // #1D1D1F
         dark: (red: 229, green: 229, blue: 234)   // #E5E5EA
     )
+
+    /// Gemini 与 agy 共用的 Google 蓝(额度都挂在同一个 Google 账号上)。
+    static let googleAccent = quotaAdaptiveColor(
+        light: (red: 74, green: 134, blue: 232),  // #4A86E8
+        dark: (red: 106, green: 158, blue: 240)   // #6A9EF0
+    )
+}
+
+extension UsageApp {
+    /// 服务识别色。Grok Bot 与 Grok 同为黑(深色模式近白),Gemini 与 agy 同为 Google 蓝。
+    var accent: Color {
+        switch self {
+        case .codex: return .codexAccent
+        case .claude: return .claudeAccent
+        case .grok, .grokBot: return .grokAccent
+        case .gemini, .agy: return .googleAccent
+        }
+    }
+
+    /// 界面上的服务名。
+    var displayName: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude Code"
+        case .grok: return "Grok"
+        case .grokBot: return "Grok Bot"
+        case .gemini: return "Gemini"
+        case .agy: return "agy"
+        }
+    }
+
+    /// logo 加载失败时 tile 上的字母。
+    var fallbackLetter: String {
+        switch self {
+        case .codex: return "C"
+        case .claude: return "K"
+        case .grok: return "G"
+        case .grokBot: return "B"
+        case .gemini: return "G"
+        case .agy: return "A"
+        }
+    }
+
+    /// 只有一个(周期)额度窗口的服务：Grok / Grok Bot。
+    var hasSinglePeriod: Bool { self == .grok || self == .grokBot }
 }
 
 private func quotaAdaptiveColor(
@@ -194,7 +239,7 @@ struct ServiceTile: View {
     private var isOpenAIBrand: Bool { logoName == "codex" }
 
     /// Grok 的 tile 固定黑底:深色模式下 `grokAccent` 是近白，直接拿来当底色会吃掉白色 logo。
-    private var isGrokBrand: Bool { logoName == "grok" }
+    private var isGrokBrand: Bool { logoName == "grok" || logoName == "grokBot" }
 
     private var background: Color {
         if isOpenAIBrand { return .white }

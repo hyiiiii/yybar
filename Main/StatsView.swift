@@ -195,7 +195,7 @@ enum StatsBaseline: Hashable, CaseIterable {
 // MARK: - StatsView
 //
 // 统计页三个子页面(见 docs/界面布局.md §3):
-// - 概览:顶部时间范围 + 服务筛选、3 张 KPI、每日用量(单日时改为「当天 vs 前 7 日均值」)、按服务、当前额度
+// - 概览:顶部时间范围 + 服务筛选、3 张 KPI、每日用量(单日时改为「今天」各服务对比基准)、当前额度(整宽 2 列)
 // - 额度变化:今日 5H 额度变化时间线
 // - 模型明细:按模型的可排序表格
 
@@ -207,6 +207,9 @@ fileprivate struct StatsSelections: Equatable {
     var metric: StatsMetric = .cost
     var baseline: StatsBaseline = .sevenDays
     var mergeTokens = false
+    /// 「今天」面板里 Grok + Grok Bot、Gemini + agy 两行是否拆成并列两条(默认合并)。
+    var splitGrokPair = false
+    var splitGooglePair = false
     var hiddenTimelineAccounts: Set<String> = []
     var expandedTimelineAccounts: Set<String> = []
     var timelineWindow: QuotaHistoryWindow = .fiveHour
@@ -239,6 +242,8 @@ struct StatsView: View {
     @State private var baseline = StatsSelections.current.baseline
     /// Tokens 与缓存读取合并为一张「全部 Tokens」卡;合并后页面上的 Tokens 口径都含缓存读取。
     @State private var mergeTokens = StatsSelections.current.mergeTokens
+    @State private var splitGrokPair = StatsSelections.current.splitGrokPair
+    @State private var splitGooglePair = StatsSelections.current.splitGooglePair
     @State private var kpiRowWidth: CGFloat = 0
     @State private var selectedDay: Date?
     /// 额度变化页：隐藏曲线的账号 / 展开详情的账号(QuotaHistoryAccountKey)。
@@ -254,7 +259,8 @@ struct StatsView: View {
 
     private var selections: StatsSelections {
         StatsSelections(range: range, serviceFilter: serviceFilter, metric: metric, baseline: baseline,
-                        mergeTokens: mergeTokens, hiddenTimelineAccounts: hiddenTimelineAccounts,
+                        mergeTokens: mergeTokens, splitGrokPair: splitGrokPair, splitGooglePair: splitGooglePair,
+                        hiddenTimelineAccounts: hiddenTimelineAccounts,
                         expandedTimelineAccounts: expandedTimelineAccounts, timelineWindow: timelineWindow,
                         modelSortKey: modelSortKey, modelSortAscending: modelSortAscending,
                         customFrom: customFrom, customTo: customTo,
@@ -299,12 +305,7 @@ struct StatsView: View {
             } else {
                 dailyUsagePanel
             }
-            HStack(alignment: .top, spacing: 12) {
-                byServicePanel
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-                currentLimitsPanel
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-            }
+            currentLimitsPanel
         }
     }
 
@@ -721,15 +722,26 @@ struct StatsView: View {
     // 只有一天时柱状图只剩一根占满全宽的柱子，没有参考意义;
     // 改为每个服务「当天 vs 前 7 日均值」的横向对比。
 
+    /// 「今天」面板的行:Codex、Claude Code 各一行;Grok + Grok Bot 一行、Gemini + agy 一行(可拆成并列两条)。
+    /// 只出现当前服务筛选里可见的服务;一组里只剩一个服务时就是普通的一行。
+    private var singleDayGroups: [[UsageApp]] {
+        let groups: [[UsageApp]] = [[.codex], [.claude], [.grok, .grokBot], [.gemini, .agy]]
+        return groups.map { $0.filter(visibleApps.contains) }.filter { !$0.isEmpty }
+    }
+
     private var singleDayPanel: some View {
         let day = Calendar.current.startOfDay(for: rangeBounds.from)
-        let rows = visibleApps.map { app -> SingleDayRow in
-            SingleDayRow(app: app, value: dayValue(app: app, day: day),
-                         average: baselineAverage(apps: [app], before: day) { metricValue(app: app, from: $0, to: $1) })
-        }
-        let maxValue = max(rows.map { max($0.value, $0.average) }.max() ?? 0, 0.0001)
-        let todayTotal = rows.map(\.value).reduce(0, +)
-        let averageTotal = rows.map(\.average).reduce(0, +)
+        let rows = Dictionary(uniqueKeysWithValues: visibleApps.map { app -> (UsageApp, SingleDayRow) in
+            (app, SingleDayRow(app: app, value: dayValue(app: app, day: day),
+                               average: baselineAverage(apps: [app], before: day) { metricValue(app: app, from: $0, to: $1) }))
+        })
+        let groups = singleDayGroups
+        // 合并行按两者之和计，比例尺取各行(合并后)的最大值。
+        let maxValue = max(groups.map { group in
+            max(group.compactMap { rows[$0]?.value }.reduce(0, +), group.compactMap { rows[$0]?.average }.reduce(0, +))
+        }.max() ?? 0, 0.0001)
+        let todayTotal = rows.values.map(\.value).reduce(0, +)
+        let averageTotal = rows.values.map(\.average).reduce(0, +)
         let isToday = range == .today
 
         return Panel(
@@ -742,40 +754,52 @@ struct StatsView: View {
             titleAccessory: isToday ? AnyView(todayFlame) : nil
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(rows) { row in
-                    HStack(spacing: 10) {
-                        HStack(spacing: 6) {
-                            ServiceLogo(app: row.app, size: 14)
-                            Text(row.app.statsTitle)
-                                .font(.system(size: 12))
-                        }
-                        .frame(width: 100, alignment: .leading)
-
-                        GeometryReader { proxy in
-                            let width = proxy.size.width
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.secondary.opacity(0.12))
-                                    .frame(height: 10)
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .fill(row.app.statsTint)
-                                    .frame(width: max(0, width * row.value / maxValue), height: 10)
-                                Rectangle()
-                                    .fill(Color.secondary)
-                                    .frame(width: 1.5, height: 18)
-                                    .offset(x: min(width - 1.5, width * row.average / maxValue))
-                                    .opacity(row.average > 0 ? 1 : 0)
+                ForEach(groups, id: \.self) { group in
+                    let groupRows = group.compactMap { rows[$0] }
+                    if group.count == 2, isPairSplit(group[0]) {
+                        // 拆开：同一行变成并列两条，各占半宽，各有自己的基准竖线和数值(比例尺取这两条自己的最大值)。
+                        let pairMax = max(groupRows.map { max($0.value, $0.average) }.max() ?? 0, 0.0001)
+                        HStack(spacing: 24) {
+                            ForEach(Array(groupRows.enumerated()), id: \.element.id) { index, row in
+                                HStack(spacing: 8) {
+                                    HStack(spacing: 6) {
+                                        ServiceLogo(app: row.app, size: 14)
+                                        Text(row.app.statsShortTitle)
+                                            .font(.system(size: 12))
+                                            .lineLimit(1)
+                                        if index == 0 { pairButton(group) }
+                                    }
+                                    .fixedSize()
+                                    singleDayBar(value: row.value, average: row.average, maxValue: pairMax, tint: row.app.statsTint)
+                                    singleDayValue(value: row.value, average: row.average)
+                                        .fixedSize()
+                                }
+                                .frame(maxWidth: .infinity)
                             }
-                            .frame(height: 18)
                         }
-                        .frame(height: 18)
+                        .transition(Self.pairTransition)
+                    } else {
+                        let value = groupRows.map(\.value).reduce(0, +)
+                        let average = groupRows.map(\.average).reduce(0, +)
+                        HStack(spacing: 10) {
+                            HStack(spacing: 6) {
+                                HStack(spacing: -4) {
+                                    ForEach(group, id: \.self) { ServiceLogo(app: $0, size: 14) }
+                                }
+                                Text(group.count == 2 ? group.map(\.statsShortTitle).joined(separator: " · ") : group[0].statsTitle)
+                                    .font(.system(size: 12))
+                                    .lineLimit(1)
+                                if group.count == 2 { pairButton(group) }
+                            }
+                            .frame(width: 172, alignment: .leading)
 
-                        Text("\(formatMetric(row.value)) / \(tr("avg", "均")) \(formatMetric(row.average))")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .frame(width: 150, alignment: .trailing)
+                            // 合并时一整条(两者相加，单色)。
+                            singleDayBar(value: value, average: average, maxValue: maxValue, tint: group[0].statsTint)
+
+                            singleDayValue(value: value, average: average)
+                                .frame(width: 150, alignment: .trailing)
+                        }
+                        .transition(Self.pairTransition)
                     }
                 }
 
@@ -785,6 +809,63 @@ struct StatsView: View {
                     .contentTransition(.numericText())
             }
         }
+    }
+
+    /// 拆开 / 合并时新出现的行从左侧轻微展开并淡入。
+    private static let pairTransition = AnyTransition.opacity.combined(with: .scale(scale: 0.9, anchor: .leading))
+
+    private func isPairSplit(_ first: UsageApp) -> Bool {
+        first == .grok ? splitGrokPair : splitGooglePair
+    }
+
+    /// 两个服务合并行 / 拆开行名字后面的按钮，和「全部 Tokens」卡的合并按钮同一套图标与弹簧动画。
+    private func pairButton(_ group: [UsageApp]) -> some View {
+        let split = isPairSplit(group[0])
+        let names = group.map(\.statsShortTitle).joined(separator: tr(" and ", " 和 "))
+        return Button {
+            anchorKeeper.preserveReadingPosition()
+            withAnimation(Self.switchAnimation) {
+                if group[0] == .grok { splitGrokPair.toggle() } else { splitGooglePair.toggle() }
+            }
+        } label: {
+            Image(systemName: split ? "arrow.triangle.merge" : "arrow.triangle.branch")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(split ? tr("Merge \(names)", "合并 \(names)") : tr("Show \(names) separately", "拆开 \(names)"))
+    }
+
+    /// 「今天」的横条：当天数值 + 对比基准竖线。
+    private func singleDayBar(value: Double, average: Double, maxValue: Double, tint: Color) -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(height: 10)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(tint)
+                    .frame(width: max(0, min(width, width * value / maxValue)), height: 10)
+                Rectangle()
+                    .fill(Color.secondary)
+                    .frame(width: 1.5, height: 18)
+                    .offset(x: max(0, min(width - 1.5, width * average / maxValue)))
+                    .opacity(average > 0 ? 1 : 0)
+            }
+            .frame(height: 18)
+        }
+        .frame(height: 18)
+    }
+
+    private func singleDayValue(value: Double, average: Double) -> some View {
+        Text("\(formatMetric(value)) / \(tr("avg", "均")) \(formatMetric(average))")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .contentTransition(.numericText())
     }
 
     /// 「今天」旁的火苗：按今天全部服务的全部 Token(含缓存)落在热力图哪一档(和 Token 活动 ·「全部」同一套分档)。
@@ -889,47 +970,53 @@ struct StatsView: View {
         }
     }
 
-    // MARK: By service panel
+    // MARK: Current limits panel
 
-    private var byServicePanel: some View {
-        let costs = Dictionary(uniqueKeysWithValues: visibleApps.map { ($0, knownCost(for: [$0], in: rangeBounds).value.doubleValue) })
-        let totalCost = costs.values.reduce(0, +)
-
-        return Panel(title: "By service", chinese: "按服务") {
-            VStack(spacing: 0) {
-                ForEach(Array(visibleApps.enumerated()), id: \.element) { index, app in
-                    let t = totals(for: [app], in: rangeBounds)
-                    VStack(spacing: 0) {
-                        if index > 0 { Divider().padding(.vertical, 8) }
-                        ByServiceRow(
-                            app: app,
-                            spend: spendText(app),
-                            share: totalCost > 0 ? (costs[app] ?? 0) / totalCost : 0,
-                            tokens: tokenCount(t),
-                            cacheReads: mergeTokens ? nil : t.cacheReadTokens
-                        )
-                    }
+    /// 整宽 2 列 6 格:Codex | Claude、Grok | Grok Bot、Gemini | agy。每格左侧图标，右侧 5H / WK 行。
+    /// 只显示当前服务筛选里可见的服务(Grok Bot / Gemini / agy 还要在设置里启用)。
+    private var currentLimitsPanel: some View {
+        let apps = UsageApp.allCases.filter(visibleApps.contains)
+        let columns = [GridItem(.flexible(), spacing: 28, alignment: .top), GridItem(.flexible(), spacing: 28, alignment: .top)]
+        return Panel(title: "Current limits", chinese: "当前额度") {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
+                ForEach(Array(apps.enumerated()), id: \.element) { index, app in
+                    QuotaTile(app: app, lanes: quotaLanes(for: app), note: quotaNote(for: app),
+                              unavailable: app == .grokBot && !GrokBotQuotaClient.isConnected)
+                        .padding(.vertical, 8)
+                        .overlay(alignment: .top) {
+                            if index >= 2 { Divider() }
+                        }
                 }
             }
         }
     }
 
-    // MARK: Current limits panel
-
-    private var currentLimitsPanel: some View {
-        let rows: [(app: UsageApp, label: String, window: QuotaWindow?, tint: Color)] = [
-            (.codex, "Codex 5H", appState.codexQuota?.fiveHour, .codexAccent),
-            (.codex, "Codex WK", appState.codexQuota?.weekly, .codexAccent),
-            (.claude, "Claude 5H", appState.claudeQuota?.fiveHour, .claudeAccent),
-            (.claude, "Claude WK", appState.claudeQuota?.weekly, .claudeAccent),
-            (.grok, "Grok WK", appState.grokQuota?.primary, .grokAccent)
-        ]
-        return Panel(title: "Current limits", chinese: "当前额度（剩余）") {
-            VStack(spacing: 2) {
-                ForEach(rows.filter { visibleApps.contains($0.app) }, id: \.label) { row in
-                    LimitBarRow(label: row.label, window: row.window, tint: row.tint)
-                }
+    private func quotaLanes(for app: UsageApp) -> [(label: String, window: QuotaWindow?)] {
+        let snapshot = appState.localQuota(for: app)
+        if app.hasSinglePeriod {
+            // Grok 按云端计费周期(多为周);标签取周期名的英文缩写。
+            let period = (snapshot?.primaryLabel ?? "WEEK · 本周").components(separatedBy: " · ").first ?? "WEEK"
+            let label: String
+            switch period {
+            case "MONTH": label = "MO"
+            case "DAY": label = "DAY"
+            case "PERIOD": label = tr("Period", "周期")
+            default: label = "WK"
             }
+            return [(label, snapshot?.primary ?? snapshot?.weekly)]
+        }
+        return [("5H", snapshot?.fiveHour), ("WK", snapshot?.weekly)]
+    }
+
+    private func quotaNote(for app: UsageApp) -> String? {
+        switch app {
+        case .codex, .claude: return nil
+        case .grok: return appState.grokPlan
+        case .grokBot:
+            return GrokBotQuotaClient.isConnected ? appState.grokBotQuota?.planType
+                : tr("Not connected yet (Grok Bot app sign-in)", "未接通(需读取 Grok Bot app 的登录)")
+        case .gemini: return tr("Pro and Flash share this quota", "Pro 和 Flash 共用")
+        case .agy: return tr("Claude and GPT models share this quota", "Claude · GPT 模型共用")
         }
     }
 
@@ -1287,7 +1374,8 @@ struct StatsView: View {
 
     private var visibleApps: [UsageApp] {
         switch serviceFilter {
-        case .all: return [.codex, .claude, .grok]
+        // Grok Bot / Gemini / agy 只有在设置里启用(默认：本机装了才启用)时才出现。
+        case .all: return UsageApp.allCases.filter { [.codex, .claude, .grok].contains($0) || SettingsStore.shared.isEnabled($0) }
         case .codex: return [.codex]
         case .claude: return [.claude]
         case .grok: return [.grok]
@@ -1360,13 +1448,6 @@ struct StatsView: View {
             day = next
         }
         return samples
-    }
-
-    private func spendText(_ app: UsageApp) -> String {
-        let cost = knownCost(for: [app], in: rangeBounds)
-        let anyKnown = index.sum(apps: [app], from: rangeBounds.from, to: rangeBounds.to).hasKnown
-        if cost.hasUnknown && !anyKnown { return tr("Unknown", "费用未知") }
-        return StatsFormatter.cost(cost.value) + (cost.hasUnknown ? "+" : "")
     }
 
     private func placeholderHeight(_ height: CGFloat, message: String) -> some View {
@@ -1458,29 +1539,11 @@ private struct ServiceLogo: View {
 // MARK: - UsageApp display helpers
 
 private extension UsageApp {
-    var statsTitle: String {
-        switch self {
-        case .codex: return "Codex"
-        case .claude: return "Claude Code"
-        case .grok: return "Grok"
-        }
-    }
+    var statsTitle: String { displayName }
 
-    var statsShortTitle: String {
-        switch self {
-        case .codex: return "Codex"
-        case .claude: return "Claude"
-        case .grok: return "Grok"
-        }
-    }
+    var statsShortTitle: String { self == .claude ? "Claude" : displayName }
 
-    var statsTint: Color {
-        switch self {
-        case .codex: return .codexAccent
-        case .claude: return .claudeAccent
-        case .grok: return .grokAccent
-        }
-    }
+    var statsTint: Color { accent }
 }
 
 private extension UsageTotals {
@@ -1949,41 +2012,37 @@ private struct KPICard: View {
     }
 }
 
-// MARK: - By service row
+// MARK: - Quota tile
 
-private struct ByServiceRow: View {
+/// 「当前额度」的一格：左侧服务图标，右侧 5H / WK 行(Grok / Grok Bot 只有一行),下方可有一行小注。
+private struct QuotaTile: View {
     let app: UsageApp
-    let spend: String
-    let share: Double
-    let tokens: Int
-    /// 合并 Tokens 后为 nil(tokens 已含缓存读取)。
-    let cacheReads: Int?
+    let lanes: [(label: String, window: QuotaWindow?)]
+    let note: String?
+    /// 额度还没接通(Grok Bot):不画额度行。
+    var unavailable = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                ServiceLogo(app: app, size: 14)
-                Text(app.statsTitle)
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Text(spend)
-                    .font(.system(size: 13, weight: .semibold))
-                    .monospacedDigit()
+        HStack(alignment: .top, spacing: 10) {
+            ServiceLogo(app: app, size: 20)
+                .padding(.top, 4)
+                .help(app.displayName)
+            VStack(alignment: .leading, spacing: 0) {
+                if !unavailable {
+                    ForEach(lanes, id: \.label) { lane in
+                        LimitBarRow(label: lane.label, window: lane.window, tint: app.accent, labelWidth: 40)
+                    }
+                }
+                if let note {
+                    Text(note)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .padding(.top, unavailable ? 6 : 0)
+                }
             }
-            ProgressBar(value: share, tint: app.statsTint, height: 5)
-                .padding(.leading, 16)
-            HStack {
-                Text(cacheReads.map { "\(StatsFormatter.compactToken(tokens)) tokens · \(tr("cache", "缓存")) \(StatsFormatter.compactToken($0))" }
-                     ?? tr("\(StatsFormatter.compactToken(tokens)) tokens incl. cache", "\(StatsFormatter.compactToken(tokens)) tokens(含缓存)"))
-                Spacer()
-                Text("\(Int((share * 100).rounded()))%")
-            }
-            .font(.system(size: 10.5))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .contentTransition(.numericText())
-            .padding(.leading, 16)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1994,12 +2053,13 @@ private struct LimitBarRow: View {
     let label: String
     let window: QuotaWindow?
     let tint: Color
+    var labelWidth: CGFloat = 74
 
     var body: some View {
         HStack(spacing: 10) {
             Text(label)
                 .font(.system(size: 12))
-                .frame(width: 74, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
             ProgressBar(value: (window?.remainingPercent ?? 0) / 100, tint: window == nil ? .secondary : tint, height: 6)
             Text(percentText)
                 .font(.system(size: 11.5, weight: .medium))

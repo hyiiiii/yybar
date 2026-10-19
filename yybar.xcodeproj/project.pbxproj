@@ -26,6 +26,8 @@
 		49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B121000000000001AAAA /* CodexTokenRefresher.swift */; };
 		49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B122000000000001AAAA /* CodexQuotaClient.swift */; };
 		AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092026000000000001AAAA /* GrokQuotaClient.swift */; };
+		AA101910000000000002AABB /* GrokBotQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101910000000000002AAAA /* GrokBotQuotaClient.swift */; };
+		AA101910000000000001AABB /* GoogleQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101910000000000001AAAA /* GoogleQuotaClient.swift */; };
 		49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */; };
 		49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */; };
 		49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */; };
@@ -46,6 +48,9 @@
 		AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000002AAAA /* UsageActivityMonitor.swift */; };
 		49C1B155000000000001AABB /* UsageAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B155000000000001AAAA /* UsageAggregator.swift */; };
 		AA092028000000000001AABB /* grok.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA092028000000000001AAAA /* grok.svg */; };
+		AA101910000000000005AABB /* agy.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000005AAAA /* agy.svg */; };
+		AA101910000000000004AABB /* gemini.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000004AAAA /* gemini.svg */; };
+		AA101910000000000003AABB /* grokBot.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000003AAAA /* grokBot.svg */; };
 		49C1B156000000000001AABB /* UsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B156000000000001AAAA /* UsageService.swift */; };
 		49C1B161000000000001AABB /* MainWindowRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B161000000000001AAAA /* MainWindowRootView.swift */; };
 		AA092027000000000020AABB /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000020AAAA /* WindowCoordinator.swift */; };
@@ -91,6 +96,8 @@
 		49C1B121000000000001AAAA /* CodexTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexTokenRefresher.swift; sourceTree = "<group>"; };
 		49C1B122000000000001AAAA /* CodexQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexQuotaClient.swift; sourceTree = "<group>"; };
 		AA092026000000000001AAAA /* GrokQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokQuotaClient.swift; sourceTree = "<group>"; };
+		AA101910000000000002AAAA /* GrokBotQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokBotQuotaClient.swift; sourceTree = "<group>"; };
+		AA101910000000000001AAAA /* GoogleQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIFallbackQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeTokenRefresher.swift; sourceTree = "<group>"; };
@@ -102,6 +109,9 @@
 		49C1B140000000000001AAAA /* codex.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = codex.svg; sourceTree = "<group>"; };
 		49C1B141000000000001AAAA /* claude.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = claude.svg; sourceTree = "<group>"; };
 		AA092028000000000001AAAA /* grok.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grok.svg; sourceTree = "<group>"; };
+		AA101910000000000005AAAA /* agy.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = agy.svg; sourceTree = "<group>"; };
+		AA101910000000000004AAAA /* gemini.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = gemini.svg; sourceTree = "<group>"; };
+		AA101910000000000003AAAA /* grokBot.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grokBot.svg; sourceTree = "<group>"; };
 		49C1B150000000000001AAAA /* UsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageModels.swift; sourceTree = "<group>"; };
 		49C1B151000000000001AAAA /* Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pricing.swift; sourceTree = "<group>"; };
 		49C1B152000000000001AAAA /* JSONLLineReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLLineReader.swift; sourceTree = "<group>"; };
@@ -256,6 +266,8 @@
 				49C1B121000000000001AAAA /* CodexTokenRefresher.swift */,
 				49C1B122000000000001AAAA /* CodexQuotaClient.swift */,
 				AA092026000000000001AAAA /* GrokQuotaClient.swift */,
+				AA101910000000000002AAAA /* GrokBotQuotaClient.swift */,
+				AA101910000000000001AAAA /* GoogleQuotaClient.swift */,
 				49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */,
 				49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */,
 				49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */,
@@ -271,6 +283,9 @@
 				49C1B140000000000001AAAA /* codex.svg */,
 				49C1B141000000000001AAAA /* claude.svg */,
 				AA092028000000000001AAAA /* grok.svg */,
+				AA101910000000000005AAAA /* agy.svg */,
+				AA101910000000000004AAAA /* gemini.svg */,
+				AA101910000000000003AAAA /* grokBot.svg */,
 			);
 			path = Logos;
 			sourceTree = "<group>";
@@ -410,6 +425,9 @@
 				49C1B140000000000001AABB /* codex.svg in Resources */,
 				49C1B141000000000001AABB /* claude.svg in Resources */,
 				AA092028000000000001AABB /* grok.svg in Resources */,
+				AA101910000000000005AABB /* agy.svg in Resources */,
+				AA101910000000000004AABB /* gemini.svg in Resources */,
+				AA101910000000000003AABB /* grokBot.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -459,6 +477,8 @@
 				49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */,
 				49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */,
 				AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */,
+				AA101910000000000002AABB /* GrokBotQuotaClient.swift in Sources */,
+				AA101910000000000001AABB /* GoogleQuotaClient.swift in Sources */,
 				49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */,
 				49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */,
 				49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */,

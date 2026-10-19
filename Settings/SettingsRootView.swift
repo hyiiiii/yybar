@@ -98,7 +98,16 @@ struct SettingsRootView: View {
                     if showLocal { localRow(provider, settings: settings) }
                     OtherAccountRows(provider: provider, leadingDivider: showLocal)
                 }
+                // Grok Bot 紧跟 Grok;Gemini / agy 排在最后(和菜单栏顺序一致)。
+                if provider == .grok {
+                    Divider()
+                    quotaOnlyRow(.grokBot, settings: settings)
+                }
             }
+            Divider()
+            quotaOnlyRow(.gemini, settings: settings)
+            Divider()
+            quotaOnlyRow(.agy, settings: settings)
             Divider()
             AddAccountButton()
             if appState.hasRemovedLocalAccounts {
@@ -206,6 +215,54 @@ struct SettingsRootView: View {
                 onDelete: { localDeleteTarget = .grok }
             )
         }
+    }
+
+    /// Grok Bot / Gemini / agy:只有本机账号(读本机 App / CLI 的登录),没有其他账号和切换。
+    /// 本机没装对应 App / CLI 时整行禁用(显示「未识别」)。
+    private func quotaOnlyRow(_ app: UsageApp, settings: SettingsStore) -> some View {
+        let detected: Bool
+        let detail: String
+        let enabled: Binding<Bool>
+        let menuBar: Binding<Bool>
+        let floating: Binding<Bool>
+        switch app {
+        case .grokBot:
+            detected = GrokBotQuotaClient.isInstalled
+            detail = tr("Grok Bot app · quota not connected yet", "Grok Bot app · 额度未接通")
+            enabled = Binding(get: { settings.showGrokBot }, set: { settings.showGrokBot = $0 })
+            menuBar = Binding(get: { settings.menuBarShowGrokBot }, set: { settings.menuBarShowGrokBot = $0 })
+            floating = floatingBinding(get: { settings.floatingShowGrokBot }, set: { settings.floatingShowGrokBot = $0 })
+        case .gemini:
+            detected = GoogleQuotaClient.isGeminiInstalled
+            detail = tr("Google account · Gemini models (via agy)", "Google 账号 · Gemini 模型(经 agy 读取)")
+            enabled = Binding(get: { settings.showGemini }, set: {
+                settings.showGemini = $0
+                if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
+            })
+            menuBar = Binding(get: { settings.menuBarShowGemini }, set: { settings.menuBarShowGemini = $0 })
+            floating = floatingBinding(get: { settings.floatingShowGemini }, set: { settings.floatingShowGemini = $0 })
+        default:
+            detected = GoogleQuotaClient.isAgyInstalled
+            detail = tr("Google account · Claude + GPT models", "Google 账号 · Claude + GPT 模型")
+            enabled = Binding(get: { settings.showAgy }, set: {
+                settings.showAgy = $0
+                if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
+            })
+            menuBar = Binding(get: { settings.menuBarShowAgy }, set: { settings.menuBarShowAgy = $0 })
+            floating = floatingBinding(get: { settings.floatingShowAgy }, set: { settings.floatingShowAgy = $0 })
+        }
+        return ServiceMatrixRow(
+            title: app.displayName, logoName: app.rawValue, fallback: app.fallbackLetter, tint: app.accent,
+            email: detail,
+            plan: nil,
+            switchState: detected ? .inUse : .none,
+            detected: detected,
+            enabled: enabled,
+            menuBar: menuBar,
+            floating: floating,
+            floatingAvailable: settings.floatingEnabled,
+            quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState))
+        )
     }
 
     private func floatingBinding(get: @escaping () -> Bool, set: @escaping (Bool) -> Void) -> Binding<Bool> {

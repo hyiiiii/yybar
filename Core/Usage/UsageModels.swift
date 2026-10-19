@@ -1,9 +1,14 @@
 import Foundation
 
+/// 声明顺序即菜单栏 / 悬浮窗 / 统计页的排列顺序:Codex → Claude → Grok → Grok Bot → Gemini → agy。
+/// Grok Bot / Gemini / agy 目前没有本地用量日志(只有额度),用量统计里它们恒为 0。
 enum UsageApp: String, Sendable, Codable, Hashable, CaseIterable {
     case codex
     case claude
     case grok
+    case grokBot
+    case gemini
+    case agy
 }
 
 /// 单次 API 调用解析出的用量记录（内存中流转，不直接持久化）。

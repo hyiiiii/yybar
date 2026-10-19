@@ -65,6 +65,38 @@ struct LocalQuotaCard: View {
     }
 }
 
+/// Grok Bot / Gemini / agy 的额度浮层(只有本机账号，没有本地用量花费)。
+struct QuotaOnlyServiceCard: View {
+    @Environment(AppState.self) private var appState
+    let app: UsageApp
+
+    var body: some View {
+        switch app {
+        case .grokBot:
+            QuotaCardView(
+                title: "Grok Bot", subtitle: appState.grokBotQuota?.planType ?? "Cursor",
+                tint: .grokAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
+                windows: QuotaCardView.grokWindows(appState.grokBotQuota),
+                inUse: true,
+                refreshState: appState.grokBotRefreshState,
+                error: GrokBotQuotaClient.isConnected ? appState.grokBotQuotaError
+                    : tr("Quota not connected yet: reading the Grok Bot app sign-in is not implemented.",
+                         "额度未接通：尚未实现读取 Grok Bot app 的登录。")
+            )
+        default:
+            QuotaCardView(
+                title: app.displayName,
+                subtitle: app == .gemini ? tr("Google · Pro and Flash share this quota", "Google · Pro 和 Flash 共用")
+                                         : tr("Google · Claude and GPT models", "Google · Claude + GPT 模型共用"),
+                tint: .googleAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
+                windows: QuotaCardView.standardWindows(appState.localQuota(for: app)),
+                inUse: true,
+                refreshState: appState.googleRefreshState, error: appState.googleQuotaError
+            )
+        }
+    }
+}
+
 /// 其他账号的额度浮层(和本机账号同一张卡，没有花费)。
 struct OtherAccountQuotaCard: View {
     enum Account {

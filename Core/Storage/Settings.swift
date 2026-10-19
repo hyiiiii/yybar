@@ -98,6 +98,10 @@ final class SettingsStore {
     var showGrok: Bool { didSet { defaults.set(showGrok, forKey: Keys.showGrok) } }
     var menuBarShowGrok: Bool { didSet { defaults.set(menuBarShowGrok, forKey: Keys.menuBarShowGrok) } }
     var showClaude: Bool { didSet { defaults.set(showClaude, forKey: Keys.showClaude) } }
+    /// Grok Bot / Gemini / agy:没设置过时按本机是否装了对应 App / CLI 决定默认值(见 init)。
+    var showGrokBot: Bool { didSet { defaults.set(showGrokBot, forKey: Keys.showGrokBot) } }
+    var showGemini: Bool { didSet { defaults.set(showGemini, forKey: Keys.showGemini) } }
+    var showAgy: Bool { didSet { defaults.set(showAgy, forKey: Keys.showAgy) } }
     /// 用户在设置里「删除」的本机账号:provider(codex/claude/grok)→ 账号身份。
     /// 只是不再在 yybar 里显示和刷新，不会退出本机 CLI;CLI 换成别的账号后身份不同，自动重新出现。
     var removedLocalAccounts: [String: String] { didSet { defaults.set(removedLocalAccounts, forKey: Keys.removedLocalAccounts) } }
@@ -105,6 +109,9 @@ final class SettingsStore {
     // 菜单栏
     var menuBarShowCodex: Bool { didSet { defaults.set(menuBarShowCodex, forKey: Keys.menuBarShowCodex) } }
     var menuBarShowClaude: Bool { didSet { defaults.set(menuBarShowClaude, forKey: Keys.menuBarShowClaude) } }
+    var menuBarShowGrokBot: Bool { didSet { defaults.set(menuBarShowGrokBot, forKey: Keys.menuBarShowGrokBot) } }
+    var menuBarShowGemini: Bool { didSet { defaults.set(menuBarShowGemini, forKey: Keys.menuBarShowGemini) } }
+    var menuBarShowAgy: Bool { didSet { defaults.set(menuBarShowAgy, forKey: Keys.menuBarShowAgy) } }
     var menuBarWindow: MenuBarWindowChoice { didSet { defaults.set(menuBarWindow.rawValue, forKey: Keys.menuBarWindow) } }
     /// 服务正在消耗额度(本地会话日志近期有写入)时，菜单栏图标以识别色呼吸闪烁
     var menuBarBreatheWhenActive: Bool { didSet { defaults.set(menuBarBreatheWhenActive, forKey: Keys.menuBarBreatheWhenActive) } }
@@ -116,6 +123,9 @@ final class SettingsStore {
     var floatingShowCodex: Bool { didSet { defaults.set(floatingShowCodex, forKey: Keys.floatingShowCodex) } }
     var floatingShowClaude: Bool { didSet { defaults.set(floatingShowClaude, forKey: Keys.floatingShowClaude) } }
     var floatingShowGrok: Bool { didSet { defaults.set(floatingShowGrok, forKey: Keys.floatingShowGrok) } }
+    var floatingShowGrokBot: Bool { didSet { defaults.set(floatingShowGrokBot, forKey: Keys.floatingShowGrokBot) } }
+    var floatingShowGemini: Bool { didSet { defaults.set(floatingShowGemini, forKey: Keys.floatingShowGemini) } }
+    var floatingShowAgy: Bool { didSet { defaults.set(floatingShowAgy, forKey: Keys.floatingShowAgy) } }
 
     // 刷新
     var claudeCloudUsageEnabled: Bool { didSet { defaults.set(claudeCloudUsageEnabled, forKey: Keys.claudeCloudUsageEnabled) } }
@@ -147,10 +157,17 @@ final class SettingsStore {
         menuBarShowGrok = defaults.object(forKey: Keys.menuBarShowGrok) as? Bool ?? true
         showCodex = defaults.object(forKey: Keys.showCodex) as? Bool ?? true
         showClaude = defaults.object(forKey: Keys.showClaude) as? Bool ?? true
+        showGrokBot = defaults.object(forKey: Keys.showGrokBot) as? Bool ?? GrokBotQuotaClient.isInstalled
+        showGemini = defaults.object(forKey: Keys.showGemini) as? Bool ?? GoogleQuotaClient.isGeminiInstalled
+        showAgy = defaults.object(forKey: Keys.showAgy) as? Bool ?? GoogleQuotaClient.isAgyInstalled
         removedLocalAccounts = defaults.dictionary(forKey: Keys.removedLocalAccounts) as? [String: String] ?? [:]
         // 菜单栏
         menuBarShowCodex = defaults.object(forKey: Keys.menuBarShowCodex) as? Bool ?? true
         menuBarShowClaude = defaults.object(forKey: Keys.menuBarShowClaude) as? Bool ?? true
+        // Grok Bot 额度未接通前，菜单栏 / 悬浮窗默认不放它(只会显示 --)。
+        menuBarShowGrokBot = defaults.object(forKey: Keys.menuBarShowGrokBot) as? Bool ?? GrokBotQuotaClient.isConnected
+        menuBarShowGemini = defaults.object(forKey: Keys.menuBarShowGemini) as? Bool ?? true
+        menuBarShowAgy = defaults.object(forKey: Keys.menuBarShowAgy) as? Bool ?? true
         let mbWindowRaw = defaults.string(forKey: Keys.menuBarWindow) ?? MenuBarWindowChoice.fiveHour.rawValue
         menuBarWindow = MenuBarWindowChoice(rawValue: mbWindowRaw) ?? .fiveHour
         menuBarBreatheWhenActive = defaults.object(forKey: Keys.menuBarBreatheWhenActive) as? Bool ?? true
@@ -160,6 +177,9 @@ final class SettingsStore {
         floatingShowCodex = defaults.object(forKey: Keys.floatingShowCodex) as? Bool ?? true
         floatingShowClaude = defaults.object(forKey: Keys.floatingShowClaude) as? Bool ?? true
         floatingShowGrok = defaults.object(forKey: Keys.floatingShowGrok) as? Bool ?? true
+        floatingShowGrokBot = defaults.object(forKey: Keys.floatingShowGrokBot) as? Bool ?? GrokBotQuotaClient.isConnected
+        floatingShowGemini = defaults.object(forKey: Keys.floatingShowGemini) as? Bool ?? true
+        floatingShowAgy = defaults.object(forKey: Keys.floatingShowAgy) as? Bool ?? true
         // 刷新
         let qiRaw = defaults.string(forKey: Keys.quotaInterval) ?? QuotaIntervalChoice.m2.rawValue
         quotaInterval = QuotaIntervalChoice(rawValue: qiRaw) ?? .m2
@@ -182,11 +202,51 @@ final class SettingsStore {
     var effectiveMenuBarShowGrok: Bool { showGrok && menuBarShowGrok }
     var effectiveMenuBarShowCodex: Bool { showCodex && menuBarShowCodex }
     var effectiveMenuBarShowClaude: Bool { showClaude && menuBarShowClaude }
+    var effectiveMenuBarShowGrokBot: Bool { showGrokBot && menuBarShowGrokBot }
+    var effectiveMenuBarShowGemini: Bool { showGemini && menuBarShowGemini }
+    var effectiveMenuBarShowAgy: Bool { showAgy && menuBarShowAgy }
 
     /// 悬浮窗的行可见性同样需要叠加全局「显示该应用」开关
     var effectiveFloatingShowCodex: Bool { showCodex && floatingShowCodex }
     var effectiveFloatingShowClaude: Bool { showClaude && floatingShowClaude }
     var effectiveFloatingShowGrok: Bool { showGrok && floatingShowGrok }
+    var effectiveFloatingShowGrokBot: Bool { showGrokBot && floatingShowGrokBot }
+    var effectiveFloatingShowGemini: Bool { showGemini && floatingShowGemini }
+    var effectiveFloatingShowAgy: Bool { showAgy && floatingShowAgy }
+
+    /// 按服务取「启用 / 菜单栏 / 悬浮窗」开关(已叠加启用开关)。
+    func isEnabled(_ app: UsageApp) -> Bool {
+        switch app {
+        case .codex: return showCodex
+        case .claude: return showClaude
+        case .grok: return showGrok
+        case .grokBot: return showGrokBot
+        case .gemini: return showGemini
+        case .agy: return showAgy
+        }
+    }
+
+    func effectiveMenuBarShow(_ app: UsageApp) -> Bool {
+        switch app {
+        case .codex: return effectiveMenuBarShowCodex
+        case .claude: return effectiveMenuBarShowClaude
+        case .grok: return effectiveMenuBarShowGrok
+        case .grokBot: return effectiveMenuBarShowGrokBot
+        case .gemini: return effectiveMenuBarShowGemini
+        case .agy: return effectiveMenuBarShowAgy
+        }
+    }
+
+    func effectiveFloatingShow(_ app: UsageApp) -> Bool {
+        switch app {
+        case .codex: return effectiveFloatingShowCodex
+        case .claude: return effectiveFloatingShowClaude
+        case .grok: return effectiveFloatingShowGrok
+        case .grokBot: return effectiveFloatingShowGrokBot
+        case .gemini: return effectiveFloatingShowGemini
+        case .agy: return effectiveFloatingShowAgy
+        }
+    }
 
     /// 把 `appLanguage` 解析为最终渲染语言。`.system` 看系统首选语言是否以 `zh` 开头。
     /// 不用 `Locale.current`:它返回的是 App 当前生效的本地化语言,工程未添加中文资源时会回退到开发语言 `en`,
@@ -253,6 +313,15 @@ final class SettingsStore {
         static let menuBarShowGrok = "yybar.settings.menuBarShowGrok"
         static let showCodex = "yybar.settings.showCodex"
         static let showClaude = "yybar.settings.showClaude"
+        static let showGrokBot = "yybar.settings.showGrokBot"
+        static let showGemini = "yybar.settings.showGemini"
+        static let showAgy = "yybar.settings.showAgy"
+        static let menuBarShowGrokBot = "yybar.settings.menuBarShowGrokBot"
+        static let menuBarShowGemini = "yybar.settings.menuBarShowGemini"
+        static let menuBarShowAgy = "yybar.settings.menuBarShowAgy"
+        static let floatingShowGrokBot = "yybar.settings.floatingShowGrokBot"
+        static let floatingShowGemini = "yybar.settings.floatingShowGemini"
+        static let floatingShowAgy = "yybar.settings.floatingShowAgy"
         static let removedLocalAccounts = "yybar.settings.removedLocalAccounts"
         static let menuBarShowCodex = "yybar.settings.menuBarShowCodex"
         static let menuBarShowClaude = "yybar.settings.menuBarShowClaude"

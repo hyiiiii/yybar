@@ -67,6 +67,21 @@ final class AppState {
     var claudeTodayCost: Decimal?
     var grokTodayCost: Decimal?
 
+    // MARK: Grok Bot / Gemini / agy
+    //
+    // Gemini 与 agy 的额度来自同一次 `agy -p /usage`(Google 账号的两个池子):
+    // Gemini 池(Pro + Flash 共用)→ geminiQuota,Claude + GPT 池 → agyQuota,共用一个刷新状态。
+    // Grok Bot 额度尚未接通(见 GrokBotQuotaClient),grokBotQuota 恒为 nil。
+    var geminiQuota: QuotaSnapshot?
+    var agyQuota: QuotaSnapshot?
+    var googleQuotaError: String?
+    var googleRefreshState = QuotaRefreshState()
+    var grokBotQuota: QuotaSnapshot?
+    var grokBotQuotaError: String?
+    var grokBotRefreshState = QuotaRefreshState()
+    /// agy 每次查询要起一个 CLI 进程(约 10 秒),定时刷新最快 5 分钟一次;手动刷新不受此限(429 退避仍然生效)。
+    private let googleMinPeriodicInterval: TimeInterval = 5 * 60
+
     /// OpenAI / Anthropic statuspage.io 最新快照,失败时保留上一份。
     var codexServiceStatus: ServiceStatus?
     var claudeServiceStatus: ServiceStatus?
@@ -121,6 +136,7 @@ final class AppState {
         // 启动后异步拉一次服务状态;后续由 Scheduler 5 分钟刷新一次
         Task { await refreshServiceStatus() }
         Task { await loadGrokQuota(reason: .userInitiated) }
+        Task { await loadGoogleQuota(reason: .userInitiated) }
     }
 
     /// 旧版本把其他账号的 token 存在钥匙串里，启动时先统一搬到文件(见 AccountTokenFiles)。
@@ -182,11 +198,13 @@ final class AppState {
     /// 出现"新账号 + 旧额度"的错配。
     func refreshQuotas(reason: QuotaRefreshReason = .periodic) async {
         async let grokRefresh: Void = loadGrokQuota(reason: reason)
+        async let googleRefresh: Void = loadGoogleQuota(reason: reason)
         await loadCodex()
         await loadClaude()
         await loadCodexQuota(reason: reason)
         await loadClaudeQuota(reason: reason)
         await grokRefresh
+        await googleRefresh
         await loadAllImportedCodexQuotas(reason: reason)
         await loadAllExtraQuotas(reason: reason)
         logQuotaSummary()
@@ -247,6 +265,16 @@ final class AppState {
             source = grokRefreshState.source
             error = grokQuotaError
             state = grokRefreshState
+        case .grokBot:
+            snapshot = grokBotQuota
+            source = grokBotRefreshState.source
+            error = grokBotQuotaError
+            state = grokBotRefreshState
+        case .gemini, .agy:
+            snapshot = app == .gemini ? geminiQuota : agyQuota
+            source = googleRefreshState.source
+            error = googleQuotaError
+            state = googleRefreshState
         }
 
         var parts: [String] = []
@@ -290,6 +318,15 @@ final class AppState {
                 grokRefreshState.lastSuccessAt = record.updatedAt
                 grokRefreshState.source = .cache
             }
+        }
+        if let record = quotaCache.gemini { geminiQuota = record.snapshot }
+        if let record = quotaCache.agy { agyQuota = record.snapshot }
+        if let updated = [quotaCache.gemini?.updatedAt, quotaCache.agy?.updatedAt].compactMap({ $0 }).max() {
+            googleRefreshState.lastSuccessAt = updated
+            googleRefreshState.source = .cache
+        }
+        if GrokBotQuotaClient.isInstalled, !GrokBotQuotaClient.isConnected {
+            grokBotQuotaError = "Grok Bot 额度未接通"
         }
         for (id, record) in quotaCache.extra ?? [:] {
             extraQuotas[id] = record.snapshot
@@ -703,6 +740,21 @@ final class AppState {
                 .map { OtherAccountQuota(id: $0.id, app: app,
                                          name: shortName(alias: $0.alias, email: $0.email, fallback: app == .claude ? "Claude" : "Grok"),
                                          snapshot: extraQuotas[$0.id]) }
+        case .grokBot, .gemini, .agy:
+            // 这三个服务只有本机账号。
+            return []
+        }
+    }
+
+    /// 本机账号的额度快照(按服务)。
+    func localQuota(for app: UsageApp) -> QuotaSnapshot? {
+        switch app {
+        case .codex: return codexQuota
+        case .claude: return claudeQuota
+        case .grok: return grokQuota
+        case .grokBot: return grokBotQuota
+        case .gemini: return geminiQuota
+        case .agy: return agyQuota
         }
     }
 
@@ -1569,6 +1621,50 @@ final class AppState {
         }
     }
 
+    /// Gemini / agy 额度：一次 `agy -p /usage` 同时得到两个池子。失败保留已有快照;429 退避 10 分钟。
+    func loadGoogleQuota(reason: QuotaRefreshReason) async {
+        let settings = SettingsStore.shared
+        guard settings.showGemini || settings.showAgy, !googleRefreshState.inFlight else { return }
+        let now = Date()
+        if let until = googleRefreshState.backoffUntil, until > now { return }
+        if reason == .periodic, let last = googleRefreshState.lastAttemptAt,
+           now.timeIntervalSince(last) < googleMinPeriodicInterval { return }
+        googleRefreshState.inFlight = true
+        googleRefreshState.lastAttemptAt = now
+        defer { googleRefreshState.inFlight = false }
+        switch await GoogleQuotaClient.fetch() {
+        case .success(let result):
+            if let gemini = result.gemini {
+                geminiQuota = gemini
+                quotaCache.gemini = QuotaCacheRecord(snapshot: gemini, source: .api, updatedAt: gemini.fetchedAt)
+            }
+            if let agy = result.agy {
+                agyQuota = agy
+                quotaCache.agy = QuotaCacheRecord(snapshot: agy, source: .api, updatedAt: agy.fetchedAt)
+            }
+            saveQuotaCache()
+            googleQuotaError = nil
+            googleRefreshState.lastError = nil
+            googleRefreshState.backoffUntil = nil
+            googleRefreshState.lastSuccessAt = Date()
+            googleRefreshState.source = .agyCLI
+        case .failure(let error):
+            if error.isRateLimited {
+                googleRefreshState.backoffUntil = Date().addingTimeInterval(rateLimitBackoff)
+            }
+            let message: String
+            if case .missingToken = error {
+                message = GoogleQuotaClient.isAgyInstalled
+                    ? "agy 未登录，请在终端运行 agy 用 Google 账号登录"
+                    : "没有找到 agy CLI(Gemini / agy 额度通过它读取)"
+            } else {
+                message = error.description
+            }
+            googleQuotaError = message
+            googleRefreshState.lastError = message
+        }
+    }
+
     private func loadClaudeQuota(reason: QuotaRefreshReason) async {
         guard beginClaudeRefresh(reason: reason) else { return }
         defer { claudeRefreshState.inFlight = false }
@@ -1744,6 +1840,14 @@ final class AppState {
                 print("[Quota 额度] Grok: source=\(grokRefreshState.source?.rawValue ?? "—") \(format(q))")
             } else {
                 print("[Quota 额度] Grok 拉取失败: error=\(grokQuotaError ?? "unknown")")
+            }
+        }
+        if SettingsStore.shared.showGemini || SettingsStore.shared.showAgy {
+            if geminiQuota != nil || agyQuota != nil {
+                if let q = geminiQuota { print("[Quota 额度] Gemini: \(format(q))") }
+                if let q = agyQuota { print("[Quota 额度] agy (Claude + GPT): \(format(q))") }
+            } else {
+                print("[Quota 额度] Gemini / agy 拉取失败: error=\(googleQuotaError ?? "unknown")")
             }
         }
     }

@@ -99,19 +99,15 @@ final class StatusItemController: NSObject {
         guard let appState, let button = item?.button else { return }
         drawnDark = MenuBarBadgeImage.menuBarIsDark()
         let settings = SettingsStore.shared
-        var shown: Set<UsageApp> = []
-        if settings.effectiveMenuBarShowCodex { shown.insert(.codex) }
-        if settings.effectiveMenuBarShowClaude { shown.insert(.claude) }
-        if settings.effectiveMenuBarShowGrok { shown.insert(.grok) }
+        let shown = Set(UsageApp.allCases.filter { settings.effectiveMenuBarShow($0) })
         let monitor = UsageActivityMonitor.shared
         let waiting = settings.menuBarHoldColorWhileWaiting ? monitor.waitingApps.intersection(shown) : []
         let breathing = settings.menuBarBreatheWhenActive ? monitor.activeApps.intersection(shown).subtracting(waiting) : []
 
-        // 每个服务：本机账号在前，勾选了「菜单栏」的其他账号紧随其后;Codex → Claude → Grok。
-        let local: [UsageApp: QuotaSnapshot?] = [.codex: appState.codexQuota, .claude: appState.claudeQuota, .grok: appState.grokQuota]
+        // 每个服务：本机账号在前，勾选了「菜单栏」的其他账号紧随其后;Codex → Claude → Grok → Grok Bot → Gemini → agy。
         var entries: [MenuBarBadgeImage.Entry] = []
         for app in UsageApp.allCases {
-            if shown.contains(app) { entries.append(.init(app: app, snapshot: local[app] ?? nil, isLocal: true)) }
+            if shown.contains(app) { entries.append(.init(app: app, snapshot: appState.localQuota(for: app), isLocal: true)) }
             for other in appState.otherAccountsShown(for: app, inMenuBar: true) {
                 entries.append(.init(app: app, snapshot: other.snapshot, isLocal: false))
             }
@@ -221,9 +217,9 @@ enum MenuBarBadgeImage {
         waiting: Set<UsageApp> = []
     ) -> Badge {
         let items: [BadgeItem] = entries.map { entry in
-            let text = entry.app == .grok ? pctOrPlaceholder(entry.snapshot?.primary) : pctText(entry.snapshot, window: window)
+            let text = entry.app.hasSinglePeriod ? pctOrPlaceholder(entry.snapshot?.primary) : pctText(entry.snapshot, window: window)
             return BadgeItem(app: entry.app, logo: entry.app.rawValue,
-                             fallback: entry.app == .codex ? "C" : (entry.app == .claude ? "K" : "G"),
+                             fallback: entry.app.fallbackLetter,
                              text: text, isLocal: entry.isLocal)
         }
         let attrs = textAttributes
@@ -305,7 +301,8 @@ enum MenuBarBadgeImage {
         // 深色栏上用更深的石墨灰(白 → #48484A),浅色栏上用浅灰(黑 → #AEAEB2),呼吸幅度更明显。
         case .codex: return dark ? rgb(72, 72, 74) : rgb(174, 174, 178)      // 石墨灰
         case .claude: return dark ? rgb(232, 134, 95) : rgb(217, 119, 87)    // 桃橙
-        case .grok: return dark ? rgb(29, 29, 31) : rgb(161, 161, 166)       // 黑(浅色栏上淡出)
+        case .grok, .grokBot: return dark ? rgb(29, 29, 31) : rgb(161, 161, 166)       // 黑(浅色栏上淡出)
+        case .gemini, .agy: return dark ? rgb(106, 158, 240) : rgb(74, 134, 232)      // Google 蓝
         }
     }
 
@@ -324,7 +321,8 @@ enum MenuBarBadgeImage {
             switch entry.app {
             case .codex: return "Codex \(pctText(entry.snapshot, window: window))"
             case .claude: return "Claude \(pctText(entry.snapshot, window: window))"
-            case .grok: return "Grok \(pctOrPlaceholder(entry.snapshot?.primary)) remaining"
+            case .grok, .grokBot: return "\(entry.app.displayName) \(pctOrPlaceholder(entry.snapshot?.primary)) remaining"
+            case .gemini, .agy: return "\(entry.app.displayName) \(pctText(entry.snapshot, window: window))"
             }
         }
         return parts.isEmpty ? "yybar" : parts.joined(separator: ", ")
