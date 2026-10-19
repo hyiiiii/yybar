@@ -39,6 +39,8 @@ interface RoomSeat extends Player {
   mayRaise: boolean;
   hole: Card[];
   shown: boolean;
+  /** 赢了没摊牌时自己选择亮的牌：第 1 位第一张，第 2 位第二张；旧存档没有 */
+  showMask?: number;
   last: string | null;
   won: number;
   hand: string | null;
@@ -46,6 +48,12 @@ interface RoomSeat extends Player {
   away: number | null;
   leaving: boolean;
   timeouts: number;
+}
+
+/** 点了空位、正在选带入的人先占着这个座位 */
+export interface Hold extends Player {
+  start: number;
+  until: number;
 }
 
 export interface Cashout {
@@ -75,6 +83,8 @@ export interface RoomState {
   cashouts: Cashout[];
   /** 玩家开的桌从这一刻起没有真人；旧存档没有这个字段 */
   emptySince?: number | null;
+  /** 每个座位的占座；旧存档没有这个字段 */
+  holds?: (Hold | null)[];
 }
 
 /** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
@@ -84,6 +94,8 @@ export const MAX_BUY_IN_BB = 200;
 /** 开桌可选的盲注 */
 export const BLIND_LEVELS: [number, number][] = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
 export const TURN_MS = 10_000;
+/** 点了空位选带入时占座多久 */
+export const HOLD_MS = 10_000;
 /** 玩家开的桌没有真人超过这么久就收掉 */
 export const EMPTY_TABLE_MS = 30_000;
 const AWAY_TURN_MS = 5_000;
@@ -145,7 +157,8 @@ export class TableRoom {
 
   nextWake(): number | null {
     const closeAt = this.emptyFrom() === null ? null : this.emptyFrom()! + EMPTY_TABLE_MS;
-    const t = [this.s.deadline, this.s.nextHandAt, closeAt, this.idleKickAt()].filter((x): x is number => x !== null);
+    const holdEnd = this.holds().reduce<number | null>((m, h) => (h && (m === null || h.until < m) ? h.until : m), null);
+    const t = [this.s.deadline, this.s.nextHandAt, closeAt, this.idleKickAt(), holdEnd].filter((x): x is number => x !== null);
     return t.length ? Math.min(...t) : null;
   }
 
@@ -185,7 +198,7 @@ export class TableRoom {
   /** 宿主每次存档前调用：记下空桌的起点。 */
   checkEmpty(now: number) {
     if (!this.s.config.temporary) return;
-    const anyone = this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0;
+    const anyone = this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0 || this.holds().some(Boolean);
     if (anyone) this.s.emptySince = null;
     else this.s.emptySince ??= now;
   }
@@ -200,7 +213,13 @@ export class TableRoom {
     if (!Number.isInteger(seat) || seat < 0 || seat >= SEATS) return "没有这个座位";
     if (this.seatOf(userId) >= 0) return "你已经在这张桌上了";
     if (this.s.seats[seat]) return "这个座位有人了";
+    const hold = this.holds()[seat];
+    if (hold && hold.userId !== userId) return "这个座位有人正在入座";
     return null;
+  }
+
+  private holds(): (Hold | null)[] {
+    return (this.s.holds ??= Array(SEATS).fill(null));
   }
 
   // ---------- 玩家操作 ----------
@@ -209,8 +228,34 @@ export class TableRoom {
     const err = this.canSit(player.userId, seat);
     if (err) return err;
     this.s.seats[seat] = this.blankSeat(player, false, stack);
+    this.release(player.userId);
     this.syncBots(now);
     this.scheduleStart(now);
+    return null;
+  }
+
+  /** 占座：点了空位先占 10 秒，选好带入再坐下。同一个人在一张桌只占一个座位。 */
+  hold(player: Player, seat: number, now: number): string | null {
+    const err = this.canSit(player.userId, seat);
+    if (err) return err;
+    this.release(player.userId);
+    this.holds()[seat] = { ...player, start: now, until: now + HOLD_MS };
+    return null;
+  }
+
+  release(userId: number) {
+    const holds = this.holds();
+    holds.forEach((h, i) => h?.userId === userId && (holds[i] = null));
+  }
+
+  /** 赢了没摊牌（别人都弃了）时亮牌给大家看：which 0 第一张，1 第二张，2 两张。 */
+  show(userId: number, which: number): string | null {
+    const i = this.seatOf(userId);
+    const seat = this.s.seats[i];
+    if (!seat) return "你没有坐在这张桌上";
+    if (this.s.street !== "showdown" || !seat.inHand || seat.folded || !seat.hole.length) return "现在不能亮牌";
+    if (![0, 1, 2].includes(which)) return "看不懂的操作";
+    seat.showMask = (seat.showMask ?? 0) | (which === 2 ? 3 : 1 << which);
     return null;
   }
 
@@ -276,6 +321,11 @@ export class TableRoom {
         }
         continue;
       }
+      const holds = this.holds();
+      if (holds.some((h) => h && now >= h.until)) {
+        holds.forEach((h, i) => h && now >= h.until && (holds[i] = null));
+        continue;
+      }
       // 一个人坐着等开局时掉线：没有下一手来清理，到点直接请离桌
       const kick = this.idleKickAt();
       if (kick !== null && now >= kick) {
@@ -309,8 +359,9 @@ export class TableRoom {
       if (!x) return null;
       let cards: (Card | null)[] = [];
       if (x.inHand && x.hole.length) {
+        const mask = x.shown ? 3 : (x.showMask ?? 0);
         if (i === you || x.shown) cards = x.hole;
-        else if (!x.folded) cards = x.hole.map(() => null);
+        else if (!x.folded) cards = x.hole.map((c, k) => (mask >> k) & 1 ? c : null);
       }
       return {
         login: x.login,
@@ -322,6 +373,7 @@ export class TableRoom {
         folded: x.folded,
         allIn: x.allIn,
         cards,
+        showMask: x.shown ? 3 : (x.showMask ?? 0),
         away: x.away !== null,
         leaving: x.leaving,
         last: x.last,
@@ -347,6 +399,7 @@ export class TableRoom {
       you: youSeat,
       legal: youSeat === null ? null : this.legal(youSeat),
       say: this.s.say,
+      holds: this.holds().map((h) => h && { login: h.login, start: h.start, until: h.until, you: h.userId === userId }),
     };
   }
 
@@ -420,7 +473,7 @@ export class TableRoom {
     for (const name of names) {
       if (bots >= want) break;
       if (this.s.seats.some((x) => x?.login === name)) continue;
-      const free = this.s.seats.findIndex((x) => !x);
+      const free = this.s.seats.findIndex((x, i) => !x && !this.holds()[i]);
       if (free < 0) break;
       const id = -1 - names.indexOf(name);
       this.s.seats[free] = this.blankSeat({ userId: id, login: name, avatarUrl: null }, true, BUY_IN_BB * config.bb);
@@ -438,7 +491,7 @@ export class TableRoom {
       if (x.bot && x.stack < MIN_BUY_IN_BB * this.s.config.bb) x.stack = BUY_IN_BB * this.s.config.bb;
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
-        hole: [], shown: false, last: null, won: 0, hand: null,
+        hole: [], shown: false, showMask: 0, last: null, won: 0, hand: null,
       });
     });
     this.syncBots(now);

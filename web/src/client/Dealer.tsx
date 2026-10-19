@@ -56,51 +56,57 @@ export function DealerSprite({ mood }: { mood: Mood }) {
   );
 }
 
-const IDLE_LINES = ["要发牌吗？点我", "今天烧了多少 token？", "筹码够不够？", "我只发牌，不偷看"];
+/** 闲着时随机做的小动作，对应 styles.css 里的 .act-* 动画 */
+const ACTS = ["look-l", "look-r", "wave", "shuffle", "jump", "sway", "peek", "stretch"] as const;
 
 /**
- * 发牌员：会眨眼、上下晃，点一下推进一条街并换表情。
- * stage 由外部控制（0 翻牌前 … 4 摊牌），onAdvance 请求下一步。
+ * 发牌员：不说话，会眨眼、上下晃，隔一会儿做个小动作（东张西望、招手、洗牌、蹦一下…）。
+ * stage 由外部控制（0 翻牌前 … 4 摊牌），每推进一条街换个表情；点一下会蹦一下。
  */
-export function Dealer({ stage, onAdvance, lines }: { stage: number; onAdvance: () => void; lines: string[] }) {
+export function Dealer({ stage, onPoke }: { stage: number; onPoke?: () => void }) {
   const [mood, setMood] = useState<Mood>("idle");
-  const [bubble, setBubble] = useState<string>(IDLE_LINES[0]);
+  const [act, setAct] = useState<(typeof ACTS)[number] | "">("");
   const [hop, setHop] = useState(0);
   const base = useRef<Mood>("idle");
-  const pokes = useRef(0);
 
-  // 定时眨眼；长时间没人理就犯困
+  // 定时眨眼、做小动作；长时间没人理就犯困
   useEffect(() => {
     let alive = true;
     let lastPoke = Date.now();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const later = (fn: () => void, ms: number) => timers.push(setTimeout(() => alive && fn(), ms));
     const tick = () => {
-      if (!alive) return;
-      if (Date.now() - lastPoke > 20_000 && base.current === "idle") {
-        setMood("sleepy");
-        setBubble("zzz…");
+      if (Date.now() - lastPoke > 40_000 && base.current === "idle") setMood("sleepy");
+      else if (Math.random() < 0.55) {
+        const next = ACTS[Math.floor(Math.random() * ACTS.length)];
+        setAct(next);
+        if (next === "peek") setMood("surprised");
+        if (next === "wave") setMood("happy");
+        later(() => {
+          setAct("");
+          setMood(base.current);
+        }, 1400);
       } else if (base.current === "idle" || base.current === "focus") {
         setMood("blink");
-        setTimeout(() => alive && setMood(base.current), 140);
+        later(() => setMood(base.current), 140);
       }
-      timer = setTimeout(tick, 2600 + Math.random() * 2200);
+      later(tick, 2400 + Math.random() * 2600);
     };
-    let timer = setTimeout(tick, 2000);
+    later(tick, 1800);
     const wake = () => (lastPoke = Date.now());
     addEventListener("pointerdown", wake);
     return () => {
       alive = false;
-      clearTimeout(timer);
+      timers.forEach(clearTimeout);
       removeEventListener("pointerdown", wake);
     };
   }, []);
 
-  // 每推进一条街换一次表情和台词
+  // 每推进一条街换一次表情
   useEffect(() => {
     const moods: Mood[] = ["idle", "focus", "happy", "surprised", "wink"];
     base.current = moods[stage] ?? "idle";
     setMood(base.current);
-    if (stage > 0) setBubble(lines[stage] ?? "");
-    if (stage === 0 && pokes.current > 0) setBubble("重新洗牌～");
     if (stage === 0 || stage === 4) {
       const t = setTimeout(() => {
         base.current = "idle";
@@ -108,23 +114,23 @@ export function Dealer({ stage, onAdvance, lines }: { stage: number; onAdvance: 
       }, 1600);
       return () => clearTimeout(t);
     }
-  }, [stage, lines]);
+  }, [stage]);
 
   const poke = () => {
-    pokes.current += 1;
     setHop((h) => h + 1);
-    onAdvance();
+    setMood("happy");
+    setTimeout(() => setMood(base.current), 900);
+    onPoke?.();
   };
 
   return (
-    <div className="dealer">
-      <div className="bubble" key={bubble} role="status">{bubble}</div>
+    <div className={`dealer${act ? ` act-${act}` : ""}`}>
       <button
         className={`dealer-btn${hop % 2 ? " hop-a" : hop ? " hop-b" : ""}`}
         onClick={poke}
         onPointerEnter={() => base.current === "idle" && setMood("happy")}
         onPointerLeave={() => setMood(base.current)}
-        aria-label="发牌员 Claude，点一下发下一张牌"
+        aria-label="发牌员 Claude"
       >
         <DealerSprite mood={mood} />
       </button>

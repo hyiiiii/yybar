@@ -163,7 +163,7 @@ main { min-height: 60vh; }
 
 
 /* 牌桌：跑道形（上下直边、左右半圆），只有一圈细边，座位是压在边线上的圆盘 */
-.felt-wrap { position: relative; width: min(860px, calc(100% - 96px)); aspect-ratio: 2.55 / 1; margin: 72px 0 104px; }
+.felt-wrap { position: relative; width: min(860px, calc(100% - 96px)); aspect-ratio: 2.55 / 1; margin: 72px 0 150px; }
 .felt {
   position: absolute; inset: 0; border-radius: 9999px;
   background: var(--table-top);
@@ -177,7 +177,8 @@ main { min-height: 60vh; }
 .pot small { font-size: 11px; color: var(--label-3); }
 .board-cards { display: flex; gap: 6px; }
 
-.seat { position: absolute; transform: translate(-50%, -50%); z-index: 2; }
+/* 入座后桌子转一圈把自己转到下方：座位沿着新位置滑过去，不是一下子跳过去 */
+.seat { position: absolute; transform: translate(-50%, -50%); z-index: 2; transition: left .6s cubic-bezier(.4, 0, .2, 1), top .6s cubic-bezier(.4, 0, .2, 1), opacity .35s ease; }
 .pos-0 { left: 31%; top: 0; }
 .pos-1 { left: 69%; top: 0; }
 .pos-2 { left: 100%; top: 50%; }
@@ -190,7 +191,42 @@ main { min-height: 60vh; }
   background: var(--panel); box-shadow: inset 0 0 0 3px var(--table-line), var(--shadow);
 }
 .seat-pos { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
-.seat-stack { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--label-2); }
+/* 名字和余额放在头像下面的小牌子上 */
+.seat-plate {
+  position: absolute; left: 50%; top: calc(100% - 10px); transform: translateX(-50%); z-index: 1;
+  min-width: 88px; max-width: 132px; padding: 3px 10px 4px; border-radius: 10px;
+  display: flex; flex-direction: column; align-items: center; line-height: 1.2;
+  background: var(--panel); box-shadow: var(--shadow), inset 0 0 0 1px var(--separator);
+}
+.plate-name { font-size: 11px; color: var(--label-3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plate-stack { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 头像上方的小标签：刚才的动作、摊牌的牌型 */
+.seat-note {
+  position: absolute; left: 50%; bottom: calc(100% - 8px); transform: translateX(-50%); z-index: 3;
+  font-size: 11px; font-weight: 600; line-height: 1.5; padding: 0 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--label); color: var(--bg);
+}
+/* 有人点了空位正在选带入：灰色头像 + 橙色 10 秒倒计时 */
+.seat-held .seat-disc { background: var(--fill-2); box-shadow: inset 0 0 0 3px var(--table-line-2); }
+.seat-held .seat-pos { color: var(--label-3); }
+.seat-held .seat-plate { opacity: .75; }
+.turn-ring.turn-ring-hold circle { stroke: var(--accent); animation-name: hold-ring; }
+@keyframes hold-ring { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 100; } }
+/* 赢家：金色光圈 + WIN 字样 + 赢了多少和牌型 */
+.seat-win .seat-disc { box-shadow: inset 0 0 0 3px #e7b43c, 0 0 0 6px rgb(240 190 60 / 0.22), 0 0 30px rgb(240 190 60 / 0.55); }
+.seat-plate-win { padding-top: 13px; min-width: 104px; box-shadow: 0 0 0 1.5px #e7b43c, 0 0 26px rgb(240 190 60 / 0.5); }
+.win-mark {
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%) rotate(-4deg);
+  font: 900 26px/1 var(--font); letter-spacing: 0.02em; font-style: italic; color: transparent;
+  background: linear-gradient(180deg, #fff6c2 0%, #ffd23f 45%, #e39a10 100%); -webkit-background-clip: text; background-clip: text;
+  -webkit-text-stroke: 0.6px #a8650a; filter: drop-shadow(0 2px 0 #8a4e06) drop-shadow(0 0 6px rgb(255 200 60 / 0.6));
+}
+.win-amount { font-size: 15px; font-weight: 700; color: #c88a0e; font-variant-numeric: tabular-nums; }
+.seat-plate-win small { font-size: 11px; color: var(--label-2); white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .win-mark { animation: win-pop .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+  @keyframes win-pop { from { scale: .3; opacity: 0; } }
+}
 .seat-you .seat-disc { box-shadow: inset 0 0 0 3px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
 .seat-acting .seat-disc { box-shadow: inset 0 0 0 3px var(--table-line-2), 0 0 0 4px color-mix(in srgb, var(--go) 14%, transparent); }
 /* 行动倒计时：绕着头像一圈绿条，从满到空 */
@@ -199,24 +235,37 @@ main { min-height: 60vh; }
 @keyframes turn-ring { 0% { stroke-dashoffset: 0; } 70% { stroke: var(--go); } 100% { stroke-dashoffset: 100; stroke: var(--danger); } }
 .seat-folded { opacity: 0.45; }
 .seat { transition: opacity .35s ease; }
-.seat-name { position: absolute; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--label-3); white-space: nowrap; max-width: 13em; overflow: hidden; text-overflow: ellipsis; }
-.pos-0 .seat-name, .pos-1 .seat-name { bottom: calc(100% + 4px); }
-.pos-2 .seat-name, .pos-3 .seat-name, .pos-4 .seat-name, .pos-5 .seat-name { top: calc(100% + 4px); }
 .seat-cards { position: absolute; top: 50%; display: flex; transform: translateY(-50%); }
 .seat-cards .card + .card { margin-left: -16px; }
 .pos-0 .seat-cards, .pos-4 .seat-cards, .pos-2 .seat-cards { right: calc(100% + 6px); }
 .pos-1 .seat-cards, .pos-3 .seat-cards, .pos-5 .seat-cards { left: calc(100% + 6px); }
-.seat-you .seat-cards .card + .card { margin-left: 4px; }
+.seat-you .seat-cards .card-btn + .card-btn { margin-left: 4px; }
+/* 自己的牌：一圈暖色光晕；赢了更亮。能亮牌时点一张亮一张 */
+.card-btn { position: relative; border: 0; padding: 0; background: none; font: inherit; line-height: 0; border-radius: 8px; cursor: default; color: inherit; }
+.seat-you .seat-cards .card { box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgb(0 0 0 / 0.06), 0 0 0 2px rgb(255 205 110 / 0.75), 0 0 18px 3px rgb(255 190 80 / 0.5); }
+.seat-you.seat-win .seat-cards .card { box-shadow: inset 0 1px 0 #fff, 0 0 0 2px #f2c044, 0 0 26px 6px rgb(255 200 60 / 0.7); }
+.seat-cards-showable .card-btn:not(:disabled) { cursor: pointer; }
+.seat-cards-showable .card-btn:not(:disabled):hover .card { translate: 0 -5px; }
+.card-btn .card { transition: translate .2s ease; }
+.card-shown::after { content: "已亮"; position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%); font-size: 10px; line-height: 1; color: var(--label-3); white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .seat-cards-showable .card-btn:not(:disabled) .card { animation: show-hint 1.6s ease-in-out infinite; }
+  @keyframes show-hint { 50% { translate: 0 -3px; } }
+}
 .seat-bet { position: absolute; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
 .seat-bet::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--chip); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--chip) 60%, white); }
-.pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
-.pos-3 .seat-bet, .pos-4 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
-.pos-2 .seat-bet, .pos-5 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+.pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 40px); left: 50%; transform: translateX(-50%); }
+.pos-3 .seat-bet, .pos-4 .seat-bet { bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); }
+/* 最左、最右两个座位的筹码下在桌面里，不压在头上 */
+.pos-2 .seat-bet { right: calc(100% + 20px); top: calc(100% - 4px); }
+.pos-5 .seat-bet { left: calc(100% + 20px); top: calc(100% - 4px); }
 /* 下注、弃牌、过牌的小过渡：筹码从座位推出去，弃掉的牌往桌心收走，动作文字轻轻弹出来 */
 @media (prefers-reduced-motion: no-preference) {
   .seat-bet { animation: bet-in .32s cubic-bezier(.2, .9, .3, 1.2) both; }
   .pos-0 .seat-bet, .pos-1 .seat-bet { --bet-from: 0 -16px; }
-  .pos-2 .seat-bet, .pos-3 .seat-bet, .pos-4 .seat-bet, .pos-5 .seat-bet { --bet-from: 0 16px; }
+  .pos-3 .seat-bet, .pos-4 .seat-bet { --bet-from: 0 16px; }
+  .pos-2 .seat-bet { --bet-from: 16px 0; }
+  .pos-5 .seat-bet { --bet-from: -16px 0; }
   @keyframes bet-in { from { translate: var(--bet-from, 0 0); opacity: 0; scale: .7; } }
   .seat-cards-muck { animation: muck .45s ease-in both; }
   .pos-0 .seat-cards-muck, .pos-1 .seat-cards-muck { --muck-to: 0 40px; }
@@ -231,7 +280,19 @@ main { min-height: 60vh; }
 }
 .seat-cards-muck { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .seat-cards-muck { display: none; } }
-.dealer-chip { position: absolute; right: -4px; bottom: -2px; width: 22px; height: 22px; border-radius: 50%; background: var(--label); color: var(--bg); font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+/* 庄家按钮只有一个，换庄时沿桌面滑到下一个人跟前 */
+.dealer-chip {
+  position: absolute; z-index: 3; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%;
+  background: var(--label); color: var(--bg); font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  box-shadow: 0 0 0 2px var(--bg), 0 2px 6px rgb(0 0 0 / 0.2);
+  transition: left .7s cubic-bezier(.4, 0, .2, 1), top .7s cubic-bezier(.4, 0, .2, 1);
+}
+.dealer-at-0 { left: calc(31% + 70px); top: 24px; }
+.dealer-at-1 { left: calc(69% - 70px); top: 24px; }
+.dealer-at-2 { left: calc(100% - 50px); top: calc(50% - 54px); }
+.dealer-at-3 { left: calc(69% - 70px); top: calc(100% - 24px); }
+.dealer-at-4 { left: calc(31% + 70px); top: calc(100% - 24px); }
+.dealer-at-5 { left: 50px; top: calc(50% - 54px); }
 /* 左右切桌：桌面和座位从切换方向滑进来 */
 @media (prefers-reduced-motion: no-preference) {
   .slide-next > .felt, .slide-next > .seat { animation: slide-next .45s cubic-bezier(.22, .9, .3, 1) both; }
@@ -240,7 +301,25 @@ main { min-height: 60vh; }
   @keyframes slide-next { from { translate: 90px 0; opacity: 0; } }
   @keyframes slide-prev { from { translate: -90px 0; opacity: 0; } }
 }
-.felt-corner { position: absolute; right: 0; top: calc(100% + 50px); display: flex; align-items: center; gap: 6px; }
+.felt-corner { position: absolute; right: 0; top: calc(100% + 84px); display: flex; align-items: center; gap: 6px; }
+/* 铃铛：别的桌轮到你时晃、亮小红点 */
+.icon-btn-bell { position: relative; }
+.icon-btn-bell svg.stroke { stroke-width: 1.3; stroke-linejoin: round; transform-origin: 50% 10%; }
+.icon-btn-bell.ringing { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.icon-btn-bell.ringing::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 1.5px var(--panel); }
+@media (prefers-reduced-motion: no-preference) {
+  .icon-btn-bell.rang svg { animation: bell .9s ease-in-out; }
+  .icon-btn-bell.ringing svg { animation: bell 1.4s ease-in-out infinite; }
+  @keyframes bell { 0%, 70%, 100% { rotate: 0deg; } 10% { rotate: 18deg; } 25% { rotate: -16deg; } 40% { rotate: 11deg; } 55% { rotate: -6deg; } }
+}
+/* 登录后桌子上方的问候，像 Claude 官网 */
+.greeting { display: flex; align-items: center; gap: 10px; margin: 2px 0 -18px; font-family: var(--serif); font-weight: 400; font-size: clamp(22px, 4.4vw, 32px); letter-spacing: -0.01em; color: var(--label); }
+.claude-mark { width: 1.05em; height: 1.05em; flex: none; fill: var(--clawd); }
+@media (prefers-reduced-motion: no-preference) {
+  .claude-mark { animation: mark-in 1s cubic-bezier(.2, .9, .3, 1) both; }
+  .greeting span { animation: pop .5s ease-out .15s both; }
+  @keyframes mark-in { from { rotate: -120deg; scale: .4; opacity: 0; } }
+}
 .corner-label { min-width: 92px; text-align: center; font-size: 13px; color: var(--label); white-space: nowrap; }
 .corner-label small { margin-left: 6px; color: var(--label-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .icon-btn { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: var(--panel); color: var(--label); box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
@@ -279,6 +358,23 @@ main { min-height: 60vh; }
   @keyframes hop-b { 40% { transform: translateY(-14px) rotate(4deg); } }
   @keyframes pop { from { transform: translateY(4px); opacity: 0; } }
   @keyframes flip { from { transform: rotateY(90deg) translateY(-4px); } }
+  /* 闲着时的小动作：东张西望、招手、洗牌、蹦一下、晃一晃、缩一下偷看、伸懒腰 */
+  .dealer-eyes { transition: transform .25s ease; }
+  .act-look-l .dealer-eyes { transform: translateX(-0.9px); }
+  .act-look-r .dealer-eyes { transform: translateX(0.9px); }
+  .act-wave .dealer-arm-r { animation: wave-big .3s ease-in-out 4 alternate; }
+  @keyframes wave-big { to { transform: translateY(-2.5px); } }
+  .act-shuffle .dealer-arm-l, .act-shuffle .dealer-arm-r { animation: shuffle .18s steps(2) 7; transform-box: view-box; }
+  .act-shuffle .dealer-arm-r { animation-delay: .09s; }
+  @keyframes shuffle { 50% { transform: translateY(-1px); } }
+  .act-jump .dealer-sprite { animation: jump .7s cubic-bezier(.3, .7, .4, 1); }
+  @keyframes jump { 35% { transform: translateY(-12px) scaleY(1.05); } 65% { transform: translateY(0) scaleY(.9); } }
+  .act-sway .dealer-sprite { animation: sway 1.3s ease-in-out; }
+  @keyframes sway { 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
+  .act-peek .dealer-sprite { animation: peek 1.3s ease; transform-origin: 50% 100%; }
+  @keyframes peek { 25%, 75% { transform: scaleY(.82); } }
+  .act-stretch .dealer-sprite { animation: stretch 1.3s ease; transform-origin: 50% 100%; }
+  @keyframes stretch { 40%, 60% { transform: scale(.93, 1.12); } }
 }
 
 .actions { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -435,7 +531,7 @@ main { min-height: 60vh; }
   .split { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
-  .felt-wrap { width: calc(100% - 72px); aspect-ratio: 1 / 1.55; margin: 56px 0 124px; }
+  .felt-wrap { width: calc(100% - 72px); aspect-ratio: 1 / 1.55; margin: 56px 0 140px; }
   .pos-0 { left: 6%; top: 20%; }
   .pos-1 { left: 94%; top: 20%; }
   .pos-2 { left: 100%; top: 52%; }
@@ -447,15 +543,25 @@ main { min-height: 60vh; }
   .seat-stack { font-size: 13px; }
   .seat:not(.seat-you) .seat-cards { display: none; }
   .seat-you .seat-cards { left: 50%; right: auto; top: auto; bottom: calc(100% + 30px); transform: translateX(-50%); }
-  .pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 6px); }
-  .pos-2 .seat-bet, .pos-5 .seat-bet { bottom: auto; top: calc(100% + 18px); }
+  .pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 34px); }
+  .pos-2 .seat-bet { right: calc(100% + 12px); top: calc(100% + 2px); }
+  .pos-5 .seat-bet { left: calc(100% + 12px); top: calc(100% + 2px); }
+  .seat-plate { min-width: 72px; padding: 2px 6px 3px; }
+  .plate-stack { font-size: 12px; }
+  .dealer-at-0 { left: calc(6% + 46px); top: calc(20% - 6px); }
+  .dealer-at-1 { left: calc(94% - 46px); top: calc(20% - 6px); }
+  .dealer-at-2 { left: calc(100% - 40px); top: calc(52% - 44px); }
+  .dealer-at-3 { left: calc(82% - 48px); top: calc(92% - 40px); }
+  .dealer-at-4 { left: calc(18% + 48px); top: calc(92% - 40px); }
+  .dealer-at-5 { left: 40px; top: calc(52% - 44px); }
+  .greeting { margin-bottom: -10px; }
   .dealer-sprite { width: 60px; }
   .card { width: 38px; height: 54px; border-radius: 6px; }
   .card-rank { font-size: 20px; left: 4px; }
   .card-icon svg { width: 22px; height: 22px; }
   .card-back::before { inset: 4px; border-radius: 2px; }
   .card-back::after { inset: 6px; }
-  .felt-corner { right: 50%; transform: translateX(50%); top: calc(100% + 44px); }
+  .felt-corner { right: 50%; transform: translateX(50%); top: calc(100% + 64px); }
   .board-cards { gap: 3px; }
   .tables { grid-template-columns: minmax(0, 1fr); }
   .stats { grid-template-columns: minmax(0, 1fr); }

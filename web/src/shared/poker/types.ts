@@ -9,6 +9,11 @@ export type ClientMsg =
   /** buyIn：带入多少筹码，不填按 100 个大盲 */
   | { t: "sit"; seat: number; buyIn?: number }
   | { t: "leave" }
+  /** 点了空位先占座，选好带入再 sit；取消就 release */
+  | { t: "hold"; seat: number }
+  | { t: "release" }
+  /** 赢了没摊牌时亮牌：0 第一张，1 第二张，2 两张 */
+  | { t: "show"; which: number }
   | { t: "act"; action: "fold" | "check" | "call" | "raise"; amount?: number }
   | { t: "ping" };
 
@@ -27,6 +32,8 @@ export interface SeatView {
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */
   last: string | null;
+  /** 亮给大家的牌：第 1 位第一张，第 2 位第二张；摊牌是 3 */
+  showMask: number;
   /** 本手赢到的筹码（摊牌后） */
   won: number;
   hand: string | null;
@@ -64,6 +71,8 @@ export interface TableView {
   legal: Legal | null;
   /** 牌局播报，例如「nightowl 以两对赢下 1,200」 */
   say: string | null;
+  /** 每个座位的占座（有人点了空位正在选带入） */
+  holds: ({ login: string; start: number; until: number; you: boolean } | null)[];
 }
 
 /** closed：玩家开的桌没人了，已经收掉 */

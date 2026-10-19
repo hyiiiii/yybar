@@ -14,6 +14,8 @@ const CASHOUT_RETRY_MS = 5_000;
 export class PokerTable extends DurableObject<Env> {
   private room: TableRoom | null = null;
   private reportedSeated = -1;
+  /** 上次写进 poker_seats 的在座真人，变了才重写 */
+  private reportedHumans: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -58,6 +60,9 @@ export class PokerTable extends DurableObject<Env> {
     let err: string | null = null;
     if (msg.t === "sit") err = await this.sit(user, msg.seat, msg.buyIn);
     else if (msg.t === "leave") err = room.leave(user.userId, now);
+    else if (msg.t === "hold") err = room.hold(user, msg.seat, now);
+    else if (msg.t === "release") room.release(user.userId);
+    else if (msg.t === "show") err = room.show(user.userId, msg.which);
     else if (msg.t === "act") err = room.act(user.userId, msg.action, msg.amount, now);
     else return;
     if (err) fail(err);
@@ -135,6 +140,7 @@ export class PokerTable extends DurableObject<Env> {
       send(ws, { t: "state", view: room.view(user.userId || null, now) });
     }
 
+    await this.reportHumans();
     const seated = room.seated();
     if (seated !== this.reportedSeated) {
       try {
@@ -146,10 +152,33 @@ export class PokerTable extends DurableObject<Env> {
     }
   }
 
+  /** 把在座的真人写进 poker_seats，大厅靠它知道一个人坐在哪几张桌。只是提醒用，失败下次再写。 */
+  private async reportHumans() {
+    const room = this.room;
+    const no = room ? room.s.config.no : null;
+    const ids = room ? room.s.seats.filter((x) => x && !x.bot).map((x) => x!.userId).sort((a, b) => a - b) : [];
+    const key = ids.join();
+    if (key === this.reportedHumans || no === null) return;
+    try {
+      const db = this.env.DB;
+      await db.batch([
+        db.prepare("DELETE FROM poker_seats WHERE table_no = ?").bind(no),
+        ...ids.map((id) => db.prepare("INSERT OR IGNORE INTO poker_seats (table_no, user_id) VALUES (?, ?)").bind(no, id)),
+      ]);
+      this.reportedHumans = key;
+    } catch {
+      // 下次再写
+    }
+  }
+
   /** 收桌：删掉大厅里的这张桌，通知还连着的人，清空存档。删桌失败返回 false，下次闹钟再试。 */
   private async close(): Promise<boolean> {
     try {
-      await this.env.DB.prepare("DELETE FROM poker_tables WHERE no = ? AND created_by IS NOT NULL").bind(this.room!.s.config.no).run();
+      const no = this.room!.s.config.no;
+      await this.env.DB.batch([
+        this.env.DB.prepare("DELETE FROM poker_tables WHERE no = ? AND created_by IS NOT NULL").bind(no),
+        this.env.DB.prepare("DELETE FROM poker_seats WHERE table_no = ?").bind(no),
+      ]);
     } catch {
       return false;
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
-import { buildPots, EMPTY_TABLE_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
+import { buildPots, EMPTY_TABLE_MS, HOLD_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
   const r = { T: 10, J: 11, Q: 12, K: 13, A: 14 }[s[0]] ?? Number(s[0]);
@@ -188,6 +188,49 @@ describe("table flow", () => {
     const fixed = TableRoom.create({ no: 2, sb: 5, bb: 10, bots: false });
     fixed.checkEmpty(0);
     expect(fixed.closable(EMPTY_TABLE_MS * 10)).toBe(false);
+  });
+
+  it("holds a seat for 10 seconds while picking a buy-in", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    expect(room.hold(p(1), 2, 0)).toBeNull();
+    expect(room.hold(p(2), 2, 1)).toMatch(/正在入座/);
+    expect(room.sit(p(2), 2, 1000, 1)).toMatch(/正在入座/);
+    expect(room.view(2, 1).holds[2]).toEqual({ login: "u1", start: 0, until: HOLD_MS, you: false });
+    expect(room.view(1, 1).holds[2]!.you).toBe(true);
+    // 换个座位占：原来那个放开
+    expect(room.hold(p(1), 4, 2)).toBeNull();
+    expect(room.view(1, 2).holds[2]).toBeNull();
+    expect(room.nextWake()).toBe(2 + HOLD_MS);
+    room.tick(2 + HOLD_MS);
+    expect(room.view(1, 3).holds.every((h) => h === null)).toBe(true);
+    // 占着的人自己能坐下，坐下后占座清掉
+    room.hold(p(1), 0, 20_000);
+    expect(room.sit(p(1), 0, 1000, 20_001)).toBeNull();
+    expect(room.view(1, 20_001).holds[0]).toBeNull();
+  });
+
+  it("lets the winner show cards after everyone folds", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 1, 1000, 0);
+    room.tick(2000);
+    const actor = room.s.seats[room.s.toAct]!.userId;
+    const other = actor === 1 ? 2 : 1;
+    expect(room.show(other, 0)).toMatch(/现在不能亮牌/);
+    room.act(actor, "fold", undefined, 2001);
+    expect(room.s.street).toBe("showdown");
+    expect(room.show(actor, 0)).toMatch(/现在不能亮牌/); // 弃牌的人不能亮
+    expect(room.view(actor, 2002).seats[room.seatOf(other)]!.cards).toEqual([null, null]);
+    expect(room.show(other, 1)).toBeNull();
+    const seen = room.view(actor, 2003).seats[room.seatOf(other)]!;
+    expect(seen.cards[0]).toBeNull();
+    expect(seen.cards[1]).toEqual(room.s.seats[room.seatOf(other)]!.hole[1]);
+    expect(seen.showMask).toBe(2);
+    room.show(other, 2);
+    expect(room.view(actor, 2004).seats[room.seatOf(other)]!.cards.every(Boolean)).toBe(true);
+    // 下一手清掉
+    room.tick(20_000);
+    expect(room.view(actor, 20_001).seats[room.seatOf(other)]!.showMask).toBe(0);
   });
 
   it("bots keep a practice table going and chips stay conserved", () => {

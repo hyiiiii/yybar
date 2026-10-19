@@ -65,6 +65,8 @@ export function PlayingCard({ card }: { card: CardSpec }) {
 }
 
 export interface Seat {
+  /** 真实座位号：入座后桌子会转，按它保持同一个元素，座位才能滑到新位置 */
+  id: number;
   position: string;
   login?: string;
   /** 筹码，1 个筹码按 $1 显示 */
@@ -78,19 +80,27 @@ export interface Seat {
   mucked?: CardSpec[];
   /** 轮到这个座位时的倒计时：key 换了就重新开始；total、elapsed 单位毫秒 */
   timer?: { key: string; total: number; elapsed: number };
-  dealer?: boolean;
-  /** 跟在名字后面的一句话：刚才的动作、赢了多少 */
+  /** 有人点了这个空位正在选带入：灰色头像 + 橙色倒计时 */
+  held?: { key: string; total: number; elapsed: number };
+  /** 这手赢了：赢了多少、什么牌（别人都弃了就没有牌型） */
+  win?: { amount: number; hand: string | null };
+  /** 自己的牌里已经亮给大家的（第 1 位第一张，第 2 位第二张） */
+  shownMask?: number;
+  /** 能亮牌时点自己的牌调用，k 是第几张 */
+  onShow?: (k: number) => void;
+  /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
 }
 
 /**
- * 跑道形牌桌：上下两条直边、左右半圆。6 个座位按 BTN → SB → BB → UTG → HJ → CO 顺时针排列，
- * 0 号在左上。center 放在桌面正中（发牌员、公共牌、底池）。
+ * 跑道形牌桌：上下两条直边、左右半圆。6 个显示位顺时针排列，0 号在左上。
+ * seats 按显示位给；center 放在桌面正中（发牌员、公共牌、底池），button 是庄家所在的显示位。
  */
 export function FeltTable({
   seats,
   center,
   corner,
+  button = null,
   className = "",
   onEmptySeat,
 }: {
@@ -99,30 +109,46 @@ export function FeltTable({
   center: ReactNode;
   /** 桌子右下角的控件（切桌、开桌） */
   corner?: ReactNode;
+  button?: number | null;
   onEmptySeat?: (index: number) => void;
 }) {
+  // 按真实座位号排 DOM，换位置时元素不变，CSS 过渡让座位滑过去
+  const order = seats.map((s, d) => ({ s, d })).sort((a, b) => a.s.id - b.s.id);
   return (
     <div className={`felt-wrap ${className}`}>
       <div className="felt">{center}</div>
       {corner && <div className="felt-corner">{corner}</div>}
-      {seats.map((s, i) => (
+      {button !== null && <span className={`dealer-chip dealer-at-${button}`} aria-label="庄家">D</span>}
+      {order.map(({ s, d }) => (
         <div
-          key={i}
-          className={`seat pos-${i}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}`}
+          key={s.id}
+          className={`seat pos-${d}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}${s.held ? " seat-held" : ""}${s.win ? " seat-win" : ""}`}
         >
           {s.login ? (
             <>
               <div className="seat-disc" title={s.you ? "你" : s.login}>
                 {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
+                {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
                 <span className="seat-pos">{s.position}</span>
-                <span className="seat-stack">{fmtStack(s.stack ?? 0)}</span>
-                {s.dealer && <span className="dealer-chip">D</span>}
               </div>
+              {s.note && !s.win && <span key={s.note} className="seat-note">{s.note}</span>}
               {s.cards && !s.folded && (
-                <div className="seat-cards">
-                  {s.cards.map((c, j) => (
-                    <PlayingCard key={j} card={c} />
-                  ))}
+                <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}`}>
+                  {s.cards.map((c, j) =>
+                    s.you ? (
+                      <button
+                        key={j}
+                        className={`card-btn${((s.shownMask ?? 0) >> j) & 1 ? " card-shown" : ""}`}
+                        disabled={!s.onShow || !!(((s.shownMask ?? 0) >> j) & 1)}
+                        onClick={() => s.onShow?.(j)}
+                        aria-label={s.onShow ? "亮这张牌" : undefined}
+                      >
+                        <PlayingCard card={c} />
+                      </button>
+                    ) : (
+                      <PlayingCard key={j} card={c} />
+                    ),
+                  )}
                 </div>
               )}
               {s.mucked && (
@@ -132,14 +158,22 @@ export function FeltTable({
                   ))}
                 </div>
               )}
-              <div className="seat-name">
-                {s.you ? "你" : s.login}
-                {s.note && <span key={s.note} className="seat-note"> · {s.note}</span>}
-              </div>
+              {s.win ? (
+                <div className="seat-plate seat-plate-win" key="win">
+                  <b className="win-mark">WIN</b>
+                  <span className="win-amount">+{fmtMoney(s.win.amount)}</span>
+                  <small>{s.win.hand ?? (s.you ? "你" : s.login)}</small>
+                </div>
+              ) : (
+                <div className="seat-plate">
+                  <span className="plate-name">{s.you ? "你" : s.login}</span>
+                  <b className="plate-stack">{s.held ? "入座中…" : fmtMoney(s.stack ?? 0)}</b>
+                </div>
+              )}
               {!!s.bet && <div key={s.bet} className="seat-bet">{fmtMoney(s.bet)}</div>}
             </>
           ) : (
-            <button className="seat-disc seat-open" onClick={() => onEmptySeat?.(i)}>
+            <button className="seat-disc seat-open" onClick={() => onEmptySeat?.(d)}>
               <span className="seat-pos">{s.position}</span>
               <span className="seat-join">入座</span>
             </button>
@@ -175,10 +209,10 @@ export function MarqueeSign({ text }: { text: string }) {
 }
 
 /** 绕着头像的一圈绿条，随行动时间慢慢缩短。开始时刻在挂载时定下来，之后重绘不会让它跳。 */
-function TurnRing({ total, elapsed }: { total: number; elapsed: number }) {
+function TurnRing({ total, elapsed, hold }: { total: number; elapsed: number; hold?: boolean }) {
   const [delay] = useState(() => `${-Math.max(0, elapsed)}ms`);
   return (
-    <svg className="turn-ring" viewBox="0 0 100 100" aria-hidden>
+    <svg className={`turn-ring${hold ? " turn-ring-hold" : ""}`} viewBox="0 0 100 100" aria-hidden>
       <circle cx="50" cy="50" r="47" pathLength={100} style={{ animationDuration: `${total}ms`, animationDelay: delay }} />
     </svg>
   );
@@ -187,13 +221,6 @@ function TurnRing({ total, elapsed }: { total: number; elapsed: number }) {
 /** 筹码按美元显示：$1,250 */
 export function fmtMoney(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
-}
-
-/** 座位圆盘里地方小，一万以上缩写：$12.5K */
-function fmtStack(n: number): string {
-  if (n < 10_000) return fmtMoney(n);
-  const [v, unit] = n >= 1e6 ? [n / 1e6, "M"] : [n / 1e3, "K"];
-  return `$${v >= 100 ? Math.floor(v) : Math.floor(v * 10) / 10}${unit}`;
 }
 
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

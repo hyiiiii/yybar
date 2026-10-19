@@ -25,7 +25,12 @@ tableRoutes.get("/", async (c) => {
     "DELETE FROM poker_tables WHERE created_by IS NOT NULL AND seated = 0 AND created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 minutes')",
   ).run();
   const { results } = await c.env.DB.prepare("SELECT no, sb, bb, bots, seated, created_by FROM poker_tables ORDER BY no").all<TableRow>();
-  return c.json({ tables: results.map(listed) });
+  // 登录了顺带告诉你坐在哪几张桌，前端在后台连着它们，轮到你时提醒
+  const user = await sessionUser(c);
+  const mine = user
+    ? (await c.env.DB.prepare("SELECT table_no FROM poker_seats WHERE user_id = ?").bind(user.id).all<{ table_no: number }>()).results.map((r) => r.table_no)
+    : [];
+  return c.json({ tables: results.map(listed), mine });
 });
 
 /** 开桌：盲注从 BLIND_LEVELS 里选，桌号接在最后。没人坐的时候牌桌会自己收掉。 */

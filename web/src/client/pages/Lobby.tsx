@@ -5,7 +5,7 @@ import { FeltTable, MarqueeSign, PlayingCard, fmtMoney, type CardSpec, type Seat
 import { Dealer } from "../Dealer";
 import type { Suit } from "../suits";
 import { DEFAULT_TABLE, TABLES } from "../tables";
-import { useTable } from "../useTable";
+import { useSeatWatch, useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
 import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
@@ -86,9 +86,37 @@ function BuyInSlider({ bb, balance, value, onChange }: { bb: number; balance: nu
 const defaultBuyIn = (bb: number, balance: number) =>
   Math.max(MIN_BUY_IN_BB * bb, Math.min(BUY_IN_BB * bb, MAX_BUY_IN_BB * bb, balance));
 
+/** Claude 的星芒标，问候语前面那个橙色小图标 */
+function ClaudeMark() {
+  return (
+    <svg className="claude-mark" viewBox="0 0 24 24" aria-hidden>
+      {Array.from({ length: 12 }, (_, k) => (
+        <rect key={k} x={11} y={1.5} width={2} height={9.5} rx={1} transform={`rotate(${k * 30} 12 12)`} />
+      ))}
+    </svg>
+  );
+}
+
+/** 登录后桌子上方的一句问候，像 Claude 官网那样：「✱ 又开工了，hyi」 */
+function Greeting({ name }: { name: string }) {
+  const [line] = useState(() => {
+    const h = new Date().getHours();
+    const byTime = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
+    const more = ["又开工了", "来两手？", "欢迎回来", byTime, byTime];
+    return more[Math.floor(Math.random() * more.length)];
+  });
+  return (
+    <h1 className="greeting">
+      <ClaudeMark />
+      <span>{line}，{name}</span>
+    </h1>
+  );
+}
+
 /**
- * 大厅就是一张牌桌：右下角切桌、开桌，点空位选带入后入座。牌局在服务端跑（每张桌一个 Durable Object），
- * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。
+ * 大厅就是一张牌桌：右下角切桌、开桌、铃铛，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
+ * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。可以同时坐几张桌：坐着的其他桌在后台连着，
+ * 轮到你行动时铃铛会响（手机上震动），点铃铛回到那张桌。
  */
 export function LobbyPage() {
   const { id } = useParams();
@@ -105,32 +133,44 @@ export function LobbyPage() {
   const [buyIn, setBuyIn] = useState(0);
   const [openBlinds, setOpenBlinds] = useState<[number, number]>(BLIND_LEVELS[1]);
   const [raiseTo, setRaiseTo] = useState(0);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  /** 自己坐着的桌（桌号） */
+  const [mySeats, setMySeats] = useState<Set<number>>(new Set());
   /** 开桌后等连上新桌自动入座 */
   const [pendingSit, setPendingSit] = useState<{ no: number; buyIn: number } | null>(null);
   const conn = useTable(table);
   const view = conn.view;
   /** 切到另一张桌之后要显示的话（切桌会清掉旧的提示） */
   const flash = useRef<string | null>(null);
+  /** 占座的面板开着时，服务端是否已经确认占到了 */
+  const holdSeen = useRef(false);
 
   const loadTables = () =>
     DEMO
       ? Promise.resolve()
-      : api<{ tables: Omit<TableEntry, "id">[] }>("/api/tables").then(
-          (r) => r.tables.length && setTables(r.tables.map((t) => ({ ...t, id: String(t.no) }))),
+      : api<{ tables: Omit<TableEntry, "id">[]; mine?: number[] }>("/api/tables").then(
+          (r) => {
+            if (r.tables.length) setTables(r.tables.map((t) => ({ ...t, id: String(t.no) })));
+            if (r.mine?.length) setMySeats((m) => new Set([...m, ...r.mine!]));
+          },
           () => {},
         );
   useEffect(() => {
     loadTables();
-  }, []);
+  }, [!!me?.user]);
   useEffect(() => {
     setNote(flash.current);
     flash.current = null;
     setPanel(null);
+    setConfirmLeave(false);
   }, [table.no]);
   useEffect(() => {
-    if (conn.error) setNote(conn.error);
+    if (!conn.error) return;
+    setNote(conn.error);
+    // 没占到座（被别人抢了）就收起选带入的面板
+    if (panel?.kind === "sit" && !holdSeen.current) setPanel(null);
   }, [conn.error]);
-  // 行动倒计时
+  // 行动、占座倒计时
   useEffect(() => {
     if (!view?.deadline) return;
     setNow(Date.now());
@@ -142,6 +182,7 @@ export function LobbyPage() {
     if (!conn.closed) return;
     const gone = table.no;
     setTables((ts) => ts.filter((t) => t.no !== gone));
+    setMySeats((m) => ((m = new Set(m)), m.delete(gone), m));
     setSlide("slide-prev");
     flash.current = `#${gone} 没人了，已经收桌`;
     navigate(`/table/${DEFAULT_TABLE.id}`);
@@ -151,65 +192,117 @@ export function LobbyPage() {
   const balance = me?.points?.balance ?? 0;
   const bb = table.blinds[1];
   const you = view?.you ?? null;
-  // 入座后把自己转到下方中间（4 号位），其他人按顺时针相对位置排
+  // 入座后把自己转到下方中间（3 号显示位），其他人按顺时针相对位置排；座位会滑过去
   const toDisplay = (i: number) => (you === null ? i : (i - you + 3 + SEAT_COUNT) % SEAT_COUNT);
+  const fromDisplay = (d: number) => (you === null ? d : (d + you - 3 + SEAT_COUNT) % SEAT_COUNT);
   // 入座扣了带入、离桌退回筹码，顶栏的余额跟着刷新
   useEffect(() => {
     if (view) notifyMeChanged();
     if (you !== null) setPanel(null);
   }, [you === null]);
-  const fromDisplay = (d: number) => (you === null ? d : (d + you - 3 + SEAT_COUNT) % SEAT_COUNT);
   // 余额晚到一步（刚登录）时，把带入重新放回默认值
   useEffect(() => {
     if (panel) setBuyIn(defaultBuyIn(panel.kind === "open" ? openBlinds[1] : bb, balance));
   }, [balance]);
+
+  // 记下自己坐在哪几张桌
+  useEffect(() => {
+    if (!view || view.no !== table.no) return;
+    setMySeats((m) => {
+      const has = m.has(view.no), seated = view.you !== null;
+      if (has === seated) return m;
+      m = new Set(m);
+      if (seated) m.add(view.no);
+      else m.delete(view.no);
+      return m;
+    });
+  }, [view?.no, view?.you]);
+  const watchList = useMemo(() => tables.filter((t) => mySeats.has(t.no) && t.no !== table.no), [tables, mySeats, table.no]);
+  const watched = useSeatWatch(watchList);
+  useEffect(() => {
+    const left = [...watched].filter(([, v]) => v.you === null).map(([no]) => no);
+    if (left.length) setMySeats((m) => new Set([...m].filter((no) => !left.includes(no))));
+  }, [watched]);
+  /** 别的桌里轮到自己行动的 */
+  const turnElsewhere = [...watched].filter(([, v]) => v.legal).map(([no]) => no);
+  const myTurnKey = [...turnElsewhere, ...(view?.legal ? [table.no] : [])].join();
+  const [ring, setRing] = useState(0);
+  // 新轮到自己时震动，铃铛晃一下
+  const lastTurns = useRef("");
+  useEffect(() => {
+    const before = new Set(lastTurns.current.split(",").filter(Boolean));
+    lastTurns.current = myTurnKey;
+    if (myTurnKey.split(",").some((no) => no && !before.has(no))) {
+      navigator.vibrate?.([120, 60, 120]);
+      setRing((r) => r + 1);
+    }
+  }, [myTurnKey]);
+
+  // 占座：服务端确认后才算占到；10 秒没入座被放开，就收起面板
+  useEffect(() => {
+    if (panel?.kind !== "sit" || !view) return;
+    if (view.holds[panel.seat]?.you) holdSeen.current = true;
+    else if (holdSeen.current && you === null) {
+      setPanel(null);
+      setNote("10 秒内没入座，座位放开了");
+    }
+  }, [view, panel]);
 
   // 开桌后连上新桌就自动坐到第一个空位
   useEffect(() => {
     if (!pendingSit || !view || view.no !== pendingSit.no) return;
     setPendingSit(null);
     if (you !== null) return;
-    const free = view.seats.findIndex((x) => !x);
+    const free = view.seats.findIndex((x, i) => !x && !view.holds[i]);
     if (free >= 0) conn.send({ t: "sit", seat: free, buyIn: pendingSit.buyIn });
   }, [pendingSit, view]);
 
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
   const seats: Seat[] = useMemo(() => {
-    const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ position: `${fromDisplay(d) + 1} 号` }));
+    const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ id: fromDisplay(d), position: `${fromDisplay(d) + 1} 号` }));
     if (!view) return list;
     if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
     const pos = positions(view);
+    const clock = Date.now() + conn.skew;
+    view.holds.forEach((h, i) => {
+      if (!h || view.seats[i]) return;
+      list[toDisplay(i)] = {
+        id: i,
+        position: `${i + 1} 号`,
+        login: h.login,
+        you: h.you,
+        held: { key: `hold-${i}-${h.start}`, total: h.until - h.start, elapsed: clock - h.start },
+      };
+    });
     view.seats.forEach((x, i) => {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
-      if (showdown && x.won) seatNote = `赢 ${fmtMoney(x.won)}`;
+      if (showdown && x.hand && !x.folded) seatNote = x.hand;
       else if (x.leaving) seatNote = "离桌";
       else if (x.away) seatNote = "掉线";
       else if (x.last) seatNote = x.last;
       const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
       if (cards && !x.folded) seen.current.cards[i] = cards;
       const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
+      const canShow = i === you && showdown && x.inHand && !x.folded && x.showMask < 3;
       list[toDisplay(i)] = {
+        id: i,
         position: pos[i] ?? (view.street === "idle" ? "等开局" : "下一手"),
         login: x.login,
         you: i === you,
         stack: x.stack,
         bet: x.bet,
-        dealer: view.button === i && view.street !== "idle",
         folded: x.folded,
         acting: view.toAct === i,
         cards,
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
-        timer: acting
-          ? {
-              key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`,
-              total: view.turnMs!,
-              elapsed: Date.now() + conn.skew - view.turnStart!,
-            }
-          : undefined,
-        note: showdown && x.hand && !x.folded ? `${x.hand}${seatNote ? ` · ${seatNote}` : ""}` : seatNote,
+        timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
+        win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand } : undefined,
+        shownMask: x.showMask,
+        onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
+        note: seatNote,
       };
     });
     return list;
@@ -217,14 +310,23 @@ export function LobbyPage() {
 
   const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (view?.board[i] ? toSpec(view.board[i]) : "back"));
   const stage = view ? STAGE[view.street] : 0;
-  const lines = useMemo(() => ["", "翻牌！", "转牌～", "河牌！", view?.say ?? "摊牌，看看谁赢？"], [view?.say]);
   const legal = view?.legal ?? null;
   const presets = view ? raisePresets(view) : [];
   const left = view?.deadline ? Math.max(0, Math.ceil((view.deadline - (now + conn.skew)) / 1000)) : null;
+  const buttonAt = view && view.street !== "idle" && view.button >= 0 ? toDisplay(view.button) : null;
+  const yourSeat = you !== null ? view?.seats[you] : null;
+  const canShow = !!yourSeat && view?.street === "showdown" && yourSeat.inHand && !yourSeat.folded && yourSeat.showMask < 3;
   // 每次轮到自己，滑杆先放在第一个快捷额度上
   useEffect(() => {
     if (legal?.canRaise) setRaiseTo(presets[0]?.to ?? legal.minRaiseTo);
   }, [view?.handNo, view?.street, legal?.canRaise, legal?.minRaiseTo, legal?.maxRaiseTo]);
+
+  const goTo = (no: number) => {
+    const i = tables.findIndex((t) => t.no === no), cur = tables.indexOf(table);
+    if (i < 0) return;
+    if (i !== cur) setSlide(i > cur ? "slide-next" : "slide-prev");
+    navigate(`/table/${tables[i].id}`);
+  };
 
   const switchTable = (step: number) => {
     const i = tables.findIndex((t) => t.id === table.id);
@@ -237,11 +339,16 @@ export function LobbyPage() {
     if (!no) return setSearching(false);
     const t = tables.find((x) => x.id === no);
     if (!t) return setNote(`没有 #${no} 这张桌`);
-    const i = tables.indexOf(t), cur = tables.indexOf(table);
-    if (t !== table) setSlide(i > cur ? "slide-next" : "slide-prev");
-    navigate(`/table/${t.id}`);
+    goTo(t.no);
     setSearching(false);
     setQuery("");
+  };
+
+  /** 铃铛：先去轮到你行动的那张桌，没有就去你坐着的另一张桌。 */
+  const ringBell = () => {
+    const target = turnElsewhere[0] ?? [...mySeats].find((no) => no !== table.no);
+    if (target !== undefined) goTo(target);
+    else setNote(mySeats.has(table.no) ? "你只坐了这一张桌，轮到你时铃铛会响" : "坐下后，轮到你行动时铃铛会响");
   };
 
   /** 先登录：线上跳 GitHub，预览版直接切成已登录。返回 false 表示正在跳走。 */
@@ -262,6 +369,7 @@ export function LobbyPage() {
     setOpenBlinds(blinds);
     setBuyIn(defaultBuyIn(blinds[1], balance));
     setNote(null);
+    setConfirmLeave(false);
     setPanel({ kind: "open" });
   };
 
@@ -288,11 +396,21 @@ export function LobbyPage() {
     }
   };
 
+  /** 点空位：先占座 10 秒，再选带入。 */
   const pickSeat = async (display: number) => {
     if (!(await ensureSignedIn())) return;
+    const seat = fromDisplay(display);
     setNote(null);
+    setConfirmLeave(false);
     setBuyIn(defaultBuyIn(bb, balance));
-    setPanel({ kind: "sit", seat: fromDisplay(display) });
+    holdSeen.current = false;
+    setPanel({ kind: "sit", seat });
+    conn.send({ t: "hold", seat });
+  };
+
+  const closePanel = () => {
+    if (panel?.kind === "sit") conn.send({ t: "release" });
+    setPanel(null);
   };
 
   const sit = (seat: number) => {
@@ -305,10 +423,16 @@ export function LobbyPage() {
     conn.send({ t: "act", action, amount });
   };
 
+  const leave = () => {
+    setConfirmLeave(false);
+    conn.send({ t: "leave" });
+  };
+
   const status = (() => {
     if (!view) return conn.connected ? null : "正在连接牌桌…";
     if (you === null) return null;
     if (legal) return `轮到你了${left !== null ? `，还剩 ${left} 秒` : ""}`;
+    if (canShow) return "点自己的牌，可以亮给大家看";
     if (view.street === "idle") return "等人入座，凑够两个人就开局";
     if (!view.seats[you]?.inHand) return "下一手开始时发牌给你";
     return null;
@@ -319,7 +443,7 @@ export function LobbyPage() {
     ? raiseTo >= legal.maxRaiseTo ? `全下 ${fmtMoney(legal.maxRaiseTo)}` : `${current === 0 ? "下注" : "加注到"} ${fmtMoney(raiseTo)}`
     : "";
 
-  const panelView = panel && (
+  const panelView = panel ? (
     <div className="panel">
       {panel.kind === "open" && (
         <div className="seg" role="tablist" aria-label="盲注">
@@ -345,19 +469,33 @@ export function LobbyPage() {
         ) : (
           <button className="btn" disabled={balance < MIN_BUY_IN_BB * bb} onClick={() => sit(panel.seat)}>入座</button>
         )}
-        <button className="btn btn-text" onClick={() => setPanel(null)}>取消</button>
+        <button className="btn btn-text" onClick={closePanel}>取消</button>
       </div>
     </div>
-  );
+  ) : null;
+
+  const inHand = !!yourSeat?.inHand && !yourSeat.folded && view?.street !== "showdown" && view?.street !== "idle";
+  const leaveView = confirmLeave ? (
+    <div className="panel">
+      <span className="panel-hint">{inHand ? "这手会先弃牌，打完后剩下的筹码退回余额。" : "剩下的筹码会退回余额。"}确定离桌？</span>
+      <div className="panel-row">
+        <button className="btn" onClick={leave}>离桌</button>
+        <button className="btn btn-text" onClick={() => setConfirmLeave(false)}>再坐会儿</button>
+      </div>
+    </div>
+  ) : null;
+  const leaveButton = <button className="btn btn-text" onClick={() => setConfirmLeave(true)}>离桌</button>;
 
   return (
     <div className="lobby">
       <MarqueeSign text="yybar" />
+      {me?.user && <Greeting name={me.user.name || me.user.login} />}
 
       <FeltTable
         key={table.id}
         className={slide}
         seats={seats}
+        button={buttonAt}
         onEmptySeat={(i) => pickSeat(i)}
         corner={
           <>
@@ -388,6 +526,18 @@ export function LobbyPage() {
             <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label="按桌号找桌" title="按桌号找桌">
               <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
             </button>
+            <button
+              key={ring}
+              className={`icon-btn icon-btn-bell${turnElsewhere.length ? " ringing" : ""}${ring ? " rang" : ""}`}
+              onClick={ringBell}
+              aria-label={turnElsewhere.length ? `轮到你了：#${turnElsewhere.join("、#")}` : "回到我坐着的桌"}
+              title={turnElsewhere.length ? `#${turnElsewhere[0]} 轮到你了` : "轮到你行动时会响，点一下回到你坐着的桌"}
+            >
+              <svg viewBox="0 0 12 12" aria-hidden className="stroke">
+                <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
+                <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
+              </svg>
+            </button>
             <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label="开一张桌" title="开一张桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
             </button>
@@ -395,7 +545,7 @@ export function LobbyPage() {
         }
         center={
           <div className="felt-center">
-            <Dealer stage={stage} onAdvance={() => you === null && view?.street === "idle" && setNote("点空位入座，凑够两个人就开局。")} lines={lines} />
+            <Dealer stage={stage} />
             <div className="board-cards">
               {board.map((c, i) => (
                 <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} />
@@ -412,6 +562,7 @@ export function LobbyPage() {
 
       <div className="actions">
         {panelView ??
+          leaveView ??
           (you !== null ? (
             legal ? (
               <>
@@ -438,14 +589,19 @@ export function LobbyPage() {
                   {legal.canCheck ? "过牌" : `跟注 ${fmtMoney(legal.toCall)}`}
                 </button>
                 {legal.canRaise && <button className="btn" onClick={() => act("raise", raiseTo)}>{raiseLabel}</button>}
-                <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+                {leaveButton}
+              </>
+            ) : canShow ? (
+              <>
+                <button className="btn btn-ghost" onClick={() => conn.send({ t: "show", which: 2 })}>两张都亮</button>
+                {leaveButton}
               </>
             ) : (
               <>
                 <button className="btn btn-ghost" disabled>弃牌</button>
                 <button className="btn btn-ghost" disabled>过牌</button>
                 <button className="btn" disabled>加注</button>
-                <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+                {leaveButton}
               </>
             )
           ) : null)}

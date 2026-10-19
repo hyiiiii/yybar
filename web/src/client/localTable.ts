@@ -78,6 +78,9 @@ export function openLocalTable(
         err = local.room.sit(YOU, msg.seat, amount, now);
       }
     } else if (msg.t === "leave") err = local.room.leave(YOU.userId, now);
+    else if (msg.t === "hold") err = local.room.hold(YOU, msg.seat, now);
+    else if (msg.t === "release") local.room.release(YOU.userId);
+    else if (msg.t === "show") err = local.room.show(YOU.userId, msg.which);
     else if (msg.t === "act") err = local.room.act(YOU.userId, msg.action, msg.amount, now);
     if (err) onMsg({ t: "error", msg: err });
     emit(local);
