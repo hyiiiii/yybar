@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, fmtInt } from "../api";
-import { FeltTable, MarqueeSign, PlayingCard, fmtBB, type CardSpec, type Seat } from "../components";
+import { FeltTable, MarqueeSign, PlayingCard, fmtMoney, type CardSpec, type Seat } from "../components";
 import { Dealer } from "../Dealer";
 import type { Suit } from "../suits";
 import { DEFAULT_TABLE, TABLES } from "../tables";
 import { useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
+import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
 import type { TableView } from "../../shared/poker/types";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -24,7 +25,10 @@ const POSITION_NAMES: Record<number, string[]> = {
   6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
 };
 
-type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number };
+type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number; temporary?: boolean };
+
+/** 底部面板：入座选带入，或者开桌选盲注和带入 */
+type Panel = { kind: "sit"; seat: number } | { kind: "open" };
 
 const toSpec = (c: Card | null): CardSpec => (c ? { rank: RANK_LABEL[c.r] ?? String(c.r), suit: SUITS[c.s] } : "back");
 
@@ -42,24 +46,48 @@ function positions(view: TableView): (string | null)[] {
   return out;
 }
 
-/** 加注的几个快捷额度（单位筹码）：常规、底池、全下。 */
-function raiseOptions(view: TableView) {
+/** 加注滑杆旁的几个快捷额度（单位筹码）：常规、半池、底池。全下拖到头就是。 */
+function raisePresets(view: TableView) {
   const legal = view.legal;
   if (!legal?.canRaise) return [];
   const [sb, bb] = view.blinds;
   const current = Math.max(0, ...view.seats.map((x) => x?.bet ?? 0));
   const clamp = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n / sb) * sb));
-  const standard = current <= bb ? (view.street === "preflop" ? 2.5 * bb : current + view.pot / 2) : 3 * current;
-  const potSize = current + view.pot + legal.toCall;
-  const list = [clamp(standard), clamp(potSize), legal.maxRaiseTo];
-  return [...new Set(list)].map((to) => ({
-    to,
-    label: to === legal.maxRaiseTo ? `全下 ${fmtBB(to / bb)} bb` : `${current === 0 ? "下注" : "加注到"} ${fmtBB(to / bb)} bb`,
-  }));
+  const afterCall = view.pot + legal.toCall;
+  const list = [
+    { label: current <= bb && view.street === "preflop" ? "2.5x" : current > bb ? "3x" : "最小", to: clamp(current <= bb ? (view.street === "preflop" ? 2.5 * bb : 0) : 3 * current) },
+    { label: "半池", to: clamp(current + afterCall / 2) },
+    { label: "底池", to: clamp(current + afterCall) },
+  ];
+  return list.filter((o, k) => list.findIndex((x) => x.to === o.to) === k);
 }
 
+/** 滑杆按小盲取整，但两头的最小加注和全下要能取到。 */
+function snap(n: number, min: number, max: number, step: number) {
+  if (n >= max) return max;
+  if (n <= min) return min;
+  return Math.min(max, Math.max(min, Math.round(n / step) * step));
+}
+
+/** 带入滑杆：min～max 之间按大盲取整，默认 100 个大盲。 */
+function BuyInSlider({ bb, balance, value, onChange }: { bb: number; balance: number; value: number; onChange: (n: number) => void }) {
+  const min = MIN_BUY_IN_BB * bb;
+  const max = Math.min(MAX_BUY_IN_BB * bb, balance);
+  if (max < min) return <span className="panel-hint">筹码不够：最少要带 {fmtMoney(min)}，你有 {fmtMoney(balance)}</span>;
+  return (
+    <label className="slider">
+      <span className="slider-label">带入</span>
+      <input type="range" min={min} max={max} step={bb} value={value} onChange={(e) => onChange(snap(Number(e.target.value), min, max, bb))} />
+      <b className="slider-value">{fmtMoney(value)}</b>
+    </label>
+  );
+}
+
+const defaultBuyIn = (bb: number, balance: number) =>
+  Math.max(MIN_BUY_IN_BB * bb, Math.min(BUY_IN_BB * bb, MAX_BUY_IN_BB * bb, balance));
+
 /**
- * 大厅就是一张牌桌：右下角切桌，点空位入座。牌局在服务端跑（每张桌一个 Durable Object），
+ * 大厅就是一张牌桌：右下角切桌、开桌，点空位选带入后入座。牌局在服务端跑（每张桌一个 Durable Object），
  * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。
  */
 export function LobbyPage() {
@@ -73,20 +101,32 @@ export function LobbyPage() {
   const [query, setQuery] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [buyIn, setBuyIn] = useState(0);
+  const [openBlinds, setOpenBlinds] = useState<[number, number]>(BLIND_LEVELS[1]);
+  const [raiseTo, setRaiseTo] = useState(0);
+  /** 开桌后等连上新桌自动入座 */
+  const [pendingSit, setPendingSit] = useState<{ no: number; buyIn: number } | null>(null);
   const conn = useTable(table);
   const view = conn.view;
+  /** 切到另一张桌之后要显示的话（切桌会清掉旧的提示） */
+  const flash = useRef<string | null>(null);
 
   const loadTables = () =>
     DEMO
       ? Promise.resolve()
-      : api<{ tables: { no: number; blinds: [number, number]; bots: boolean; seated: number }[] }>("/api/tables").then(
+      : api<{ tables: Omit<TableEntry, "id">[] }>("/api/tables").then(
           (r) => r.tables.length && setTables(r.tables.map((t) => ({ ...t, id: String(t.no) }))),
           () => {},
         );
   useEffect(() => {
     loadTables();
   }, []);
-  useEffect(() => setNote(null), [table.no]);
+  useEffect(() => {
+    setNote(flash.current);
+    flash.current = null;
+    setPanel(null);
+  }, [table.no]);
   useEffect(() => {
     if (conn.error) setNote(conn.error);
   }, [conn.error]);
@@ -97,51 +137,94 @@ export function LobbyPage() {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [view?.deadline]);
+  // 玩家开的桌没人了被收掉：从列表里拿掉，回到默认那张桌
+  useEffect(() => {
+    if (!conn.closed) return;
+    const gone = table.no;
+    setTables((ts) => ts.filter((t) => t.no !== gone));
+    setSlide("slide-prev");
+    flash.current = `#${gone} 没人了，已经收桌`;
+    navigate(`/table/${DEFAULT_TABLE.id}`);
+  }, [conn.closed]);
 
   const signedIn = !!me?.user;
+  const balance = me?.points?.balance ?? 0;
   const bb = table.blinds[1];
   const you = view?.you ?? null;
   // 入座后把自己转到下方中间（4 号位），其他人按顺时针相对位置排
   const toDisplay = (i: number) => (you === null ? i : (i - you + 3 + SEAT_COUNT) % SEAT_COUNT);
-  // 入座扣了买入、离桌退回筹码，顶栏的余额跟着刷新
+  // 入座扣了带入、离桌退回筹码，顶栏的余额跟着刷新
   useEffect(() => {
-    if (!DEMO && view) notifyMeChanged();
+    if (view) notifyMeChanged();
+    if (you !== null) setPanel(null);
   }, [you === null]);
   const fromDisplay = (d: number) => (you === null ? d : (d + you - 3 + SEAT_COUNT) % SEAT_COUNT);
+  // 余额晚到一步（刚登录）时，把带入重新放回默认值
+  useEffect(() => {
+    if (panel) setBuyIn(defaultBuyIn(panel.kind === "open" ? openBlinds[1] : bb, balance));
+  }, [balance]);
 
+  // 开桌后连上新桌就自动坐到第一个空位
+  useEffect(() => {
+    if (!pendingSit || !view || view.no !== pendingSit.no) return;
+    setPendingSit(null);
+    if (you !== null) return;
+    const free = view.seats.findIndex((x) => !x);
+    if (free >= 0) conn.send({ t: "sit", seat: free, buyIn: pendingSit.buyIn });
+  }, [pendingSit, view]);
+
+  // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
+  const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
   const seats: Seat[] = useMemo(() => {
     const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ position: `${fromDisplay(d) + 1} 号` }));
     if (!view) return list;
+    if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
     const pos = positions(view);
     view.seats.forEach((x, i) => {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
-      if (showdown && x.won) seatNote = `赢 ${fmtBB(x.won / bb)} bb`;
+      if (showdown && x.won) seatNote = `赢 ${fmtMoney(x.won)}`;
       else if (x.leaving) seatNote = "离桌";
       else if (x.away) seatNote = "掉线";
-      else if (x.last) seatNote = x.last.replace(/\d[\d,]*/g, (n) => `${fmtBB(Number(n.replace(/,/g, "")) / bb)} bb`);
+      else if (x.last) seatNote = x.last;
+      const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
+      if (cards && !x.folded) seen.current.cards[i] = cards;
+      const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
       list[toDisplay(i)] = {
         position: pos[i] ?? (view.street === "idle" ? "等开局" : "下一手"),
         login: x.login,
         you: i === you,
-        stack: x.stack / bb,
-        bet: x.bet / bb,
+        stack: x.stack,
+        bet: x.bet,
         dealer: view.button === i && view.street !== "idle",
         folded: x.folded,
         acting: view.toAct === i,
-        cards: x.cards.length ? x.cards.map(toSpec) : undefined,
+        cards,
+        mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
+        timer: acting
+          ? {
+              key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`,
+              total: view.turnMs!,
+              elapsed: Date.now() + conn.skew - view.turnStart!,
+            }
+          : undefined,
         note: showdown && x.hand && !x.folded ? `${x.hand}${seatNote ? ` · ${seatNote}` : ""}` : seatNote,
       };
     });
     return list;
-  }, [view, you, bb]);
+  }, [view, you, conn.skew]);
 
   const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (view?.board[i] ? toSpec(view.board[i]) : "back"));
   const stage = view ? STAGE[view.street] : 0;
   const lines = useMemo(() => ["", "翻牌！", "转牌～", "河牌！", view?.say ?? "摊牌，看看谁赢？"], [view?.say]);
   const legal = view?.legal ?? null;
+  const presets = view ? raisePresets(view) : [];
   const left = view?.deadline ? Math.max(0, Math.ceil((view.deadline - (now + conn.skew)) / 1000)) : null;
+  // 每次轮到自己，滑杆先放在第一个快捷额度上
+  useEffect(() => {
+    if (legal?.canRaise) setRaiseTo(presets[0]?.to ?? legal.minRaiseTo);
+  }, [view?.handNo, view?.street, legal?.canRaise, legal?.minRaiseTo, legal?.maxRaiseTo]);
 
   const switchTable = (step: number) => {
     const i = tables.findIndex((t) => t.id === table.id);
@@ -161,45 +244,60 @@ export function LobbyPage() {
     setQuery("");
   };
 
-  /** 开桌：盲注和当前这张桌一样。 */
-  const openTable = async () => {
-    if (!signedIn && !DEMO) {
+  /** 先登录：线上跳 GitHub，预览版直接切成已登录。返回 false 表示正在跳走。 */
+  const ensureSignedIn = async () => {
+    if (signedIn) return true;
+    if (!DEMO) {
       location.href = loginHref(`/table/${table.id}`);
-      return;
+      return false;
     }
+    (await import("../demo")).demoLogin();
+    notifyMeChanged();
+    return true;
+  };
+
+  const showOpenPanel = async () => {
+    if (!(await ensureSignedIn())) return;
+    const blinds = BLIND_LEVELS.find(([s, b]) => s === table.blinds[0] && b === table.blinds[1]) ?? BLIND_LEVELS[1];
+    setOpenBlinds(blinds);
+    setBuyIn(defaultBuyIn(blinds[1], balance));
+    setNote(null);
+    setPanel({ kind: "open" });
+  };
+
+  /** 开桌：选好盲注和带入，开好后自动入座。 */
+  const openTable = async () => {
     try {
       let created: TableEntry;
       if (DEMO) {
-        created = { no: Math.max(...tables.map((t) => t.no)) + 1, id: "", blinds: table.blinds, seated: 0 };
+        created = { no: Math.max(...tables.map((t) => t.no)) + 1, id: "", blinds: openBlinds, seated: 0, temporary: true };
         created.id = String(created.no);
         setTables([...tables, created]);
       } else {
-        const r = await api<{ table: { no: number; blinds: [number, number]; bots: boolean; seated: number } }>("/api/tables", {
-          method: "POST",
-          json: { from: table.no },
-        });
+        const r = await api<{ table: Omit<TableEntry, "id"> }>("/api/tables", { method: "POST", json: { blinds: openBlinds } });
         created = { ...r.table, id: String(r.table.no) };
         setTables((ts) => [...ts, created]);
       }
+      setPanel(null);
+      setPendingSit({ no: created.no, buyIn });
       setSlide("slide-next");
+      flash.current = `开好了 #${created.no}，盲注 ${fmtMoney(created.blinds[0])}/${fmtMoney(created.blinds[1])}。没人坐的桌会自动收掉。`;
       navigate(`/table/${created.id}`);
-      setNote(`开好了 #${created.no}，盲注 ${fmtInt(created.blinds[0])}/${fmtInt(created.blinds[1])}，坐下等人来。`);
     } catch (e) {
       setNote((e as Error).message);
     }
   };
 
-  const sit = async (display: number) => {
-    if (!signedIn) {
-      if (!DEMO) {
-        location.href = loginHref(`/table/${table.id}`);
-        return;
-      }
-      (await import("../demo")).demoLogin();
-      notifyMeChanged();
-    }
+  const pickSeat = async (display: number) => {
+    if (!(await ensureSignedIn())) return;
     setNote(null);
-    conn.send({ t: "sit", seat: fromDisplay(display) });
+    setBuyIn(defaultBuyIn(bb, balance));
+    setPanel({ kind: "sit", seat: fromDisplay(display) });
+  };
+
+  const sit = (seat: number) => {
+    setNote(null);
+    conn.send({ t: "sit", seat, buyIn });
   };
 
   const act = (action: "fold" | "check" | "call" | "raise", amount?: number) => {
@@ -216,6 +314,42 @@ export function LobbyPage() {
     return null;
   })();
 
+  const current = Math.max(0, ...(view?.seats.map((x) => x?.bet ?? 0) ?? [0]));
+  const raiseLabel = legal
+    ? raiseTo >= legal.maxRaiseTo ? `全下 ${fmtMoney(legal.maxRaiseTo)}` : `${current === 0 ? "下注" : "加注到"} ${fmtMoney(raiseTo)}`
+    : "";
+
+  const panelView = panel && (
+    <div className="panel">
+      {panel.kind === "open" && (
+        <div className="seg" role="tablist" aria-label="盲注">
+          {BLIND_LEVELS.map((b) => (
+            <button
+              key={b[1]}
+              role="tab"
+              aria-selected={b === openBlinds}
+              onClick={() => {
+                setOpenBlinds(b);
+                setBuyIn(defaultBuyIn(b[1], balance));
+              }}
+            >
+              {fmtMoney(b[0])}/{fmtMoney(b[1])}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="panel-row">
+        <BuyInSlider bb={panel.kind === "open" ? openBlinds[1] : bb} balance={balance} value={buyIn} onChange={setBuyIn} />
+        {panel.kind === "open" ? (
+          <button className="btn" disabled={balance < MIN_BUY_IN_BB * openBlinds[1]} onClick={openTable}>开桌并入座</button>
+        ) : (
+          <button className="btn" disabled={balance < MIN_BUY_IN_BB * bb} onClick={() => sit(panel.seat)}>入座</button>
+        )}
+        <button className="btn btn-text" onClick={() => setPanel(null)}>取消</button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="lobby">
       <MarqueeSign text="yybar" />
@@ -224,7 +358,7 @@ export function LobbyPage() {
         key={table.id}
         className={slide}
         seats={seats}
-        onEmptySeat={(i) => sit(i)}
+        onEmptySeat={(i) => pickSeat(i)}
         corner={
           <>
             <button className="icon-btn" onClick={() => switchTable(-1)} aria-label="上一张桌">
@@ -245,7 +379,7 @@ export function LobbyPage() {
             ) : (
               <span className="corner-label">
                 #{table.no}
-                <small>{fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
+                <small>{fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
               </span>
             )}
             <button className="icon-btn" onClick={() => switchTable(1)} aria-label="下一张桌">
@@ -254,7 +388,7 @@ export function LobbyPage() {
             <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label="按桌号找桌" title="按桌号找桌">
               <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
             </button>
-            <button className="icon-btn icon-btn-new" onClick={openTable} aria-label="开一张桌" title="开一张同样盲注的桌">
+            <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label="开一张桌" title="开一张桌">
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
             </button>
           </>
@@ -269,38 +403,54 @@ export function LobbyPage() {
             </div>
             <div className="pot">
               <span>底池</span>
-              <b>{fmtBB((view?.pot ?? 0) / bb)} bb</b>
-              <small>盲注 {fmtInt(table.blinds[0])}/{fmtInt(table.blinds[1])}</small>
+              <b key={view?.pot ?? 0}>{fmtMoney(view?.pot ?? 0)}</b>
+              <small>盲注 {fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
             </div>
           </div>
         }
       />
 
       <div className="actions">
-        {you !== null ? (
-          legal ? (
-            <>
-              <button className="btn btn-ghost" onClick={() => act("fold")}>弃牌</button>
-              <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
-                {legal.canCheck ? "过牌" : `跟注 ${fmtBB(legal.toCall / bb)} bb`}
-              </button>
-              {raiseOptions(view!).map((o) => (
-                <button key={o.to} className="btn" onClick={() => act("raise", o.to)}>{o.label}</button>
-              ))}
-              <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
-            </>
-          ) : (
-            <>
-              <button className="btn btn-ghost" disabled>弃牌</button>
-              <button className="btn btn-ghost" disabled>过牌</button>
-              <button className="btn" disabled>加注</button>
-              <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
-            </>
-          )
-        ) : null}
+        {panelView ??
+          (you !== null ? (
+            legal ? (
+              <>
+                {legal.canRaise && (
+                  <div className="raise">
+                    {presets.map((o) => (
+                      <button key={o.label} className={`btn btn-small btn-ghost${raiseTo === o.to ? " on" : ""}`} onClick={() => setRaiseTo(o.to)}>
+                        {o.label}
+                      </button>
+                    ))}
+                    <input
+                      type="range"
+                      aria-label="加注额"
+                      min={legal.minRaiseTo}
+                      max={legal.maxRaiseTo}
+                      step={view!.blinds[0]}
+                      value={raiseTo}
+                      onChange={(e) => setRaiseTo(snap(Number(e.target.value), legal.minRaiseTo, legal.maxRaiseTo, view!.blinds[0]))}
+                    />
+                  </div>
+                )}
+                <button className="btn btn-ghost" onClick={() => act("fold")}>弃牌</button>
+                <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
+                  {legal.canCheck ? "过牌" : `跟注 ${fmtMoney(legal.toCall)}`}
+                </button>
+                {legal.canRaise && <button className="btn" onClick={() => act("raise", raiseTo)}>{raiseLabel}</button>}
+                <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-ghost" disabled>弃牌</button>
+                <button className="btn btn-ghost" disabled>过牌</button>
+                <button className="btn" disabled>加注</button>
+                <button className="btn btn-text" onClick={() => conn.send({ t: "leave" })}>离桌</button>
+              </>
+            )
+          ) : null)}
       </div>
       {(note ?? status) && <p className="note" role="status">{note ?? status}</p>}
-
     </div>
   );
 }

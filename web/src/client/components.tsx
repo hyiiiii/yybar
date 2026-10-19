@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type SeriesPoint } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { loginHref, notifyMeChanged } from "./useMe";
@@ -67,13 +67,17 @@ export function PlayingCard({ card }: { card: CardSpec }) {
 export interface Seat {
   position: string;
   login?: string;
-  /** 以大盲为单位的筹码 */
+  /** 筹码，1 个筹码按 $1 显示 */
   stack?: number;
   bet?: number;
   you?: boolean;
   folded?: boolean;
   acting?: boolean;
   cards?: CardSpec[];
+  /** 刚弃掉的牌，播一下收走的动画 */
+  mucked?: CardSpec[];
+  /** 轮到这个座位时的倒计时：key 换了就重新开始；total、elapsed 单位毫秒 */
+  timer?: { key: string; total: number; elapsed: number };
   dealer?: boolean;
   /** 跟在名字后面的一句话：刚才的动作、赢了多少 */
   note?: string;
@@ -109,8 +113,9 @@ export function FeltTable({
           {s.login ? (
             <>
               <div className="seat-disc" title={s.you ? "你" : s.login}>
+                {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
                 <span className="seat-pos">{s.position}</span>
-                <span className="seat-stack">{fmtBB(s.stack ?? 0)}</span>
+                <span className="seat-stack">{fmtStack(s.stack ?? 0)}</span>
                 {s.dealer && <span className="dealer-chip">D</span>}
               </div>
               {s.cards && !s.folded && (
@@ -120,11 +125,18 @@ export function FeltTable({
                   ))}
                 </div>
               )}
+              {s.mucked && (
+                <div className="seat-cards seat-cards-muck" aria-hidden>
+                  {s.mucked.map((c, j) => (
+                    <PlayingCard key={j} card={c} />
+                  ))}
+                </div>
+              )}
               <div className="seat-name">
                 {s.you ? "你" : s.login}
-                {s.note && ` · ${s.note}`}
+                {s.note && <span key={s.note} className="seat-note"> · {s.note}</span>}
               </div>
-              {!!s.bet && <div className="seat-bet">{fmtBB(s.bet)}</div>}
+              {!!s.bet && <div key={s.bet} className="seat-bet">{fmtMoney(s.bet)}</div>}
             </>
           ) : (
             <button className="seat-disc seat-open" onClick={() => onEmptySeat?.(i)}>
@@ -162,8 +174,26 @@ export function MarqueeSign({ text }: { text: string }) {
   );
 }
 
-export function fmtBB(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+/** 绕着头像的一圈绿条，随行动时间慢慢缩短。开始时刻在挂载时定下来，之后重绘不会让它跳。 */
+function TurnRing({ total, elapsed }: { total: number; elapsed: number }) {
+  const [delay] = useState(() => `${-Math.max(0, elapsed)}ms`);
+  return (
+    <svg className="turn-ring" viewBox="0 0 100 100" aria-hidden>
+      <circle cx="50" cy="50" r="47" pathLength={100} style={{ animationDuration: `${total}ms`, animationDelay: delay }} />
+    </svg>
+  );
+}
+
+/** 筹码按美元显示：$1,250 */
+export function fmtMoney(n: number): string {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+/** 座位圆盘里地方小，一万以上缩写：$12.5K */
+function fmtStack(n: number): string {
+  if (n < 10_000) return fmtMoney(n);
+  const [v, unit] = n >= 1e6 ? [n / 1e6, "M"] : [n / 1e3, "K"];
+  return `$${v >= 100 ? Math.floor(v) : Math.floor(v * 10) / 10}${unit}`;
 }
 
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
-import { buildPots, TableRoom, type RoomState } from "../src/shared/poker/room";
+import { buildPots, EMPTY_TABLE_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
   const r = { T: 10, J: 11, Q: 12, K: 13, A: 14 }[s[0]] ?? Number(s[0]);
@@ -139,12 +139,55 @@ describe("table flow", () => {
     room.sit(p(2), 1, 1000, 0);
     room.tick(2000);
     const first = room.s.toAct;
-    room.tick(2000 + 24_000);
+    const v = room.view(1, 2000);
+    expect(v.turnMs).toBe(TURN_MS);
+    expect(v.turnStart).toBe(2000);
+    room.tick(2000 + TURN_MS - 1);
     expect(room.s.toAct).toBe(first);
-    room.tick(2000 + 25_000);
+    room.tick(2000 + TURN_MS);
     // 两人桌翻牌前庄家要补小盲，超时就是弃牌
     expect(room.s.seats[first]!.folded).toBe(true);
     expect(room.s.seats[first]!.timeouts).toBe(1);
+  });
+
+  it("lets players pick a buy-in between 40 and 200 big blinds", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    expect(room.pickBuyIn(5000)).toBe(1000);
+    expect(room.pickBuyIn(600)).toBe(600);
+    expect(room.pickBuyIn(5000, 1500)).toBe(1500);
+    expect(room.pickBuyIn(5000, 2500)).toMatch(/带入要在 \$400 到 \$2,000 之间/);
+    expect(room.pickBuyIn(5000, 300)).toMatch(/带入要在/);
+    expect(room.pickBuyIn(1200, 1500)).toMatch(/\$1,200/);
+    expect(room.pickBuyIn(399)).toMatch(/筹码不够/);
+  });
+
+  it("closes a player-opened table after it sits empty", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false, temporary: true });
+    room.checkEmpty(0);
+    expect(room.nextWake()).toBe(EMPTY_TABLE_MS);
+    room.sit(p(1), 0, 1000, 1000);
+    room.checkEmpty(1000);
+    expect(room.closable(EMPTY_TABLE_MS * 2)).toBe(false);
+    room.leave(1, 2000);
+    room.checkEmpty(2000);
+    // 筹码还没写回账户之前不收桌
+    expect(room.closable(2000 + EMPTY_TABLE_MS)).toBe(false);
+    room.ackCashout(room.s.cashouts[0].ref);
+    room.checkEmpty(3000);
+    expect(room.closable(3000 + EMPTY_TABLE_MS - 1)).toBe(false);
+    expect(room.closable(3000 + EMPTY_TABLE_MS)).toBe(true);
+    // 一个人坐着等开局时掉线，一分钟后被请离桌，桌子随后收掉
+    room.sit(p(2), 0, 1000, 10_000);
+    room.checkEmpty(10_000);
+    room.setAway(2, true, 11_000);
+    expect(room.nextWake()).toBe(71_000);
+    room.tick(71_000);
+    expect(room.seated()).toBe(0);
+    expect(room.s.cashouts).toEqual([expect.objectContaining({ userId: 2, amount: 1000 })]);
+    // 系统的桌不收
+    const fixed = TableRoom.create({ no: 2, sb: 5, bb: 10, bots: false });
+    fixed.checkEmpty(0);
+    expect(fixed.closable(EMPTY_TABLE_MS * 10)).toBe(false);
   });
 
   it("bots keep a practice table going and chips stay conserved", () => {

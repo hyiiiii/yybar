@@ -192,8 +192,13 @@ main { min-height: 60vh; }
 .seat-pos { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
 .seat-stack { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--label-2); }
 .seat-you .seat-disc { box-shadow: inset 0 0 0 3px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
-.seat-acting .seat-disc { box-shadow: inset 0 0 0 3px var(--go), 0 0 0 4px color-mix(in srgb, var(--go) 18%, transparent); }
+.seat-acting .seat-disc { box-shadow: inset 0 0 0 3px var(--table-line-2), 0 0 0 4px color-mix(in srgb, var(--go) 14%, transparent); }
+/* 行动倒计时：绕着头像一圈绿条，从满到空 */
+.turn-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); pointer-events: none; overflow: visible; }
+.turn-ring circle { fill: none; stroke: var(--go); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100 100; animation: turn-ring linear both; }
+@keyframes turn-ring { 0% { stroke-dashoffset: 0; } 70% { stroke: var(--go); } 100% { stroke-dashoffset: 100; stroke: var(--danger); } }
 .seat-folded { opacity: 0.45; }
+.seat { transition: opacity .35s ease; }
 .seat-name { position: absolute; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--label-3); white-space: nowrap; max-width: 13em; overflow: hidden; text-overflow: ellipsis; }
 .pos-0 .seat-name, .pos-1 .seat-name { bottom: calc(100% + 4px); }
 .pos-2 .seat-name, .pos-3 .seat-name, .pos-4 .seat-name, .pos-5 .seat-name { top: calc(100% + 4px); }
@@ -207,6 +212,25 @@ main { min-height: 60vh; }
 .pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .pos-3 .seat-bet, .pos-4 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
 .pos-2 .seat-bet, .pos-5 .seat-bet { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+/* 下注、弃牌、过牌的小过渡：筹码从座位推出去，弃掉的牌往桌心收走，动作文字轻轻弹出来 */
+@media (prefers-reduced-motion: no-preference) {
+  .seat-bet { animation: bet-in .32s cubic-bezier(.2, .9, .3, 1.2) both; }
+  .pos-0 .seat-bet, .pos-1 .seat-bet { --bet-from: 0 -16px; }
+  .pos-2 .seat-bet, .pos-3 .seat-bet, .pos-4 .seat-bet, .pos-5 .seat-bet { --bet-from: 0 16px; }
+  @keyframes bet-in { from { translate: var(--bet-from, 0 0); opacity: 0; scale: .7; } }
+  .seat-cards-muck { animation: muck .45s ease-in both; }
+  .pos-0 .seat-cards-muck, .pos-1 .seat-cards-muck { --muck-to: 0 40px; }
+  .pos-3 .seat-cards-muck, .pos-4 .seat-cards-muck { --muck-to: 0 -40px; }
+  .pos-2 .seat-cards-muck { --muck-to: -40px 0; }
+  .pos-5 .seat-cards-muck { --muck-to: 40px 0; }
+  @keyframes muck { to { translate: var(--muck-to, 0 0); rotate: 8deg; opacity: 0; } }
+  .seat-note { display: inline-block; animation: note-in .3s ease-out; }
+  @keyframes note-in { from { translate: 0 3px; opacity: 0; } }
+  .pot b { animation: pot-in .3s ease-out; }
+  @keyframes pot-in { from { scale: 1.12; } }
+}
+.seat-cards-muck { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .seat-cards-muck { display: none; } }
 .dealer-chip { position: absolute; right: -4px; bottom: -2px; width: 22px; height: 22px; border-radius: 50%; background: var(--label); color: var(--bg); font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
 /* 左右切桌：桌面和座位从切换方向滑进来 */
 @media (prefers-reduced-motion: no-preference) {
@@ -258,7 +282,20 @@ main { min-height: 60vh; }
 }
 
 .actions { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions .raise { flex-basis: 100%; justify-content: center; margin-bottom: 4px; }
+.raise { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.raise input { accent-color: var(--accent); width: min(260px, 60vw); margin-left: 6px; }
+.btn-ghost.on { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
 .note { text-align: center; color: var(--label-2); margin: 12px 0 0; }
+/* 牌桌下方的面板：入座选带入、开桌选盲注 */
+.panel { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 100%; }
+.panel .seg { flex-wrap: wrap; justify-content: center; }
+.panel-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.panel-hint { color: var(--label-2); font-size: 13px; }
+.slider { display: inline-flex; align-items: center; gap: 10px; }
+.slider-label { font-size: 13px; color: var(--label-2); }
+.slider input { accent-color: var(--accent); width: min(240px, 50vw); }
+.slider-value { min-width: 5.5em; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .more { color: var(--accent); text-decoration: none; font-size: 13px; }
 
@@ -350,8 +387,6 @@ main { min-height: 60vh; }
 .table-top a { text-decoration: none; color: var(--accent); }
 .table-page .felt-wrap { max-width: 860px; margin: 64px auto 56px; }
 .actions { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
-.raise { display: inline-flex; align-items: center; gap: 10px; }
-.raise input { accent-color: var(--accent); width: 150px; }
 .note { text-align: center; color: var(--label-2); margin: 14px 0 0; }
 
 /* 个人页 */

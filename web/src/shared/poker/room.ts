@@ -14,6 +14,8 @@ export interface RoomConfig {
   bots: boolean;
   /** 预览版用：固定这几个机器人一直坐着打，不管有没有真人 */
   fixedBots?: string[];
+  /** 玩家开的桌：没有真人坐着一段时间后收掉 */
+  temporary?: boolean;
 }
 
 export interface Player {
@@ -64,17 +66,26 @@ export interface RoomState {
   /** 最小加注幅度（上一次足额加注的幅度，至少一个大盲） */
   minRaise: number;
   toAct: number;
+  /** 当前这次行动开始的时刻，画倒计时圈用 */
+  turnStart?: number | null;
   deadline: number | null;
   nextHandAt: number | null;
   say: string | null;
   /** 待写回账户的筹码；宿主写成功后调用 ackCashout */
   cashouts: Cashout[];
+  /** 玩家开的桌从这一刻起没有真人；旧存档没有这个字段 */
+  emptySince?: number | null;
 }
 
-/** 入座买入：100 个大盲，余额不够时最少 40 个大盲。 */
+/** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
 export const BUY_IN_BB = 100;
 export const MIN_BUY_IN_BB = 40;
-export const TURN_MS = 25_000;
+export const MAX_BUY_IN_BB = 200;
+/** 开桌可选的盲注 */
+export const BLIND_LEVELS: [number, number][] = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
+export const TURN_MS = 10_000;
+/** 玩家开的桌没有真人超过这么久就收掉 */
+export const EMPTY_TABLE_MS = 30_000;
 const AWAY_TURN_MS = 5_000;
 /** 断线超过这么久，下一手开始前自动离桌 */
 const AWAY_KICK_MS = 60_000;
@@ -84,8 +95,9 @@ const FOLD_WIN_PAUSE_MS = 3_000;
 
 const BOT_NAMES = ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"];
 
+/** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
-  return n.toLocaleString("en-US");
+  return `$${n.toLocaleString("en-US")}`;
 }
 
 export class TableRoom {
@@ -132,15 +144,56 @@ export class TableRoom {
   }
 
   nextWake(): number | null {
-    const t = [this.s.deadline, this.s.nextHandAt].filter((x): x is number => x !== null);
+    const closeAt = this.emptyFrom() === null ? null : this.emptyFrom()! + EMPTY_TABLE_MS;
+    const t = [this.s.deadline, this.s.nextHandAt, closeAt, this.idleKickAt()].filter((x): x is number => x !== null);
     return t.length ? Math.min(...t) : null;
   }
 
-  /** 按余额算这次能买入多少；不够最低买入返回 0。 */
-  buyInFor(balance: number): number {
+  /** 这次能带入的区间；余额不够最低带入返回 null。 */
+  buyInRange(balance: number): { min: number; max: number } | null {
     const { bb } = this.s.config;
-    const amount = Math.min(BUY_IN_BB * bb, balance);
-    return amount >= MIN_BUY_IN_BB * bb ? amount : 0;
+    const min = MIN_BUY_IN_BB * bb;
+    const max = Math.min(MAX_BUY_IN_BB * bb, balance);
+    return max >= min ? { min, max } : null;
+  }
+
+  /** 按余额和想带的数目定下带入；不想带多少就带默认的 100 个大盲。返回筹码数或者错误。 */
+  pickBuyIn(balance: number, want?: number): number | string {
+    const range = this.buyInRange(balance);
+    if (!range) return `筹码不够：这张桌最少要带 ${chips(MIN_BUY_IN_BB * this.s.config.bb)} 入座`;
+    if (want === undefined) return Math.min(BUY_IN_BB * this.s.config.bb, range.max);
+    const amount = Math.floor(Number(want));
+    if (!Number.isFinite(amount) || amount < range.min || amount > range.max) {
+      return `带入要在 ${chips(range.min)} 到 ${chips(range.max)} 之间`;
+    }
+    return amount;
+  }
+
+  /** 没在打牌时，掉线最久的那个人该被请离桌的时刻（打牌时由两手之间的 cleanup 处理）。 */
+  private idleKickAt(): number | null {
+    if (this.inProgress || this.s.nextHandAt !== null) return null;
+    const t = this.s.seats.filter((x) => x && !x.bot && x.away !== null).map((x) => x!.away! + AWAY_KICK_MS);
+    return t.length ? Math.min(...t) : null;
+  }
+
+  /** 玩家开的桌已经空了多久的起点；不是玩家开的桌、有真人或还有筹码没结算时为 null。 */
+  private emptyFrom(): number | null {
+    if (!this.s.config.temporary) return null;
+    return this.s.emptySince ?? null;
+  }
+
+  /** 宿主每次存档前调用：记下空桌的起点。 */
+  checkEmpty(now: number) {
+    if (!this.s.config.temporary) return;
+    const anyone = this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0;
+    if (anyone) this.s.emptySince = null;
+    else this.s.emptySince ??= now;
+  }
+
+  /** 玩家开的桌空了够久，可以收掉了。 */
+  closable(now: number): boolean {
+    const from = this.emptyFrom();
+    return from !== null && now >= from + EMPTY_TABLE_MS;
   }
 
   canSit(userId: number, seat: number): string | null {
@@ -223,6 +276,13 @@ export class TableRoom {
         }
         continue;
       }
+      // 一个人坐着等开局时掉线：没有下一手来清理，到点直接请离桌
+      const kick = this.idleKickAt();
+      if (kick !== null && now >= kick) {
+        this.s.seats.forEach((x, i) => x && !x.bot && x.away !== null && now - x.away >= AWAY_KICK_MS && this.standUp(i));
+        this.syncBots(now);
+        continue;
+      }
       return;
     }
   }
@@ -282,11 +342,19 @@ export class TableRoom {
       seats,
       toAct: this.inProgress ? this.s.toAct : -1,
       deadline: this.inProgress ? this.s.deadline : null,
+      ...this.turnClock(),
       serverNow: now,
       you: youSeat,
       legal: youSeat === null ? null : this.legal(youSeat),
       say: this.s.say,
     };
+  }
+
+  /** 倒计时圈：机器人想一两秒就出手，圈按正常行动时长画，免得一闪而过。 */
+  private turnClock(): { turnStart: number | null; turnMs: number | null } {
+    if (!this.inProgress || this.s.deadline === null) return { turnStart: null, turnMs: null };
+    const start = this.s.turnStart ?? this.s.deadline - TURN_MS;
+    return { turnStart: start, turnMs: this.s.seats[this.s.toAct]?.bot ? TURN_MS : this.s.deadline - start };
   }
 
   // ---------- 内部 ----------
@@ -450,6 +518,7 @@ export class TableRoom {
     if (next === -1) return this.endStreet(now);
     this.s.toAct = next;
     const seat = this.s.seats[next]!;
+    this.s.turnStart = now;
     this.s.deadline = now + (seat.bot ? 700 + Math.random() * 1100 : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 

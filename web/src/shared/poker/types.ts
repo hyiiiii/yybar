@@ -6,7 +6,8 @@ export type Street = "idle" | "preflop" | "flop" | "turn" | "river" | "showdown"
 
 /** 客户端发给牌桌的消息。amount 是这一轮下注到的总额（加注到多少），单位筹码。 */
 export type ClientMsg =
-  | { t: "sit"; seat: number }
+  /** buyIn：带入多少筹码，不填按 100 个大盲 */
+  | { t: "sit"; seat: number; buyIn?: number }
   | { t: "leave" }
   | { t: "act"; action: "fold" | "check" | "call" | "raise"; amount?: number }
   | { t: "ping" };
@@ -55,6 +56,9 @@ export interface TableView {
   toAct: number;
   /** 当前行动截止时间（毫秒时间戳，服务器时钟） */
   deadline: number | null;
+  /** 这次行动从什么时候开始、一共多长（毫秒），画倒计时圈用 */
+  turnStart: number | null;
+  turnMs: number | null;
   serverNow: number;
   you: number | null;
   legal: Legal | null;
@@ -62,4 +66,5 @@ export interface TableView {
   say: string | null;
 }
 
-export type ServerMsg = { t: "state"; view: TableView } | { t: "error"; msg: string } | { t: "pong" };
+/** closed：玩家开的桌没人了，已经收掉 */
+export type ServerMsg = { t: "state"; view: TableView } | { t: "error"; msg: string } | { t: "pong" } | { t: "closed" };

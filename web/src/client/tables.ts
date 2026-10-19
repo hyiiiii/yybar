@@ -10,6 +10,8 @@ export interface TableInfo {
   seats: number;
   seated: number;
   bots?: boolean;
+  /** 玩家开的桌，没人了会收掉 */
+  temporary?: boolean;
 }
 
 type Kind = Omit<TableInfo, "no" | "id" | "seated">;

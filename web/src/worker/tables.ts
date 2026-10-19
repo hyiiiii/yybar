@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { BLIND_LEVELS } from "../shared/poker/room";
 import { requireSession, sessionUser } from "./auth";
 import type { AppEnv } from "./types";
 
@@ -8,6 +9,7 @@ interface TableRow {
   bb: number;
   bots: number;
   seated: number;
+  created_by: number | null;
 }
 
 /** 每人最多开几张桌 */
@@ -15,18 +17,22 @@ const MAX_OWN_TABLES = 3;
 
 export const tableRoutes = new Hono<AppEnv>();
 
-const listed = (t: TableRow) => ({ no: t.no, blinds: [t.sb, t.bb], bots: !!t.bots, seated: t.seated });
+const listed = (t: TableRow) => ({ no: t.no, blinds: [t.sb, t.bb], bots: !!t.bots, seated: t.seated, temporary: t.created_by !== null });
 
 tableRoutes.get("/", async (c) => {
-  const { results } = await c.env.DB.prepare("SELECT no, sb, bb, bots, seated FROM poker_tables ORDER BY no").all<TableRow>();
+  // 玩家开的桌没人坐会自己收掉；开了却一直没人连上去的，在这里顺手清掉
+  await c.env.DB.prepare(
+    "DELETE FROM poker_tables WHERE created_by IS NOT NULL AND seated = 0 AND created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 minutes')",
+  ).run();
+  const { results } = await c.env.DB.prepare("SELECT no, sb, bb, bots, seated, created_by FROM poker_tables ORDER BY no").all<TableRow>();
   return c.json({ tables: results.map(listed) });
 });
 
-/** 开桌：盲注沿用 from 那张桌，桌号接在最后。 */
+/** 开桌：盲注从 BLIND_LEVELS 里选，桌号接在最后。没人坐的时候牌桌会自己收掉。 */
 tableRoutes.post("/", requireSession, async (c) => {
-  const body = await c.req.json<{ from?: unknown }>();
-  const from = await c.env.DB.prepare("SELECT * FROM poker_tables WHERE no = ?").bind(Number(body.from)).first<TableRow>();
-  if (!from) return c.json({ error: "没有这张桌" }, 404);
+  const body = await c.req.json<{ blinds?: unknown }>().catch(() => ({ blinds: undefined }));
+  const blinds = BLIND_LEVELS.find(([sb, bb]) => Array.isArray(body.blinds) && body.blinds[0] === sb && body.blinds[1] === bb);
+  if (!blinds) return c.json({ error: "没有这档盲注" }, 400);
   const user = c.get("user");
   const { count } = (await c.env.DB.prepare("SELECT COUNT(*) AS count FROM poker_tables WHERE created_by = ?")
     .bind(user.id)
@@ -35,9 +41,9 @@ tableRoutes.post("/", requireSession, async (c) => {
   const row = await c.env.DB.prepare(
     `INSERT INTO poker_tables (no, sb, bb, bots, created_by)
      SELECT COALESCE(MAX(no), 1000) + 1, ?, ?, 0, ? FROM poker_tables
-     RETURNING no, sb, bb, bots, seated`,
+     RETURNING no, sb, bb, bots, seated, created_by`,
   )
-    .bind(from.sb, from.bb, user.id)
+    .bind(blinds[0], blinds[1], user.id)
     .first<TableRow>();
   return c.json({ table: listed(row!) });
 });
@@ -56,7 +62,7 @@ tableRoutes.get("/:no/ws", async (c) => {
   const user = await sessionUser(c);
 
   const headers = new Headers(c.req.raw.headers);
-  headers.set("x-table", JSON.stringify({ no: table.no, sb: table.sb, bb: table.bb, bots: !!table.bots }));
+  headers.set("x-table", JSON.stringify({ no: table.no, sb: table.sb, bb: table.bb, bots: !!table.bots, temporary: table.created_by !== null }));
   headers.set(
     "x-user",
     // 请求头只能放 ASCII，用户名转义一下

@@ -1,5 +1,6 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
 import type { LeaderboardRow, MeResponse, Profile, SeriesPoint } from "./api";
+import { localBalance } from "./localTable";
 
 const PEOPLE = [
   { login: "hyiiiii", name: "hyi", cost: 1_842.31, tokens: 912_000_000 },
@@ -80,6 +81,8 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     return {
       ...p,
       user: { ...p.user, showOnBoard },
+      // 余额跟着预览牌桌的带入、离桌变
+      points: { ...p.points, balance: localBalance() },
       tokens: [{ id: 1, label: "yybar App", created_at: "2026-10-17T08:00:00Z", last_used_at: "2026-10-17T16:05:00Z" }],
     } satisfies MeResponse;
   }

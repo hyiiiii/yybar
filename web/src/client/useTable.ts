@@ -8,6 +8,8 @@ export type TableConn = {
   skew: number;
   error: string | null;
   connected: boolean;
+  /** 玩家开的桌没人了，已经收掉 */
+  closed: boolean;
   send: (msg: ClientMsg) => void;
   clearError: () => void;
 };
@@ -15,21 +17,28 @@ export type TableConn = {
 /**
  * 连上一张牌桌。线上走 WebSocket，断线自动重连；预览版在浏览器里跑同一套牌局逻辑，陪打的是机器人。
  */
-export function useTable(table: Pick<TableInfo, "no" | "blinds" | "bots" | "seated">): TableConn {
+export function useTable(table: Pick<TableInfo, "no" | "blinds" | "bots" | "seated" | "temporary">): TableConn {
   const [view, setView] = useState<TableView | null>(null);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [closed, setClosed] = useState(false);
   const sendRef = useRef<(msg: ClientMsg) => void>(() => {});
 
   useEffect(() => {
     setView(null);
     setError(null);
+    setClosed(false);
+    let gone = false;
     const onMsg = (msg: ServerMsg) => {
       if (msg.t === "state") {
         setView(msg.view);
         setSkew(msg.view.serverNow - Date.now());
       } else if (msg.t === "error") setError(msg.msg);
+      else if (msg.t === "closed") {
+        gone = true;
+        setClosed(true);
+      }
     };
 
     if (import.meta.env.VITE_DEMO) {
@@ -62,7 +71,7 @@ export function useTable(table: Pick<TableInfo, "no" | "blinds" | "bots" | "seat
       ws.onmessage = (e) => onMsg(JSON.parse(e.data));
       ws.onclose = () => {
         setConnected(false);
-        if (closed) return;
+        if (closed || gone) return;
         timer = setTimeout(open, Math.min(10_000, 800 * 2 ** retry++));
       };
     };
@@ -87,5 +96,5 @@ export function useTable(table: Pick<TableInfo, "no" | "blinds" | "bots" | "seat
     sendRef.current(msg);
   }, []);
   const clearError = useCallback(() => setError(null), []);
-  return { view, skew, error, connected, send, clearError };
+  return { view, skew, error, connected, closed, send, clearError };
 }

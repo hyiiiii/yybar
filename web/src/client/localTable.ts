@@ -10,6 +10,10 @@ const BOTS = ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot
 /** 预览里的筹码余额，和示例个人页一致 */
 let balance = 160_581;
 
+export function localBalance() {
+  return balance;
+}
+
 interface Local {
   room: TableRoom;
   timer?: ReturnType<typeof setTimeout>;
@@ -21,6 +25,13 @@ const rooms = new Map<number, Local>();
 
 function emit(t: Local) {
   const now = Date.now();
+  t.room.checkEmpty(now);
+  if (t.room.closable(now)) {
+    clearTimeout(t.timer);
+    rooms.delete(t.room.s.config.no);
+    for (const fn of t.listeners) fn({ t: "closed" });
+    return;
+  }
   const view = t.room.view(YOU.userId, now);
   for (const fn of t.listeners) fn({ t: "state", view });
   for (const c of t.room.s.cashouts) {
@@ -37,11 +48,17 @@ function emit(t: Local) {
   }
 }
 
-export function openLocalTable(info: Pick<TableInfo, "no" | "blinds" | "bots" | "seated">, onMsg: (msg: ServerMsg) => void) {
+export function openLocalTable(
+  info: Pick<TableInfo, "no" | "blinds" | "bots" | "seated" | "temporary">,
+  onMsg: (msg: ServerMsg) => void,
+) {
   let t = rooms.get(info.no);
   if (!t) {
-    const names = (info.bots ? BOTS : PEOPLE).slice(0, Math.min(info.seated, 5));
-    const room = TableRoom.create({ no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: false, fixedBots: names });
+    // 预览里自己开的桌没有别人会来，放三个机器人陪打；你走了桌就收掉
+    const names = info.temporary ? BOTS.slice(0, 3) : (info.bots ? BOTS : PEOPLE).slice(0, Math.min(info.seated, 5));
+    const room = TableRoom.create({
+      no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: false, fixedBots: names, temporary: info.temporary,
+    });
     t = { room, listeners: new Set() };
     rooms.set(info.no, t);
   }
@@ -54,9 +71,9 @@ export function openLocalTable(info: Pick<TableInfo, "no" | "blinds" | "bots" | 
     let err: string | null = null;
     if (msg.t === "sit") {
       err = local.room.canSit(YOU.userId, msg.seat);
-      const amount = local.room.buyInFor(balance);
-      if (!err && !amount) err = "筹码不够";
-      if (!err) {
+      const amount = local.room.pickBuyIn(balance, msg.buyIn);
+      if (!err && typeof amount === "string") err = amount;
+      if (!err && typeof amount === "number") {
         balance -= amount;
         err = local.room.sit(YOU, msg.seat, amount, now);
       }
