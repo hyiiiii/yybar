@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, fmtInt } from "../api";
 import { FeltTable, MarqueeSign, PlayingCard, fmtMoney, type CardSpec, type Seat } from "../components";
-import { Dealer } from "../Dealer";
+import { Dealer, EmoteSprite } from "../Dealer";
+import { EyeIcon, RunoutIcon, SmileIcon, TimeIcon } from "../icons";
+import { nameOf, pick, tr, useLang, useT, type Lang } from "../i18n";
 import type { Suit } from "../suits";
 import { DEFAULT_TABLE, TABLES } from "../tables";
 import { useSeatWatch, useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
 import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
-import { DEFAULT_BACK, DEFAULT_FACE } from "../../shared/cosmetics";
+import { DEFAULT_BACK, DEFAULT_EMOTES, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type ItemId } from "../../shared/cosmetics";
 import type { TableView } from "../../shared/poker/types";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -25,6 +27,10 @@ const POSITION_NAMES: Record<number, string[]> = {
   5: ["BTN", "SB", "BB", "HJ", "CO"],
   6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
 };
+
+type T = (zh: string, en: string) => string;
+
+const ITEM_ICON: Record<ItemId, () => React.JSX.Element> = { timecard: TimeIcon, peek: EyeIcon, runout: RunoutIcon };
 
 type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number; temporary?: boolean };
 
@@ -48,7 +54,7 @@ function positions(view: TableView): (string | null)[] {
 }
 
 /** 加注滑杆旁的几个快捷额度（单位筹码）：常规、半池、底池。全下拖到头就是。 */
-function raisePresets(view: TableView) {
+function raisePresets(view: TableView, t: T) {
   const legal = view.legal;
   if (!legal?.canRaise) return [];
   const [sb, bb] = view.blinds;
@@ -56,9 +62,9 @@ function raisePresets(view: TableView) {
   const clamp = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n / sb) * sb));
   const afterCall = view.pot + legal.toCall;
   const list = [
-    { label: current <= bb && view.street === "preflop" ? "2.5x" : current > bb ? "3x" : "最小", to: clamp(current <= bb ? (view.street === "preflop" ? 2.5 * bb : 0) : 3 * current) },
-    { label: "半池", to: clamp(current + afterCall / 2) },
-    { label: "底池", to: clamp(current + afterCall) },
+    { label: current <= bb && view.street === "preflop" ? "2.5x" : current > bb ? "3x" : t("最小", "Min"), to: clamp(current <= bb ? (view.street === "preflop" ? 2.5 * bb : 0) : 3 * current) },
+    { label: t("半池", "½ Pot"), to: clamp(current + afterCall / 2) },
+    { label: t("底池", "Pot"), to: clamp(current + afterCall) },
   ];
   return list.filter((o, k) => list.findIndex((x) => x.to === o.to) === k);
 }
@@ -71,13 +77,15 @@ function snap(n: number, min: number, max: number, step: number) {
 }
 
 /** 带入滑杆：min～max 之间按大盲取整，默认 100 个大盲。 */
-function BuyInSlider({ bb, balance, value, onChange }: { bb: number; balance: number; value: number; onChange: (n: number) => void }) {
+function BuyInSlider({ bb, balance, value, onChange, t }: { bb: number; balance: number; value: number; onChange: (n: number) => void; t: T }) {
   const min = MIN_BUY_IN_BB * bb;
   const max = Math.min(MAX_BUY_IN_BB * bb, balance);
-  if (max < min) return <span className="panel-hint">筹码不够：最少要带 {fmtMoney(min)}，你有 {fmtMoney(balance)}</span>;
+  if (max < min) {
+    return <span className="panel-hint">{t(`筹码不够：最少要带 ${fmtMoney(min)}，你有 ${fmtMoney(balance)}`, `Not enough chips: need ${fmtMoney(min)}, you have ${fmtMoney(balance)}`)}</span>;
+  }
   return (
     <label className="slider">
-      <span className="slider-label">带入</span>
+      <span className="slider-label">{t("带入", "Buy-in")}</span>
       <input type="range" min={min} max={max} step={bb} value={value} onChange={(e) => onChange(snap(Number(e.target.value), min, max, bb))} />
       <b className="slider-value">{fmtMoney(value)}</b>
     </label>
@@ -88,8 +96,13 @@ const defaultBuyIn = (bb: number, balance: number) =>
   Math.max(MIN_BUY_IN_BB * bb, Math.min(BUY_IN_BB * bb, MAX_BUY_IN_BB * bb, balance));
 
 /** 登录后发牌员说的一句问候，像 Claude 官网那样：「又开工了，hyi」 */
-function greeting(name: string) {
+function greeting(name: string, lang: Lang) {
   const h = new Date().getHours();
+  if (lang === "en") {
+    const byTime = h < 5 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : h < 23 ? "Good evening" : "Up late";
+    const lines = [`Back at it, ${name}`, `${name}, deal you in?`, `Welcome back, ${name}`, `${byTime}, ${name}`, `${byTime}, ${name}`];
+    return lines[Math.floor(Math.random() * lines.length)];
+  }
   const byTime = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
   const lines = [`又开工了，${name}`, `${name}，来两手？`, `欢迎回来，${name}`, `${byTime}，${name}`, `${byTime}，${name}`];
   return lines[Math.floor(Math.random() * lines.length)];
@@ -107,6 +120,8 @@ export function LobbyPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { me } = useMe();
+  const lang = useLang();
+  const t = useT();
   const [tables, setTables] = useState<TableEntry[]>(TABLES);
   const table = tables.find((t) => t.id === id) ?? tables.find((t) => t.no === DEFAULT_TABLE.no) ?? tables[0];
   const [slide, setSlide] = useState<"" | "slide-next" | "slide-prev">("");
@@ -151,7 +166,7 @@ export function LobbyPage() {
   }, [table.no]);
   useEffect(() => {
     if (!conn.error) return;
-    setNote(conn.error);
+    setNote(tr(conn.error, lang));
     // 没占到座（被别人抢了）就收起选带入的面板
     if (panel?.kind === "sit" && !holdSeen.current) setPanel(null);
   }, [conn.error]);
@@ -169,17 +184,17 @@ export function LobbyPage() {
     setTables((ts) => ts.filter((t) => t.no !== gone));
     setMySeats((m) => ((m = new Set(m)), m.delete(gone), m));
     setSlide("slide-prev");
-    flash.current = `#${gone} 没人了，已经收桌`;
+    flash.current = t(`#${gone} 没人了，已经收桌`, `#${gone} emptied out and was closed`);
     navigate(`/table/${DEFAULT_TABLE.id}`);
   }, [conn.closed]);
 
   const signedIn = !!me?.user;
-  /** 自己在商场换上的牌背（桌上的背面牌都用它）和牌面（只有自己看得到） */
+  /** 自己在商场换上的牌背（桌上的背面牌用它）和牌面（公共牌用它） */
   const look = me?.look ?? { back: DEFAULT_BACK, face: DEFAULT_FACE };
-  // 登录后发牌员打个招呼，几秒后气泡自己消失
-  const [greet, setGreet] = useState<string | null>(null);
+  // 发牌员冒气泡说话：登录后打个招呼；有人用了偷偷看、发发看也由它告诉全桌。几秒后气泡自己消失
+  const [say, setSay] = useState<{ text: string; key: number } | null>(null);
   useEffect(() => {
-    if (me?.user) setGreet(greeting(me.user.name || me.user.login));
+    if (me?.user) setSay({ text: greeting(me.user.name || me.user.login, lang), key: Date.now() });
   }, [me?.user?.login]);
   const balance = me?.points?.balance ?? 0;
   const bb = table.blinds[1];
@@ -267,7 +282,7 @@ export function LobbyPage() {
     holdSeen.current = true;
     setBuyIn(defaultBuyIn(bb, balance));
     setPanel({ kind: "sit", seat: i });
-    setNote("筹码输光了，10 秒内可以在原位再买入");
+    setNote(t("筹码输光了，10 秒内可以在原位再买入", "You're busted — buy back in within 10 seconds to keep your seat"));
   }, [view, you, panel, me?.points]);
 
   // 占座：服务端确认后才算占到；10 秒没入座被放开，就收起面板
@@ -276,7 +291,7 @@ export function LobbyPage() {
     if (view.holds[panel.seat]?.you) holdSeen.current = true;
     else if (holdSeen.current && you === null) {
       setPanel(null);
-      setNote("10 秒内没入座，座位放开了");
+      setNote(t("10 秒内没入座，座位放开了", "Didn't sit within 10 seconds — the seat was released"));
     }
   }, [view, panel]);
 
@@ -289,10 +304,90 @@ export function LobbyPage() {
     if (free >= 0) conn.send({ t: "sit", seat: free, buyIn: pendingSit.buyIn });
   }, [pendingSit, view]);
 
+  // 桌面事件：表情在那个人头上冒一下；偷偷看、发发看由发牌员告诉全桌；自己用了道具刷新库存
+  const [emotes, setEmotes] = useState<Record<number, { id: string; key: number }>>({});
+  const handled = useRef(new Set<string>());
+  useEffect(() => {
+    if (!view) return;
+    const clock = Date.now() + conn.skew;
+    for (const e of view.events) {
+      const key = `${view.no}-${e.id}`;
+      if (handled.current.has(key)) continue;
+      handled.current.add(key);
+      if (clock - e.at > 3000) continue; // 刚连上时看到的旧事件不再播
+      if (e.kind === "emote") {
+        setEmotes((m) => ({ ...m, [e.seat]: { id: e.what, key: e.id } }));
+        setTimeout(() => setEmotes((m) => (m[e.seat]?.key === e.id ? (({ [e.seat]: _, ...rest }) => rest)(m) : m)), 2800);
+      } else {
+        if (e.seat === view.you) notifyMeChanged();
+        const item = findItem(e.what);
+        if (item && e.what !== "timecard") {
+          const who = nameOf(e.login, lang);
+          setSay({ text: t(`${who} 用了「${item.name.zh}」`, `${who} used ${item.name.en}`), key: e.id });
+        }
+      }
+    }
+  }, [view?.events]);
+
+  // 自己手牌下面的小工具条：三个道具 + 发表情
+  const [picker, setPicker] = useState(false);
+  useEffect(() => setPicker(false), [table.no]);
+  const stock = me?.items;
+  const tools = (
+    <>
+      {ITEMS.map((it) => {
+        const Icon = ITEM_ICON[it.id];
+        const qty = stock?.[it.id] ?? 0;
+        const usable = !!view?.canUse?.[it.id];
+        return (
+          <button
+            key={it.id}
+            className={`tool-btn${usable && qty ? " ready" : ""}`}
+            disabled={!usable}
+            title={`${pick(it.name, lang)} × ${qty}\n${pick(it.blurb, lang)}`}
+            aria-label={pick(it.name, lang)}
+            onClick={() =>
+              qty
+                ? conn.send({ t: "item", item: it.id })
+                : setNote(t(`「${it.name.zh}」用完了，去商场买一些`, `Out of ${it.name.en} — get more in the shop`))
+            }
+          >
+            <Icon />
+            <span className="tool-qty">{qty}</span>
+          </button>
+        );
+      })}
+      <span className="emote-wrap">
+        <button className={`tool-btn${picker ? " on" : ""}`} onClick={() => setPicker((p) => !p)} aria-label={t("发表情", "Emote")} title={t("发表情", "Emote")}>
+          <SmileIcon />
+        </button>
+        {picker && (
+          <div className="emote-picker" role="menu">
+            {(me?.emotes ?? DEFAULT_EMOTES).map((id) => (
+              <button
+                key={id}
+                role="menuitem"
+                title={pick(findCosmetic("emote", id)!.name, lang)}
+                onClick={() => {
+                  conn.send({ t: "emote", id });
+                  setPicker(false);
+                }}
+              >
+                <EmoteSprite id={id} size={36} />
+              </button>
+            ))}
+          </div>
+        )}
+      </span>
+    </>
+  );
+
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
   const seats: Seat[] = useMemo(() => {
-    const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ id: fromDisplay(d), position: `${fromDisplay(d) + 1} 号` }));
+    const labels = { join: t("入座", "Sit"), buying: t("买入中…", "Buying in…"), you: t("你", "You") };
+    const seatNo = (i: number) => t(`${i + 1} 号`, `Seat ${i + 1}`);
+    const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ id: fromDisplay(d), position: seatNo(fromDisplay(d)), labels }));
     if (!view) return list;
     if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
     const pos = positions(view);
@@ -301,8 +396,10 @@ export function LobbyPage() {
       if (!h || view.seats[i]) return;
       list[toDisplay(i)] = {
         id: i,
-        position: `${i + 1} 号`,
+        position: seatNo(i),
         login: h.login,
+        name: nameOf(h.login, lang),
+        labels,
         you: h.you,
         held: { key: `hold-${i}-${h.start}`, total: h.until - h.start, elapsed: clock - h.start },
       };
@@ -311,18 +408,20 @@ export function LobbyPage() {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
-      if (showdown && x.hand && !x.folded) seatNote = x.hand;
-      else if (x.leaving) seatNote = "离桌";
-      else if (x.away) seatNote = "掉线";
-      else if (x.last) seatNote = x.last;
+      if (showdown && x.hand && !x.folded) seatNote = tr(x.hand, lang);
+      else if (x.leaving) seatNote = t("离桌", "Leaving");
+      else if (x.away) seatNote = t("掉线", "Offline");
+      else if (x.last) seatNote = tr(x.last, lang);
       const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
       if (cards && !x.folded) seen.current.cards[i] = cards;
       const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
       const canShow = i === you && showdown && x.inHand && !x.folded && x.showMask < 3;
       list[toDisplay(i)] = {
         id: i,
-        position: pos[i] ?? (view.street === "idle" ? "等开局" : "下一手"),
+        position: pos[i] ?? (view.street === "idle" ? t("等开局", "Waiting") : t("下一手", "Next")),
         login: x.login,
+        name: nameOf(x.login, lang),
+        labels,
         you: i === you,
         stack: x.stack,
         bet: x.bet,
@@ -330,9 +429,14 @@ export function LobbyPage() {
         acting: view.toAct === i,
         cards,
         back: x.back,
+        face: x.face,
+        peeked: view.peek?.[i]?.map(toSpec),
+        emote: emotes[i],
+        tools: i === you ? tools : undefined,
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
-        timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
-        win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand } : undefined,
+        // 用了加时卡 turnMs 会变长，key 带上它让圈按新时长重画
+        timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}-${view.turnMs}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
+        win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand && tr(x.hand, lang) } : undefined,
         // 摊牌亮出来的牌留在手里翻开；赢了没摊牌主动亮的丢到桌面上
         tossed: x.hand ? 0 : x.showMask,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
@@ -340,12 +444,16 @@ export function LobbyPage() {
       };
     });
     return list;
-  }, [view, you, shownRot, conn.skew]);
+  }, [view, you, shownRot, conn.skew, lang, emotes, tools]);
 
-  const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (view?.board[i] ? toSpec(view.board[i]) : "back"));
+  // 没翻出来的位置：用了发发看就摆上看到的牌（只有自己看得到）
+  const runoutFrom = view?.board.length ?? 0;
+  const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) =>
+    view?.board[i] ? toSpec(view.board[i]) : view?.runout?.[i - runoutFrom] ? toSpec(view.runout[i - runoutFrom]) : "back",
+  );
   const stage = view ? STAGE[view.street] : 0;
   const legal = view?.legal ?? null;
-  const presets = view ? raisePresets(view) : [];
+  const presets = view ? raisePresets(view, t) : [];
   const left = view?.deadline ? Math.max(0, Math.ceil((view.deadline - (now + conn.skew)) / 1000)) : null;
   const buttonAt = view && view.street !== "idle" && view.button >= 0 ? toDisplay(view.button) : null;
   const yourSeat = you !== null ? view?.seats[you] : null;
@@ -371,9 +479,9 @@ export function LobbyPage() {
   const findTable = () => {
     const no = query.trim().replace(/^#/, "");
     if (!no) return setSearching(false);
-    const t = tables.find((x) => x.id === no);
-    if (!t) return setNote(`没有 #${no} 这张桌`);
-    goTo(t.no);
+    const found = tables.find((x) => x.id === no);
+    if (!found) return setNote(t(`没有 #${no} 这张桌`, `No table #${no}`));
+    goTo(found.no);
     setSearching(false);
     setQuery("");
   };
@@ -382,7 +490,11 @@ export function LobbyPage() {
   const ringBell = () => {
     const target = turnElsewhere[0] ?? [...mySeats].find((no) => no !== table.no);
     if (target !== undefined) goTo(target);
-    else setNote(mySeats.has(table.no) ? "你只坐了这一张桌，轮到你时铃铛会响" : "坐下后，轮到你行动时铃铛会响");
+    else {
+      setNote(mySeats.has(table.no)
+        ? t("你只坐了这一张桌，轮到你时铃铛会响", "You're only at this table — the bell rings when it's your turn")
+        : t("坐下后，轮到你行动时铃铛会响", "Take a seat; the bell rings when it's your turn"));
+    }
   };
 
   /** 先登录：线上跳 GitHub，预览版直接切成已登录。返回 false 表示正在跳走。 */
@@ -403,7 +515,7 @@ export function LobbyPage() {
     const sitting = [...mySeats];
     if (sitting.length) {
       setPanel(null);
-      setNote(`你还坐在 #${sitting.join("、#")}，离桌后才能开新桌`);
+      setNote(t(`你还坐在 #${sitting.join("、#")}，离桌后才能开新桌`, `You're still seated at #${sitting.join(", #")} — leave before opening a new table`));
       return;
     }
     const blinds = BLIND_LEVELS.find(([s, b]) => s === table.blinds[0] && b === table.blinds[1]) ?? BLIND_LEVELS[1];
@@ -430,10 +542,11 @@ export function LobbyPage() {
       setPanel(null);
       setPendingSit({ no: created.no, buyIn });
       setSlide("slide-next");
-      flash.current = `开好了 #${created.no}，盲注 ${fmtMoney(created.blinds[0])}/${fmtMoney(created.blinds[1])}。没人坐的桌会自动收掉。`;
+      const blinds = `${fmtMoney(created.blinds[0])}/${fmtMoney(created.blinds[1])}`;
+      flash.current = t(`开好了 #${created.no}，盲注 ${blinds}。没人坐的桌会自动收掉。`, `Opened #${created.no}, blinds ${blinds}. Empty tables close on their own.`);
       navigate(`/table/${created.id}`);
     } catch (e) {
-      setNote((e as Error).message);
+      setNote(tr((e as Error).message, lang));
     }
   };
 
@@ -470,24 +583,26 @@ export function LobbyPage() {
   };
 
   const status = (() => {
-    if (!view) return conn.connected ? null : "正在连接牌桌…";
+    if (!view) return conn.connected ? null : t("正在连接牌桌…", "Connecting to the table…");
     if (you === null) return null;
-    if (legal) return `轮到你了${left !== null ? `，还剩 ${left} 秒` : ""}`;
-    if (canShow) return "点自己的牌，可以亮给大家看";
-    if (view.street === "idle") return "等人入座，凑够两个人就开局";
-    if (!view.seats[you]?.inHand) return "下一手开始时发牌给你";
+    if (legal) return left !== null ? t(`轮到你了，还剩 ${left} 秒`, `Your turn — ${left}s left`) : t("轮到你了", "Your turn");
+    if (canShow) return t("点自己的牌，可以亮给大家看", "Tap your cards to show them");
+    if (view.street === "idle") return t("等人入座，凑够两个人就开局", "Waiting for players — two to start");
+    if (!view.seats[you]?.inHand) return t("下一手开始时发牌给你", "You'll be dealt in next hand");
     return null;
   })();
 
   const current = Math.max(0, ...(view?.seats.map((x) => x?.bet ?? 0) ?? [0]));
   const raiseLabel = legal
-    ? raiseTo >= legal.maxRaiseTo ? `全下 ${fmtMoney(legal.maxRaiseTo)}` : `${current === 0 ? "下注" : "加注到"} ${fmtMoney(raiseTo)}`
+    ? raiseTo >= legal.maxRaiseTo
+      ? t(`全下 ${fmtMoney(legal.maxRaiseTo)}`, `All-in ${fmtMoney(legal.maxRaiseTo)}`)
+      : current === 0 ? t(`下注 ${fmtMoney(raiseTo)}`, `Bet ${fmtMoney(raiseTo)}`) : t(`加注到 ${fmtMoney(raiseTo)}`, `Raise to ${fmtMoney(raiseTo)}`)
     : "";
 
   const panelView = panel ? (
     <div className="panel">
       {panel.kind === "open" && (
-        <div className="seg" role="tablist" aria-label="盲注">
+        <div className="seg" role="tablist" aria-label={t("盲注", "Blinds")}>
           {BLIND_LEVELS.map((b) => (
             <button
               key={b[1]}
@@ -504,13 +619,13 @@ export function LobbyPage() {
         </div>
       )}
       <div className="panel-row">
-        <BuyInSlider bb={panel.kind === "open" ? openBlinds[1] : bb} balance={balance} value={buyIn} onChange={setBuyIn} />
+        <BuyInSlider bb={panel.kind === "open" ? openBlinds[1] : bb} balance={balance} value={buyIn} onChange={setBuyIn} t={t} />
         {panel.kind === "open" ? (
-          <button className="btn" disabled={balance < MIN_BUY_IN_BB * openBlinds[1]} onClick={openTable}>开桌并入座</button>
+          <button className="btn" disabled={balance < MIN_BUY_IN_BB * openBlinds[1]} onClick={openTable}>{t("开桌并入座", "Open & sit")}</button>
         ) : (
-          <button className="btn" disabled={balance < MIN_BUY_IN_BB * bb} onClick={() => sit(panel.seat)}>入座</button>
+          <button className="btn" disabled={balance < MIN_BUY_IN_BB * bb} onClick={() => sit(panel.seat)}>{t("入座", "Sit")}</button>
         )}
-        <button className="btn btn-text" onClick={closePanel}>取消</button>
+        <button className="btn btn-text" onClick={closePanel}>{t("取消", "Cancel")}</button>
       </div>
     </div>
   ) : null;
@@ -518,17 +633,21 @@ export function LobbyPage() {
   const inHand = !!yourSeat?.inHand && !yourSeat.folded && view?.street !== "showdown" && view?.street !== "idle";
   const leaveView = confirmLeave ? (
     <div className="panel">
-      <span className="panel-hint">{inHand ? "这手会先弃牌，打完后剩下的筹码退回余额。" : "剩下的筹码会退回余额。"}确定离桌？</span>
+      <span className="panel-hint">
+        {inHand
+          ? t("这手会先弃牌，打完后剩下的筹码退回余额。确定离桌？", "You'll fold this hand; your chips go back to your balance after it. Leave?")
+          : t("剩下的筹码会退回余额。确定离桌？", "Your chips go back to your balance. Leave?")}
+      </span>
       <div className="panel-row">
-        <button className="btn" onClick={leave}>离桌</button>
-        <button className="btn btn-text" onClick={() => setConfirmLeave(false)}>再坐会儿</button>
+        <button className="btn" onClick={leave}>{t("离桌", "Leave")}</button>
+        <button className="btn btn-text" onClick={() => setConfirmLeave(false)}>{t("再坐会儿", "Stay")}</button>
       </div>
     </div>
   ) : null;
-  const leaveButton = <button className="btn btn-text" onClick={() => setConfirmLeave(true)}>离桌</button>;
+  const leaveButton = <button className="btn btn-text" onClick={() => setConfirmLeave(true)}>{t("离桌", "Leave")}</button>;
 
   return (
-    <div className={`lobby face-${look.face}`}>
+    <div className="lobby">
       <MarqueeSign text="yybar" />
 
       <FeltTable
@@ -539,7 +658,7 @@ export function LobbyPage() {
         onEmptySeat={(i) => pickSeat(i)}
         corner={
           <>
-            <button className="icon-btn" onClick={() => switchTable(-1)} aria-label="上一张桌">
+            <button className="icon-btn" onClick={() => switchTable(-1)} aria-label={t("上一张桌", "Previous table")}>
               <svg viewBox="0 0 12 12" aria-hidden><path d="M8.5 1.8v8.4L2.2 6z" /></svg>
             </button>
             {searching ? (
@@ -547,11 +666,11 @@ export function LobbyPage() {
                 <input
                   autoFocus
                   inputMode="numeric"
-                  placeholder="桌号"
+                  placeholder={t("桌号", "Table #")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Escape" && setSearching(false)}
-                  aria-label="输入桌号"
+                  aria-label={t("输入桌号", "Table number")}
                 />
               </form>
             ) : (
@@ -560,41 +679,47 @@ export function LobbyPage() {
                 <small>{fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
               </span>
             )}
-            <button className="icon-btn" onClick={() => switchTable(1)} aria-label="下一张桌">
+            <button className="icon-btn" onClick={() => switchTable(1)} aria-label={t("下一张桌", "Next table")}>
               <svg viewBox="0 0 12 12" aria-hidden><path d="M3.5 1.8v8.4L9.8 6z" /></svg>
             </button>
-            <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label="按桌号找桌" title="按桌号找桌">
+            <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label={t("按桌号找桌", "Find a table")} title={t("按桌号找桌", "Find a table")}>
               <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
             </button>
             <button
               key={ring}
               className={`icon-btn icon-btn-bell${turnElsewhere.length ? " ringing" : ""}${ring ? " rang" : ""}`}
               onClick={ringBell}
-              aria-label={turnElsewhere.length ? `轮到你了：#${turnElsewhere.join("、#")}` : "回到我坐着的桌"}
-              title={turnElsewhere.length ? `#${turnElsewhere[0]} 轮到你了` : "轮到你行动时会响，点一下回到你坐着的桌"}
+              aria-label={turnElsewhere.length ? t(`轮到你了：#${turnElsewhere.join("、#")}`, `Your turn at #${turnElsewhere.join(", #")}`) : t("回到我坐着的桌", "Back to my table")}
+              title={turnElsewhere.length ? t(`#${turnElsewhere[0]} 轮到你了`, `Your turn at #${turnElsewhere[0]}`) : t("轮到你行动时会响，点一下回到你坐着的桌", "Rings on your turn; tap to go back to your table")}
             >
               <svg viewBox="0 0 12 12" aria-hidden className="stroke">
                 <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
                 <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
               </svg>
             </button>
-            <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label="开一张桌" title="开一张桌">
+            <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label={t("开一张桌", "Open a table")} title={t("开一张桌", "Open a table")}>
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
             </button>
           </>
         }
         center={
           <div className="felt-center">
-            <Dealer stage={stage} say={greet} />
+            <Dealer stage={stage} say={say} />
             <div className="board-cards">
               {board.map((c, i) => (
-                <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} back={look.back} />
+                <PlayingCard
+                  key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`}
+                  card={c}
+                  back={look.back}
+                  face={look.face}
+                  extra={i >= runoutFrom && c !== "back" ? "card-peeked" : ""}
+                />
               ))}
             </div>
             <div className="pot">
-              <span>底池</span>
+              <span>{t("底池", "Pot")}</span>
               <b key={view?.pot ?? 0}>{fmtMoney(view?.pot ?? 0)}</b>
-              <small>盲注 {fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
+              <small>{t("盲注", "Blinds")} {fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
             </div>
           </div>
         }
@@ -615,7 +740,7 @@ export function LobbyPage() {
                     ))}
                     <input
                       type="range"
-                      aria-label="加注额"
+                      aria-label={t("加注额", "Raise amount")}
                       min={legal.minRaiseTo}
                       max={legal.maxRaiseTo}
                       step={view!.blinds[0]}
@@ -624,23 +749,23 @@ export function LobbyPage() {
                     />
                   </div>
                 )}
-                <button className="btn btn-ghost" onClick={() => act("fold")}>弃牌</button>
+                <button className="btn btn-ghost" onClick={() => act("fold")}>{t("弃牌", "Fold")}</button>
                 <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
-                  {legal.canCheck ? "过牌" : `跟注 ${fmtMoney(legal.toCall)}`}
+                  {legal.canCheck ? t("过牌", "Check") : t(`跟注 ${fmtMoney(legal.toCall)}`, `Call ${fmtMoney(legal.toCall)}`)}
                 </button>
                 {legal.canRaise && <button className="btn" onClick={() => act("raise", raiseTo)}>{raiseLabel}</button>}
                 {leaveButton}
               </>
             ) : canShow ? (
               <>
-                <button className="btn btn-ghost" onClick={() => conn.send({ t: "show", which: 2 })}>两张都亮</button>
+                <button className="btn btn-ghost" onClick={() => conn.send({ t: "show", which: 2 })}>{t("两张都亮", "Show both")}</button>
                 {leaveButton}
               </>
             ) : (
               <>
-                <button className="btn btn-ghost" disabled>弃牌</button>
-                <button className="btn btn-ghost" disabled>过牌</button>
-                <button className="btn" disabled>加注</button>
+                <button className="btn btn-ghost" disabled>{t("弃牌", "Fold")}</button>
+                <button className="btn btn-ghost" disabled>{t("过牌", "Check")}</button>
+                <button className="btn" disabled>{t("加注", "Raise")}</button>
                 {leaveButton}
               </>
             )

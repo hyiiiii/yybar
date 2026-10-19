@@ -5,9 +5,13 @@ import { DurableObject } from "cloudflare:workers";
 import { TableRoom, type Player, type RoomConfig, type RoomState } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { Env } from "./types";
+import { DEFAULT_EMOTES, findItem, type ItemId } from "../shared/cosmetics";
+import { spendItem } from "./shop";
 
-/** 连接附带的身份：未登录的旁观者 userId 为 0。 */
-interface Attachment extends Player {}
+/** 连接附带的身份：未登录的旁观者 userId 为 0。emotes 是这个人有的表情。 */
+interface Attachment extends Player {
+  emotes?: string[];
+}
 
 const CASHOUT_RETRY_MS = 5_000;
 
@@ -39,7 +43,7 @@ export class PokerTable extends DurableObject<Env> {
     server.serializeAttachment(att);
     if (att.userId) {
       this.room.setAway(att.userId, false, Date.now());
-      this.room.setBack(att.userId, att.back);
+      this.room.setLook(att.userId, att.back, att.face);
     }
     await this.commit();
     return new Response(null, { status: 101, webSocket: client });
@@ -66,6 +70,8 @@ export class PokerTable extends DurableObject<Env> {
     else if (msg.t === "hold") err = room.hold(user, msg.seat, now);
     else if (msg.t === "release") room.release(user.userId);
     else if (msg.t === "show") err = room.show(user.userId, msg.which);
+    else if (msg.t === "item") err = await this.useItem(user, msg.item);
+    else if (msg.t === "emote") err = room.emote(user.userId, String(msg.id), user.emotes ?? DEFAULT_EMOTES, now);
     else if (msg.t === "act") err = room.act(user.userId, msg.action, msg.amount, now);
     else return;
     if (err) fail(err);
@@ -92,6 +98,20 @@ export class PokerTable extends DurableObject<Env> {
     const still = this.ctx.getWebSockets().some((w) => w !== ws && (w.deserializeAttachment() as Attachment).userId === user.userId);
     if (!still) this.room.setAway(user.userId, true, Date.now());
     await this.commit();
+  }
+
+  /** 用道具：先看现在能不能用，再扣库存，扣完再生效；等扣库存的时候局面变了用不了，就把那一个退回去。 */
+  private async useItem(user: Player, item: ItemId): Promise<string | null> {
+    const room = this.room!;
+    if (!findItem(item)) return "没有这个道具";
+    const pre = room.canUseItem(user.userId, item);
+    if (pre) return pre;
+    if (!(await spendItem(this.env.DB, user.userId, item))) return "这个道具用完了，去商场买一些";
+    const err = room.useItem(user.userId, item, Date.now());
+    if (err) {
+      await this.env.DB.prepare("UPDATE user_items SET qty = qty + 1 WHERE user_id = ? AND item = ?").bind(user.userId, item).run();
+    }
+    return err;
   }
 
   /** 入座：先从账户余额扣带入，扣成功再坐下；坐不下就退回。 */

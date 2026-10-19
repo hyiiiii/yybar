@@ -84,11 +84,22 @@ npm test && npm run typecheck
 
 ## 商场
 
-- 用筹码买牌背和牌面，买过的随时换。款式和价格在 `src/shared/cosmetics.ts`，样式在 `styles.css` 的 `.back-<款式>` / `.face-<款式>`。
-- 牌背：同桌的人看到的你的暗牌、你自己屏幕上桌面中间的背面牌，都是你换上的牌背。换了之后下次连上牌桌时生效。
-- 牌面：只改你自己屏幕上的正面牌，别人看不到。
-- 买东西记在 `points_ledger`（`reason = 'shop'`，`ref = shop:<用户>:<种类>:<款式>`），余额判断和扣款是同一条 SQL，同一款不会扣两次。正在用的款式在 `users.card_back` / `users.card_face`（迁移 `0004_cosmetics.sql`）。
-- 接口：`GET /api/shop`、`POST /api/shop/buy {"kind":"back|face","id":…}`、`POST /api/shop/equip {…}`；`GET /api/me` 带 `look: {back, face}`。
+- 用筹码买东西，款式、价格、中英文名都在 `src/shared/cosmetics.ts`。名字都是一眼看得出在玩哪副牌的梗（丹车 / Bicyle、塔里猴 / Tally-Hoo、醇黑 / Purr、潮曦 / Daybrake），不是正版。
+- 牌背（7 款）：你的暗牌在同桌所有人眼里都是这一款；你自己屏幕上桌面中间的背面牌也用它。
+- 牌面（5 款）：你的牌翻开时用这一款，同桌的人都看得到；公共牌在你屏幕上也用它。
+- 牌背、牌面换了之后下次连上牌桌时生效。样式在 `styles.css` 的 `.back-<款式>` / `.card.face-<款式>`。
+- 表情（9 个，前 4 个默认就有）：Claude 像素小人，坐在桌上时点手牌下面的笑脸发给全桌，在那个人头上冒一下。两次至少隔 1.5 秒。
+- 道具（按个数买，用掉就少一个，存在 `user_items`）：
+  - 加时卡：轮到你时多 10 秒，每次行动一张。
+  - 偷偷看：一手结束后看别人没亮出来的底牌（弃了的也算）。只有你看得到，发牌员会告诉全桌「某某用了偷偷看」。
+  - 发发看：一手提前结束时，按发牌顺序（先烧一张）看还没翻出来的公共牌。同样只有你看得到、全桌会被告知。
+  - 三个道具和表情按钮都在你手牌下面。牌桌先检查能不能用，再扣库存，再生效；扣库存时局面变了就退回去。
+- 买牌背、牌面、表情记在 `points_ledger`（`reason = 'shop'`，`ref = shop:<用户>:<种类>:<款式>`，同一款不会扣两次）；买道具的扣款和加库存在同一个事务里。正在用的款式在 `users.card_back` / `users.card_face`（迁移 `0004_cosmetics.sql`）。
+- 接口：`GET /api/shop`、`POST /api/shop/buy {"kind":"back|face|emote|item","id":…}`、`POST /api/shop/equip {…}`；`GET /api/me` 带 `look`、`items`、`emotes`。牌桌消息：`{"t":"item","item":"timecard|peek|runout"}`、`{"t":"emote","id":…}`。
+
+## 中英文
+
+- 左上角 yybar 旁边的「中 / EN」切换，记在浏览器里。界面文字用 `t(中文, English)` 就地写两份；服务端发来的动作、牌型、报错、机器人名字在 `src/client/i18n.tsx` 里翻成英文。
 
 ## 积分
 

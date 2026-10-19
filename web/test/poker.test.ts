@@ -249,6 +249,49 @@ describe("table flow", () => {
     expect(room.view(actor, 20_001).seats[room.seatOf(other)]!.showMask).toBe(0);
   });
 
+  it("applies items: time card once per turn, peek and run-out after the hand", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 1, 1000, 0);
+    room.tick(2000);
+    const actor = room.s.seats[room.s.toAct]!.userId;
+    const other = actor === 1 ? 2 : 1;
+    expect(room.canUseItem(other, "timecard")).toMatch(/轮到你时/);
+    const deadline = room.s.deadline!;
+    expect(room.useItem(actor, "timecard", 2001)).toBeNull();
+    expect(room.s.deadline).toBe(deadline + 10_000);
+    expect(room.view(actor, 2002).turnMs).toBe(TURN_MS + 10_000);
+    expect(room.canUseItem(actor, "timecard")).toMatch(/已经加过时/);
+    expect(room.canUseItem(actor, "peek")).toMatch(/一手结束后/);
+    // 记下这时候剩下的牌，算出发发看应该看到什么：先烧一张、翻三张，再烧一张翻一张，再烧一张翻一张
+    const deck = [...room.s.deck];
+    const expected = [deck.at(-2), deck.at(-3), deck.at(-4), deck.at(-6), deck.at(-8)];
+    room.act(actor, "fold", undefined, 2003);
+    expect(room.s.street).toBe("showdown");
+    // 弃牌的人也能偷偷看赢家没亮的牌
+    expect(room.useItem(actor, "peek", 2004)).toBeNull();
+    const v = room.view(actor, 2005);
+    expect(v.peek![room.seatOf(other)]).toEqual(room.s.seats[room.seatOf(other)]!.hole);
+    expect(room.view(other, 2005).peek).toBeNull(); // 别人看不到
+    expect(room.useItem(other, "runout", 2006)).toBeNull();
+    expect(room.view(other, 2007).runout).toEqual(expected);
+    expect(room.view(actor, 2007).runout).toBeNull();
+    // 全桌都知道谁用了什么
+    expect(v.events.map((e) => e.what)).toEqual(["timecard", "peek"]);
+    expect(room.view(actor, 2008).events.at(-1)).toMatchObject({ kind: "item", what: "runout" });
+  });
+
+  it("sends emotes the player owns, not too fast", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    expect(room.emote(1, "cool", ["happy"], 100)).toMatch(/还没有这个表情/);
+    expect(room.emote(1, "happy", ["happy"], 100)).toBeNull();
+    expect(room.emote(1, "happy", ["happy"], 200)).toMatch(/慢一点/);
+    expect(room.emote(2, "happy", ["happy"], 300)).toMatch(/坐下才能/);
+    expect(room.view(null, 300).events).toEqual([expect.objectContaining({ kind: "emote", seat: 0, what: "happy" })]);
+    expect(room.view(null, 9000).events).toEqual([]);
+  });
+
   it("bots keep a practice table going and chips stay conserved", () => {
     const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: true });
     room.sit(p(1), 3, 1_000_000, 0);

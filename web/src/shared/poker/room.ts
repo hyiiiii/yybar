@@ -4,7 +4,8 @@
 
 import { bestScore, handName, newDeck, shuffle, type Card } from "./cards";
 import { botDecide } from "./bot";
-import { SEATS, type Legal, type SeatView, type Street, type TableView } from "./types";
+import { SEATS, type Legal, type SeatView, type Street, type TableEvent, type TableView } from "./types";
+import { TIME_CARD_MS, type ItemId } from "../cosmetics";
 
 export interface RoomConfig {
   no: number;
@@ -22,8 +23,9 @@ export interface Player {
   userId: number;
   login: string;
   avatarUrl: string | null;
-  /** 商场里换上的牌背，同桌的人都看得到；机器人和旧存档没有 */
+  /** 商场里换上的牌背、牌面，同桌的人都看得到；机器人和旧存档没有 */
   back?: string;
+  face?: string;
 }
 
 interface RoomSeat extends Player {
@@ -43,6 +45,13 @@ interface RoomSeat extends Player {
   shown: boolean;
   /** 赢了没摊牌时自己选择亮的牌：第 1 位第一张，第 2 位第二张；旧存档没有 */
   showMask?: number;
+  /** 这次行动用过加时卡了 */
+  extended?: boolean;
+  /** 这手结束后用了偷偷看 / 发发看 */
+  peeked?: boolean;
+  runout?: Card[] | null;
+  /** 上次发表情的时刻，防刷屏 */
+  lastEmote?: number;
   last: string | null;
   won: number;
   hand: string | null;
@@ -87,6 +96,9 @@ export interface RoomState {
   emptySince?: number | null;
   /** 每个座位的占座；旧存档没有这个字段 */
   holds?: (Hold | null)[];
+  /** 最近几秒的桌面事件（用了道具、发了表情），推给所有人 */
+  events?: TableEvent[];
+  eventSeq?: number;
 }
 
 /** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
@@ -96,6 +108,10 @@ export const MAX_BUY_IN_BB = 200;
 /** 开桌可选的盲注 */
 export const BLIND_LEVELS: [number, number][] = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
 export const TURN_MS = 10_000;
+/** 桌面事件保留多久 */
+const EVENT_MS = 8_000;
+/** 两次表情至少隔多久 */
+const EMOTE_GAP_MS = 1_500;
 /** 点了空位选带入时占座多久 */
 export const HOLD_MS = 10_000;
 /** 玩家开的桌没有真人超过这么久就收掉 */
@@ -261,6 +277,73 @@ export class TableRoom {
     return null;
   }
 
+  /** 道具现在能不能用；能用返回 null，不能用返回原因。 */
+  canUseItem(userId: number, item: ItemId): string | null {
+    const i = this.seatOf(userId);
+    const seat = this.s.seats[i];
+    if (!seat) return "你没有坐在这张桌上";
+    switch (item) {
+      case "timecard":
+        if (!this.inProgress || this.s.toAct !== i) return "轮到你时才能用加时卡";
+        return seat.extended ? "这次行动已经加过时了" : null;
+      case "peek":
+        if (this.s.street !== "showdown" || !seat.inHand) return "一手结束后才能偷偷看";
+        if (seat.peeked) return "这手已经看过了";
+        return this.s.seats.some((x, j) => j !== i && x?.inHand && x.hole.length && !x.shown && (x.showMask ?? 0) !== 3)
+          ? null
+          : "没有没亮出来的牌";
+      case "runout":
+        if (this.s.street !== "showdown" || !seat.inHand) return "一手结束后才能发发看";
+        if (seat.runout) return "这手已经看过了";
+        return this.s.board.length < 5 ? null : "公共牌已经发完了";
+      default:
+        return "没有这个道具";
+    }
+  }
+
+  /** 用道具（宿主已经扣掉库存）。偷偷看、发发看只有自己看得到，但会告诉全桌。 */
+  useItem(userId: number, item: ItemId, now: number): string | null {
+    const err = this.canUseItem(userId, item);
+    if (err) return err;
+    const i = this.seatOf(userId);
+    const seat = this.s.seats[i]!;
+    if (item === "timecard") {
+      seat.extended = true;
+      this.s.deadline! += TIME_CARD_MS;
+    } else if (item === "peek") seat.peeked = true;
+    else seat.runout = this.runoutCards();
+    this.event({ kind: "item", seat: i, login: seat.login, what: item }, now);
+    return null;
+  }
+
+  /** 发表情；owned 是这个人有的表情 */
+  emote(userId: number, id: string, owned: string[], now: number): string | null {
+    const i = this.seatOf(userId);
+    const seat = this.s.seats[i];
+    if (!seat) return "坐下才能发表情";
+    if (!owned.includes(id)) return "还没有这个表情";
+    if (seat.lastEmote && now - seat.lastEmote < EMOTE_GAP_MS) return "慢一点";
+    seat.lastEmote = now;
+    this.event({ kind: "emote", seat: i, login: seat.login, what: id }, now);
+    return null;
+  }
+
+  private event(e: Omit<TableEvent, "id" | "at">, now: number) {
+    const id = (this.s.eventSeq = (this.s.eventSeq ?? 0) + 1);
+    this.s.events = [...(this.s.events ?? []).filter((x) => now - x.at < EVENT_MS).slice(-9), { ...e, id, at: now }];
+  }
+
+  /** 这手没发完的公共牌：照着发牌的顺序（先烧一张）从剩下的牌里往后数 */
+  private runoutCards(): Card[] {
+    const deck = [...this.s.deck];
+    const board = [...this.s.board];
+    while (board.length < 5) {
+      deck.pop();
+      for (let n = board.length === 0 ? 3 : 1; n > 0; n--) board.push(deck.pop()!);
+    }
+    return board.slice(this.s.board.length);
+  }
+
   /** 离桌：不在牌局里立刻结算；在牌局里先弃牌，这手结束后结算。 */
   leave(userId: number, now: number): string | null {
     const i = this.seatOf(userId);
@@ -286,10 +369,12 @@ export class TableRoom {
     return this.apply(i, action, amount, now);
   }
 
-  /** 重新连上时带来最新的牌背（在商场换了之后） */
-  setBack(userId: number, back: string | undefined) {
+  /** 重新连上时带来最新的牌背、牌面（在商场换了之后） */
+  setLook(userId: number, back: string | undefined, face: string | undefined) {
     const i = this.seatOf(userId);
-    if (i >= 0 && back) this.s.seats[i]!.back = back;
+    if (i < 0) return;
+    if (back) this.s.seats[i]!.back = back;
+    if (face) this.s.seats[i]!.face = face;
   }
 
   setAway(userId: number, away: boolean, now: number) {
@@ -382,6 +467,7 @@ export class TableRoom {
         allIn: x.allIn,
         cards,
         back: x.back ?? null,
+        face: x.face ?? null,
         showMask: x.shown ? 3 : (x.showMask ?? 0),
         away: x.away !== null,
         leaving: x.leaving,
@@ -409,6 +495,15 @@ export class TableRoom {
       legal: youSeat === null ? null : this.legal(youSeat),
       say: this.s.say,
       holds: this.holds().map((h) => h && { login: h.login, start: h.start, until: h.until, you: h.userId === userId }),
+      events: (this.s.events ?? []).filter((e) => now - e.at < EVENT_MS),
+      // 偷偷看：别人没亮的底牌（弃了的也算）；发发看：没翻出来的公共牌。都只给用的人
+      peek: you >= 0 && this.s.seats[you]!.peeked && this.s.street === "showdown"
+        ? this.s.seats.map((x, j) => (j !== you && x?.inHand && x.hole.length ? x.hole : null))
+        : null,
+      runout: you >= 0 && this.s.street === "showdown" ? (this.s.seats[you]!.runout ?? null) : null,
+      canUse: you >= 0
+        ? { timecard: !this.canUseItem(userId!, "timecard"), peek: !this.canUseItem(userId!, "peek"), runout: !this.canUseItem(userId!, "runout") }
+        : null,
     };
   }
 
@@ -506,7 +601,7 @@ export class TableRoom {
       if (x.bot && x.stack < MIN_BUY_IN_BB * this.s.config.bb) x.stack = BUY_IN_BB * this.s.config.bb;
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
-        hole: [], shown: false, showMask: 0, last: null, won: 0, hand: null,
+        hole: [], shown: false, showMask: 0, peeked: false, runout: null, last: null, won: 0, hand: null,
       });
     });
     this.syncBots(now);
@@ -587,6 +682,7 @@ export class TableRoom {
     this.s.toAct = next;
     const seat = this.s.seats[next]!;
     this.s.turnStart = now;
+    seat.extended = false;
     this.s.deadline = now + (seat.bot ? 700 + Math.random() * 1100 : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 

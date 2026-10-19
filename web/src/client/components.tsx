@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type SeriesPoint } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
-import { DEFAULT_BACK } from "../shared/cosmetics";
+import { DEFAULT_BACK, DEFAULT_FACE } from "../shared/cosmetics";
+import { EmoteSprite } from "./Dealer";
+import { useT } from "./i18n";
 import { loginHref, notifyMeChanged } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -16,7 +18,9 @@ export function Avatar({ url, login, size = 32 }: { url: string | null; login: s
   );
 }
 
-export function LoginButton({ next, small, label = "用 GitHub 登录" }: { next?: string; small?: boolean; label?: string }) {
+export function LoginButton({ next, small, label }: { next?: string; small?: boolean; label?: string }) {
+  const t = useT();
+  label ??= t("用 GitHub 登录", "Sign in with GitHub");
   const cls = small ? "btn btn-small" : "btn";
   if (DEMO) {
     return (
@@ -49,14 +53,15 @@ export type CardSpec = { rank: string; suit: Suit } | "back";
 
 /** 整面上色的牌（四色牌），左上角大号点数，正中一个 AI 标。 */
 /** 所有位置的牌都用同一个尺寸。 */
-export function PlayingCard({ card, back }: { card: CardSpec; back?: string | null }) {
+/** back、face 是这张牌主人在商场换上的牌背、牌面；extra 加额外的类（例如偷看到的牌） */
+export function PlayingCard({ card, back, face, extra = "" }: { card: CardSpec; back?: string | null; face?: string | null; extra?: string }) {
   if (card === "back") {
     return (
-      <span className={`card card-back back-${back || DEFAULT_BACK}`} aria-label="背面" />
+      <span className={`card card-back back-${back || DEFAULT_BACK} ${extra}`} aria-label="背面" />
     );
   }
   return (
-    <span className={`card card-${card.suit}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
+    <span className={`card card-${card.suit} face-${face || DEFAULT_FACE} ${extra}`} aria-label={`${SUIT_LABEL[card.suit]} ${card.rank}`}>
       <b className="card-rank">{card.rank}</b>
       <span className="card-icon">
         <SuitIcon suit={card.suit} size={30} />
@@ -91,8 +96,19 @@ export interface Seat {
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
-  /** 这个人的牌背（商场里换的） */
+  /** 这个人的牌背、牌面（商场里换的），同桌的人都看得到 */
   back?: string | null;
+  face?: string | null;
+  /** 自己用偷偷看看到的这个人的底牌（只有自己看得到） */
+  peeked?: CardSpec[];
+  /** 自己座位下面的小工具条（道具、表情） */
+  tools?: ReactNode;
+  /** 刚发的表情，key 换了重新播 */
+  emote?: { id: string; key: number };
+  /** 显示用的名字（机器人按语言翻译） */
+  name?: string;
+  /** 「入座」「买入中…」这些字，按语言给 */
+  labels?: { join: string; buying: string; you: string };
 }
 
 /**
@@ -135,7 +151,17 @@ export function FeltTable({
                 <span className="seat-pos">{s.position}</span>
               </div>
               {s.note && !s.win && <span key={s.note} className="seat-note">{s.note}</span>}
-              {s.cards && !s.folded && (
+              {s.emote && (
+                <span key={s.emote.key} className="seat-emote" aria-label={s.emote.id}>
+                  <EmoteSprite id={s.emote.id} size={60} />
+                </span>
+              )}
+              {s.peeked && (
+                <div className="seat-cards seat-cards-peeked" title="偷偷看">
+                  {s.peeked.map((c, j) => <PlayingCard key={j} card={c} face={s.face} extra="card-peeked" />)}
+                </div>
+              )}
+              {!s.peeked && s.cards && !s.folded && (
                 <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}`}>
                   {/* key 带上牌面：背面翻成正面（摊牌）时重新挂载，播翻牌动画 */}
                   {s.cards.map((c, j) =>
@@ -147,10 +173,10 @@ export function FeltTable({
                         onClick={() => s.onShow?.(j)}
                         aria-label={s.onShow ? "把这张牌亮到桌上" : undefined}
                       >
-                        <PlayingCard card={c} back={s.back} />
+                        <PlayingCard card={c} back={s.back} face={s.face} />
                       </button>
                     ) : (
-                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} back={s.back} />
+                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} back={s.back} face={s.face} />
                     ),
                   )}
                 </div>
@@ -158,7 +184,7 @@ export function FeltTable({
               {!!s.tossed && s.cards && (
                 <div className="seat-tossed">
                   {/* 两张牌各占固定的位置：先丢一张、再丢一张时，桌上那张不会挪 */}
-                  {s.cards.map((c, j) => (((s.tossed ?? 0) >> j) & 1 ? <PlayingCard key={j} card={c} /> : <span key={`slot-${j}`} className="card card-slot" />))}
+                  {s.cards.map((c, j) => (((s.tossed ?? 0) >> j) & 1 ? <PlayingCard key={j} card={c} face={s.face} /> : <span key={`slot-${j}`} className="card card-slot" />))}
                 </div>
               )}
               {s.mucked && (
@@ -172,20 +198,21 @@ export function FeltTable({
                 <div className="seat-plate seat-plate-win" key="win">
                   <b className="win-mark">WIN</b>
                   <span className="win-amount">+{fmtMoney(s.win.amount)}</span>
-                  <small>{s.win.hand ?? (s.you ? "你" : s.login)}</small>
+                  <small>{s.win.hand ?? (s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login))}</small>
                 </div>
               ) : (
                 <div className="seat-plate">
-                  <span className="plate-name">{s.you ? "你" : s.login}</span>
-                  <b className="plate-stack">{s.held ? "买入中…" : fmtMoney(s.stack ?? 0)}</b>
+                  <span className="plate-name">{s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}</span>
+                  <b className="plate-stack">{s.held ? (s.labels?.buying ?? "买入中…") : fmtMoney(s.stack ?? 0)}</b>
                 </div>
               )}
               {!!s.bet && <div key={s.bet} className="seat-bet">{fmtMoney(s.bet)}</div>}
+              {s.tools && <div className="seat-tools">{s.tools}</div>}
             </>
           ) : (
             <button className="seat-disc seat-open" onClick={() => onEmptySeat?.(d)}>
               <span className="seat-pos">{s.position}</span>
-              <span className="seat-join">入座</span>
+              <span className="seat-join">{s.labels?.join ?? "入座"}</span>
             </button>
           )}
         </div>
@@ -251,6 +278,7 @@ const APPS: App[] = ["codex", "claude", "grok"];
 
 /** 近 30 天每日花费，按 App 堆叠。 */
 export function DailyChart({ series, days = 30 }: { series: SeriesPoint[]; days?: number }) {
+  const t = useT();
   const today = new Date();
   const dayList: string[] = [];
   for (let i = days - 1; i >= 0; i--) {
@@ -270,7 +298,7 @@ export function DailyChart({ series, days = 30 }: { series: SeriesPoint[]; days?
 
   return (
     <figure className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="近 30 天每日花费">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t("近 30 天每日花费", "Daily spend, last 30 days")}>
         {dayList.map((d, i) => {
           let y = H;
           return (
@@ -294,22 +322,23 @@ export function DailyChart({ series, days = 30 }: { series: SeriesPoint[]; days?
             <i className={`dot fill-${a}`} /> {APP_LABEL[a]}
           </span>
         ))}
-        <span className="legend-max">最高单日 {fmtUSD(max === 1 ? 0 : max)}</span>
+        <span className="legend-max">{t("最高单日", "Peak day")} {fmtUSD(max === 1 ? 0 : max)}</span>
       </figcaption>
     </figure>
   );
 }
 
 export function ModelTable({ models }: { models: ModelRow[] }) {
-  if (!models.length) return <p className="empty">还没有数据。</p>;
+  const t = useT();
+  if (!models.length) return <p className="empty">{t("还没有数据。", "No data yet.")}</p>;
   return (
     <div className="table-scroll">
       <table className="table">
         <thead>
           <tr>
-            <th>模型</th>
+            <th>{t("模型", "Model")}</th>
             <th className="num">Token</th>
-            <th className="num">花费</th>
+            <th className="num">{t("花费", "Cost")}</th>
           </tr>
         </thead>
         <tbody>

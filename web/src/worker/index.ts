@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
-import { lookOf, shopRoutes } from "./shop";
+import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
 import { parseUpload, saveUpload, UploadError } from "./usage";
@@ -142,7 +142,7 @@ app.get("/api/users/:login", async (c) => {
 app.get("/api/me", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.json({ user: null });
-  const [totals, series, models, points, tokens] = await Promise.all([
+  const [totals, series, models, points, tokens, items, emotes] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
@@ -152,10 +152,14 @@ app.get("/api/me", async (c) => {
     )
       .bind(user.id)
       .all(),
+    itemsOf(c.env.DB, user.id),
+    emotesOf(c.env.DB, user.id),
   ]);
   return c.json({
     user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at },
     look: lookOf(user),
+    items,
+    emotes,
     totals,
     series,
     models,

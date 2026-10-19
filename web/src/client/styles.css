@@ -444,42 +444,91 @@ main { min-height: 60vh; }
 }
 .suit { display: inline-block; flex: none; }
 
-/* 商场的牌背：在默认红色单车花纹的基础上换颜色和花纹，同桌的人都看得到 */
-.back-navy::before { background-color: #24489a; }
-.back-jade::before { background-color: #1f7a55; background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / 0.22) 0 1px, transparent 1px 5px); }
+/* 商场的牌背：默认是红色丹车（上面 .card-back 的样子），其他款在它的基础上改，同桌的人都看得到 */
+.back-bicyle-blue::before { background-color: #24489a; }
 .back-terracotta::before { background-color: #d97757; background-image: radial-gradient(rgb(255 255 255 / 0.3) 0.8px, transparent 1px); background-size: 5px 5px; }
 .back-terracotta::after { content: "✻"; display: grid; place-items: center; color: #fff; font-size: 20px; line-height: 1; background: none; text-shadow: 0 1px 0 rgb(120 40 20 / 0.4); }
-.back-midnight::before {
-  background-color: #17171b;
-  background-image:
-    repeating-linear-gradient(45deg, rgb(226 186 92 / 0.35) 0 0.6px, transparent 0.6px 4px),
-    repeating-linear-gradient(-45deg, rgb(226 186 92 / 0.35) 0 0.6px, transparent 0.6px 4px);
+/* 塔里猴：细格纹底，正中一圈放射花纹，四角两个小花 */
+.back-tallyhoo-red, .back-tallyhoo-blue { --ink: #c1303a; }
+.back-tallyhoo-blue { --ink: #24489a; }
+.back-tallyhoo-red::before, .back-tallyhoo-blue::before { background-color: var(--ink); }
+.back-tallyhoo-red::after, .back-tallyhoo-blue::after {
+  inset: auto; left: 50%; top: 50%; width: 66%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%;
+  background:
+    radial-gradient(circle, #fff 0 14%, var(--ink) 15% 19%, transparent 20%),
+    repeating-conic-gradient(rgb(255 255 255 / 0.9) 0 6deg, transparent 6deg 15deg),
+    var(--ink);
+  box-shadow: 0 0 0 1px #fff, 0 0 0 2.5px var(--ink), 0 0 0 3.2px rgb(255 255 255 / 0.85);
 }
-.back-midnight::after { box-shadow: inset 0 0 0 1px rgb(226 186 92 / 0.9); filter: sepia(1) saturate(2.5); }
-.back-neon::before {
-  background-color: #3b0f63;
-  background-image: linear-gradient(rgb(255 255 255 / 0.16) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.16) 1px, transparent 1px), linear-gradient(160deg, #6a2bd9, #e2398f);
-  background-size: 6px 6px, 6px 6px, 100% 100%;
+/* 醇黑：整面黑，一道白框，什么都不画 */
+.back-purr::before { background: #121214; box-shadow: inset 0 0 0 2.5px #121214, inset 0 0 0 3.5px #fff; }
+.back-purr::after { display: none; }
+/* 潮曦：粉蓝渐变，一个大叉 */
+.back-daybrake::before {
+  background:
+    linear-gradient(to top right, transparent calc(50% - 4px), rgb(255 255 255 / 0.75) calc(50% - 4px) calc(50% - 2px), rgb(242 168 196 / 0.9) calc(50% - 2px) calc(50% + 2px), rgb(255 255 255 / 0.75) calc(50% + 2px) calc(50% + 4px), transparent calc(50% + 4px)),
+    linear-gradient(to bottom right, transparent calc(50% - 4px), rgb(255 255 255 / 0.75) calc(50% - 4px) calc(50% - 2px), rgb(160 198 240 / 0.9) calc(50% - 2px) calc(50% + 2px), rgb(255 255 255 / 0.75) calc(50% + 2px) calc(50% + 4px), transparent calc(50% + 4px)),
+    linear-gradient(160deg, #f7c3d6 0%, #dcd3f2 50%, #bfe3f1 100%);
 }
-.back-neon::after { box-shadow: inset 0 0 0 1px #ffd0f0, 0 0 6px #ff6ad5; }
+.back-daybrake::after { background: none; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.8); }
 
-/* 商场的牌面：只改自己屏幕上的正面牌（牌桌外层带 face-<款式>） */
-.face-ink .card:not(.card-back) { --suit-ink: #1a1a1a; background: #fff; }
-.face-vintage .card:not(.card-back) { background: linear-gradient(170deg, #fbf3df 0%, #efe2c2 100%); box-shadow: inset 0 0 0 1px rgb(120 90 40 / 0.25), 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(0 0 0 / 0.12); }
-.face-vintage .card-gpt { --suit-ink: #5e5a52; }
-.face-vintage .card-claude { --suit-ink: #a8573a; }
-.face-vintage .card-gemini { --suit-ink: #4a6f91; }
-.face-vintage .card-grok { --suit-ink: #2b2620; }
-.face-night .card:not(.card-back) { background: linear-gradient(170deg, #3d3d42 0%, #232326 100%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 14px rgb(0 0 0 / 0.2); }
-.face-night .card-gpt { --suit-ink: #d0d0d5; }
-.face-night .card-claude { --suit-ink: #f0916f; }
-.face-night .card-gemini { --suit-ink: #6cb6ff; }
-.face-night .card-grok { --suit-ink: #f4f4f4; }
-.face-gold .card:not(.card-back) { background: linear-gradient(170deg, #fffaf0 0%, #f5e7c4 100%); box-shadow: inset 0 0 0 2px #d6a842, inset 0 0 0 3px #fff6dc, 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(120 80 0 / 0.18); }
-.face-gold .card-gpt { --suit-ink: #8a6d2b; }
-.face-gold .card-claude { --suit-ink: #b5652f; }
-.face-gold .card-gemini { --suit-ink: #3c74a8; }
-.face-gold .card-grok { --suit-ink: #3a2c10; }
+/* 商场的牌面：每张牌按它主人换上的款式画（.face-<款式>），同桌的人都看得到 */
+.card.face-ink { --suit-ink: #1a1a1a; background: #fff; }
+.card.face-vintage { background: linear-gradient(170deg, #fbf3df 0%, #efe2c2 100%); box-shadow: inset 0 0 0 1px rgb(120 90 40 / 0.25), 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(0 0 0 / 0.12); }
+.card.face-vintage.card-gpt { --suit-ink: #5e5a52; }
+.card.face-vintage.card-claude { --suit-ink: #a8573a; }
+.card.face-vintage.card-gemini { --suit-ink: #4a6f91; }
+.card.face-vintage.card-grok { --suit-ink: #2b2620; }
+.card.face-night { background: linear-gradient(170deg, #3d3d42 0%, #232326 100%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 14px rgb(0 0 0 / 0.2); }
+.card.face-night.card-gpt { --suit-ink: #d0d0d5; }
+.card.face-night.card-claude { --suit-ink: #f0916f; }
+.card.face-night.card-gemini { --suit-ink: #6cb6ff; }
+.card.face-night.card-grok { --suit-ink: #f4f4f4; }
+.card.face-gold { background: linear-gradient(170deg, #fffaf0 0%, #f5e7c4 100%); box-shadow: inset 0 0 0 2px #d6a842, inset 0 0 0 3px #fff6dc, 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 14px rgb(120 80 0 / 0.18); }
+.card.face-gold.card-gpt { --suit-ink: #8a6d2b; }
+.card.face-gold.card-claude { --suit-ink: #b5652f; }
+.card.face-gold.card-gemini { --suit-ink: #3c74a8; }
+.card.face-gold.card-grok { --suit-ink: #3a2c10; }
+/* 偷偷看、发发看看到的牌：只有自己看得到，画成虚线框、半透明 */
+.card.card-peeked { opacity: 0.8; outline: 1.5px dashed rgb(120 120 120 / 0.7); outline-offset: 1.5px; }
+
+/* 自己手牌下面的小工具条：三个道具 + 发表情 */
+.seat-tools { position: absolute; left: calc(100% + 24px); top: calc(50% + 42px); display: flex; gap: 4px; z-index: 4; }
+.tool-btn {
+  position: relative; width: 30px; height: 30px; border: 0; border-radius: 9px; cursor: pointer; padding: 0;
+  display: grid; place-items: center; color: var(--label-2); background: var(--panel); box-shadow: var(--shadow), inset 0 0 0 1px var(--separator);
+}
+.tool-btn .icon { width: 17px; height: 17px; }
+.tool-btn:disabled { cursor: default; opacity: 0.45; }
+.tool-btn.ready, .tool-btn.on { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tool-btn:not(:disabled):hover { color: var(--accent); }
+.tool-qty { position: absolute; right: -4px; top: -5px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; color: #fff; background: var(--label-3); font-variant-numeric: tabular-nums; }
+.tool-btn.ready .tool-qty { background: var(--accent); }
+.emote-wrap { position: relative; }
+.emote-picker {
+  position: absolute; bottom: calc(100% + 8px); right: -6px; z-index: 6; display: grid; grid-template-columns: repeat(4, 46px); gap: 4px; padding: 6px;
+  border-radius: 12px; background: var(--panel); box-shadow: var(--shadow), 0 8px 24px rgb(20 20 19 / 0.12), inset 0 0 0 1px var(--separator);
+}
+.emote-picker button { width: 46px; height: 46px; border: 0; border-radius: 9px; background: none; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.emote-picker button:hover { background: var(--fill); }
+/* 有人发表情：在他头上冒出来，停一会儿淡掉 */
+.seat-emote { position: absolute; left: 50%; bottom: calc(100% + 14px); translate: -50% 0; z-index: 6; pointer-events: none; filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.15)); }
+@media (prefers-reduced-motion: no-preference) {
+  .seat-emote { animation: emote-pop 2.8s ease both; }
+  @keyframes emote-pop { 0% { scale: .3; opacity: 0; } 12% { scale: 1.15; opacity: 1; } 22% { scale: 1; } 82% { opacity: 1; translate: -50% 0; } 100% { opacity: 0; translate: -50% -10px; } }
+}
+.emote-sprite { overflow: visible; display: block; }
+.emote-tears rect { fill: #5aa9f0; }
+.emote-heart { fill: #ee5a82; }
+.emote-steam rect { fill: #ef6a3a; }
+.emote-shades rect { fill: #141413; }
+.emote-mark { fill: var(--clawd-ink); font-weight: 700; font-family: var(--mono); }
+
+/* 左上角中英切换 */
+.brand-row { display: flex; align-items: center; gap: 10px; }
+.lang-toggle { display: inline-flex; padding: 2px; border: 0; border-radius: 999px; cursor: pointer; background: var(--fill); font: inherit; font-size: 11px; color: var(--label-3); }
+.lang-toggle span { padding: 1px 7px; border-radius: 999px; line-height: 1.5; }
+.lang-toggle span.on { background: var(--panel); color: var(--label); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }
 
 /* 商场 */
 .shop-section { margin-bottom: 28px; }
@@ -491,6 +540,11 @@ main { min-height: 60vh; }
 .shop-preview { display: flex; justify-content: center; padding: 16px 0 14px; border-radius: 10px; background: var(--table-top); box-shadow: inset 0 0 0 1px var(--table-line-2); }
 .shop-preview .card:first-child { rotate: -6deg; }
 .shop-preview .card + .card { margin-left: -12px; rotate: 7deg; }
+.shop-grid-small { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.shop-preview-emote { padding: 14px 0 10px; }
+.shop-preview-item { color: var(--accent); padding: 20px 0; }
+.shop-preview-item .icon { width: 40px; height: 40px; stroke-width: 1.4; }
+.shop-price { display: inline-flex; align-items: baseline; gap: 8px; }
 .shop-info h3 { font-size: 15px; }
 .shop-info p { margin: 2px 0 0; font-size: 13px; color: var(--label-2); }
 .shop-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
@@ -652,3 +706,11 @@ main { min-height: 60vh; }
   .board.board-wealth li { grid-template-columns: 22px 32px minmax(0, 1fr) auto; }
   .top-model { max-width: 7em; }
 }
+
+@media (max-width: 600px) {
+  .seat-you .seat-tools { left: auto; right: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
+  .tool-btn { width: 26px; height: 26px; }
+  .emote-picker { right: auto; left: -6px; grid-template-columns: repeat(3, 44px); }
+  .lang-toggle { font-size: 10px; }
+}
+.seat-you { z-index: 3; }

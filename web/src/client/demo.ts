@@ -1,7 +1,7 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
 import type { MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
 import { localBalance, spendLocal } from "./localTable";
-import { COSMETICS, findCosmetic, type CosmeticKind } from "../shared/cosmetics";
+import { COSMETICS, DEFAULT_BACK, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type CosmeticKind, type ItemId } from "../shared/cosmetics";
 
 const PEOPLE = [
   { login: "hyiiiii", name: "hyi", cost: 1_842.31, tokens: 912_000_000 },
@@ -81,12 +81,24 @@ function profile(login: string): Profile {
 
 let loggedIn = false;
 let showOnBoard = true;
-/** 预览里的商场：买过的款式和正在用的 */
+/** 预览里的商场：买过的款式、正在用的、道具库存（先送几张试试） */
 const owned = new Set<string>();
-const look = { back: "classic", face: "classic" };
+const look = { back: DEFAULT_BACK, face: DEFAULT_FACE };
+const stock: Record<ItemId, number> = { timecard: 2, peek: 1, runout: 1 };
 
 export function demoLook() {
   return look;
+}
+
+export function demoEmotes() {
+  return COSMETICS.filter((c) => c.kind === "emote" && (c.price === 0 || owned.has(`emote:${c.id}`))).map((c) => c.id);
+}
+
+/** 预览牌桌上用掉一个道具；没有了返回 false */
+export function demoSpend(item: ItemId) {
+  if (!stock[item]) return false;
+  stock[item] -= 1;
+  return true;
 }
 
 export function demoApi(path: string, method: string, _json?: unknown): unknown {
@@ -96,12 +108,21 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
   }
   if (url.pathname === "/api/shop") {
     return {
-      items: COSMETICS.map((x) => ({ ...x, owned: loggedIn && (x.price === 0 || owned.has(`${x.kind}:${x.id}`)) })),
+      cosmetics: COSMETICS.map((x) => ({ ...x, owned: loggedIn && (x.price === 0 || owned.has(`${x.kind}:${x.id}`)) })),
+      items: ITEMS.map((x) => ({ ...x, qty: loggedIn ? stock[x.id] : 0 })),
       equipped: loggedIn ? look : null,
     };
   }
   if (url.pathname === "/api/shop/buy" || url.pathname === "/api/shop/equip") {
-    const { kind, id } = (_json ?? {}) as { kind: CosmeticKind; id: string };
+    const { kind, id } = (_json ?? {}) as { kind: CosmeticKind | "item"; id: string };
+    if (kind === "item") {
+      const it = findItem(id);
+      if (!it) throw new Error("没有这件商品");
+      if (localBalance() < it.price) throw new Error("筹码不够");
+      spendLocal(it.price);
+      stock[it.id] += 1;
+      return { ok: true };
+    }
     const item = findCosmetic(kind, id);
     if (!item) throw new Error("没有这件商品");
     const key = `${kind}:${id}`;
@@ -110,7 +131,7 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
       spendLocal(item.price);
       owned.add(key);
     }
-    if (url.pathname.endsWith("equip")) look[kind] = id;
+    if (url.pathname.endsWith("equip") && (kind === "back" || kind === "face")) look[kind] = id;
     return { ok: true };
   }
   if (url.pathname.startsWith("/api/users/")) return profile(decodeURIComponent(url.pathname.slice(11)));
@@ -122,6 +143,8 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
       ...p,
       user: { ...p.user, showOnBoard },
       look: { ...look },
+      items: { ...stock },
+      emotes: demoEmotes(),
       // 余额跟着预览牌桌的带入、离桌变
       points: { ...p.points, balance: localBalance() },
       tokens: [{ id: 1, label: "yybar App", created_at: "2026-10-17T08:00:00Z", last_used_at: "2026-10-17T16:05:00Z" }],

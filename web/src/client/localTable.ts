@@ -2,7 +2,7 @@
 import { TableRoom } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { TableInfo } from "./tables";
-import { demoLook } from "./demo";
+import { demoEmotes, demoLook, demoSpend } from "./demo";
 
 const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
 const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
@@ -81,12 +81,16 @@ export function openLocalTable(
       if (!err && typeof amount === "string") err = amount;
       if (!err && typeof amount === "number") {
         balance -= amount;
-        err = local.room.sit({ ...YOU, back: demoLook().back }, msg.seat, amount, now);
+        err = local.room.sit({ ...YOU, back: demoLook().back, face: demoLook().face }, msg.seat, amount, now);
       }
     } else if (msg.t === "leave") err = local.room.leave(YOU.userId, now);
     else if (msg.t === "hold") err = local.room.hold(YOU, msg.seat, now);
     else if (msg.t === "release") local.room.release(YOU.userId);
     else if (msg.t === "show") err = local.room.show(YOU.userId, msg.which);
+    else if (msg.t === "item") {
+      err = local.room.canUseItem(YOU.userId, msg.item);
+      if (!err) err = demoSpend(msg.item) ? local.room.useItem(YOU.userId, msg.item, now) : "这个道具用完了，去商场买一些";
+    } else if (msg.t === "emote") err = local.room.emote(YOU.userId, msg.id, demoEmotes(), now);
     else if (msg.t === "act") err = local.room.act(YOU.userId, msg.action, msg.amount, now);
     if (err) onMsg({ t: "error", msg: err });
     emit(local);

@@ -67,7 +67,7 @@ const SAY_MS = 4500;
  * say 换了就冒个气泡说一句（例如登录后的问候），过一会儿自己消失。
  * stage 由外部控制（0 翻牌前 … 4 摊牌），每推进一条街换个表情；点一下会蹦一下。
  */
-export function Dealer({ stage, say, onPoke }: { stage: number; say?: string | null; onPoke?: () => void }) {
+export function Dealer({ stage, say, onPoke }: { stage: number; say?: { text: string; key: number } | null; onPoke?: () => void }) {
   const [mood, setMood] = useState<Mood>("idle");
   const [bubble, setBubble] = useState<{ text: string; leaving: boolean } | null>(null);
   const [act, setAct] = useState<(typeof ACTS)[number] | "">("");
@@ -123,7 +123,7 @@ export function Dealer({ stage, say, onPoke }: { stage: number; say?: string | n
 
   useEffect(() => {
     if (!say) return;
-    setBubble({ text: say, leaving: false });
+    setBubble({ text: say.text, leaving: false });
     setMood("happy");
     setAct("wave");
     const t1 = setTimeout(() => {
@@ -133,7 +133,7 @@ export function Dealer({ stage, say, onPoke }: { stage: number; say?: string | n
     const t2 = setTimeout(() => setBubble((b) => b && { ...b, leaving: true }), SAY_MS);
     const t3 = setTimeout(() => setBubble(null), SAY_MS + 600);
     return () => [t1, t2, t3].forEach(clearTimeout);
-  }, [say]);
+  }, [say?.key]);
 
   const poke = () => {
     setHop((h) => h + 1);
@@ -159,5 +159,70 @@ export function Dealer({ stage, say, onPoke }: { stage: number; say?: string | n
         <DealerSprite mood={mood} />
       </button>
     </div>
+  );
+}
+
+/** 表情里眼睛以外的小装饰：眼泪、爱心、冒火、墨镜、问号、z */
+const EMOTE_MOOD: Record<string, Mood> = {
+  happy: "happy", wow: "surprised", wink: "wink", sleepy: "sleepy",
+  angry: "focus", cry: "blink", love: "happy", cool: "idle", think: "focus",
+};
+
+/** 表情：Claude 像素小人换个表情，头顶或脸上加点小装饰。 */
+export function EmoteSprite({ id, size = 40 }: { id: string; size?: number }) {
+  const mood = EMOTE_MOOD[id] ?? "idle";
+  return (
+    <svg className={`emote-sprite emote-${id}`} viewBox="-1 -5 18 18" width={size} height={size} shapeRendering="crispEdges" aria-hidden>
+      <g className="dealer-body">
+        <rect x={2} y={1} width={12} height={8} />
+        <rect x={0} y={4} width={2} height={2} />
+        <rect x={14} y={4} width={2} height={2} />
+      </g>
+      <g className="dealer-legs">
+        <rect x={3} y={9} width={1} height={3} />
+        <rect x={5} y={9} width={1} height={3} />
+        <rect x={10} y={9} width={1} height={3} />
+        <rect x={12} y={9} width={1} height={3} />
+      </g>
+      {id === "cool" ? (
+        <g className="emote-shades">
+          <rect x={3.4} y={3.2} width={3.6} height={1.8} rx={0.3} />
+          <rect x={9} y={3.2} width={3.6} height={1.8} rx={0.3} />
+          <rect x={6.8} y={3.6} width={2.4} height={0.5} />
+        </g>
+      ) : id === "angry" ? (
+        <g className="dealer-eyes">
+          <path d="M4.2 3.4 L6 4.3 M11.8 3.4 L10 4.3" stroke="currentColor" strokeWidth={0.6} strokeLinecap="round" />
+          <rect x={4.6} y={4.3} width={1} height={1} />
+          <rect x={10.4} y={4.3} width={1} height={1} />
+        </g>
+      ) : (
+        <Eyes mood={mood} />
+      )}
+      {(mood === "happy" || mood === "wink") && (
+        <g className="dealer-blush">
+          <rect x={3} y={5.6} width={1.4} height={0.7} rx={0.3} />
+          <rect x={11.6} y={5.6} width={1.4} height={0.7} rx={0.3} />
+        </g>
+      )}
+      {id === "wow" && <rect className="dealer-mouth" x={7.4} y={6} width={1.2} height={1.2} rx={0.5} />}
+      {id === "cry" && (
+        <g className="emote-tears">
+          <rect x={4.8} y={5} width={0.7} height={2.6} rx={0.3} />
+          <rect x={10.6} y={5} width={0.7} height={2.6} rx={0.3} />
+        </g>
+      )}
+      {id === "love" && <path className="emote-heart" d="M8 -0.6 C8 -2.4 5.6 -2.6 5.6 -0.9 C5.6 0.4 7.2 1.2 8 2 C8.8 1.2 10.4 0.4 10.4 -0.9 C10.4 -2.6 8 -2.4 8 -0.6Z" />}
+      {id === "angry" && (
+        <g className="emote-steam">
+          <rect x={3} y={-2.6} width={1.2} height={1.2} />
+          <rect x={4.2} y={-3.8} width={1.2} height={1.2} />
+          <rect x={11.8} y={-2.6} width={1.2} height={1.2} />
+          <rect x={10.6} y={-3.8} width={1.2} height={1.2} />
+        </g>
+      )}
+      {id === "think" && <text className="emote-mark" x={12.5} y={-0.5} fontSize={4.5}>?</text>}
+      {id === "sleepy" && <text className="emote-mark" x={12} y={-0.5} fontSize={3.6}>z</text>}
+    </svg>
   );
 }

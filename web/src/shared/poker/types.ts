@@ -14,6 +14,9 @@ export type ClientMsg =
   | { t: "release" }
   /** 赢了没摊牌时亮牌：0 第一张，1 第二张，2 两张 */
   | { t: "show"; which: number }
+  /** 用道具、发表情 */
+  | { t: "item"; item: "timecard" | "peek" | "runout" }
+  | { t: "emote"; id: string }
   | { t: "act"; action: "fold" | "check" | "call" | "raise"; amount?: number }
   | { t: "ping" };
 
@@ -28,8 +31,9 @@ export interface SeatView {
   allIn: boolean;
   /** 只有自己的牌和摊牌亮出来的牌有值；别人的暗牌是 null，没拿牌是空数组 */
   cards: (Card | null)[];
-  /** 这个人的牌背款式（商场里换的），null 是默认款 */
+  /** 这个人的牌背、牌面款式（商场里换的），null 是默认款 */
   back: string | null;
+  face: string | null;
   away: boolean;
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */
@@ -75,6 +79,24 @@ export interface TableView {
   say: string | null;
   /** 每个座位的占座（有人点了空位正在选带入） */
   holds: ({ login: string; start: number; until: number; you: boolean } | null)[];
+  /** 最近几秒的桌面事件：谁用了道具、谁发了表情 */
+  events: TableEvent[];
+  /** 自己用偷偷看看到的别人的底牌（按座位），没用是 null */
+  peek: (Card[] | null)[] | null;
+  /** 自己用发发看看到的、没翻出来的公共牌 */
+  runout: Card[] | null;
+  /** 自己的道具现在能不能用（不管有没有库存） */
+  canUse: { timecard: boolean; peek: boolean; runout: boolean } | null;
+}
+
+export interface TableEvent {
+  id: number;
+  at: number;
+  kind: "item" | "emote";
+  seat: number;
+  login: string;
+  /** 道具 id 或表情 id */
+  what: string;
 }
 
 /** closed：玩家开的桌没人了，已经收掉 */

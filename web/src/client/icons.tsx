@@ -50,3 +50,38 @@ export const FlameIcon = () => (
     <path d="M12 21c-1.6 0-2.7-1.1-2.7-2.6 0-1.6 1.3-2.4 1.7-4 1.1.8 1.6 1.7 1.6 2.6.5-.2.9-.6 1.1-1.2.9.9 1 1.7 1 2.6 0 1.5-1.1 2.6-2.7 2.6z" />
   </Icon>
 );
+
+/** 沙漏 +：加时卡 */
+export const TimeIcon = () => (
+  <Icon>
+    <path d="M6.5 3.5h9M6.5 20.5h9" />
+    <path d="M7.5 3.5c0 4.5 6.5 5.5 6.5 8.5s-6.5 4-6.5 8.5M14.5 3.5c0 2.5-1.4 3.8-2.9 5" />
+    <path d="M18.5 9v6M15.5 12h6" />
+  </Icon>
+);
+
+/** 眼睛：偷偷看 */
+export const EyeIcon = () => (
+  <Icon>
+    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </Icon>
+);
+
+/** 两张牌翻开：发发看 */
+export const RunoutIcon = () => (
+  <Icon>
+    <rect x="3.5" y="6" width="8" height="12" rx="1.5" />
+    <rect x="12.5" y="6" width="8" height="12" rx="1.5" strokeDasharray="2 1.6" />
+    <path d="M7.5 10.5v3M6 12h3" />
+  </Icon>
+);
+
+/** 笑脸：发表情 */
+export const SmileIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M8.5 14c1 1.4 2.1 2 3.5 2s2.5-.6 3.5-2" />
+    <path d="M9 9.5v1M15 9.5v1" />
+  </Icon>
+);

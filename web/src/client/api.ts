@@ -51,6 +51,10 @@ export interface Look {
 export interface MeResponse extends Partial<Omit<Profile, "user">> {
   user: (PublicUser & { joinedAt: string; showOnBoard: boolean }) | null;
   look?: Look;
+  /** 道具库存 */
+  items?: Record<"timecard" | "peek" | "runout", number>;
+  /** 自己有的表情 */
+  emotes?: string[];
   tokens?: { id: number; label: string; created_at: string; last_used_at: string | null }[];
 }
 

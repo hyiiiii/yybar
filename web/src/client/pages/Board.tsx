@@ -3,12 +3,13 @@ import { Link } from "react-router";
 import { api, fmtInt, fmtTokens, type TokenRow, type WealthRow } from "../api";
 import { Avatar } from "../components";
 import { CoinsIcon, FlameIcon } from "../icons";
+import { tr, useLang, useT } from "../i18n";
 
 const RANGES = [
-  { key: "today", label: "今天" },
-  { key: "7d", label: "7 天" },
-  { key: "30d", label: "30 天" },
-  { key: "all", label: "总榜" },
+  { key: "today", label: ["今天", "Today"] },
+  { key: "7d", label: ["7 天", "7 days"] },
+  { key: "30d", label: ["30 天", "30 days"] },
+  { key: "all", label: ["总榜", "All time"] },
 ] as const;
 
 type By = "tokens" | "wealth";
@@ -19,38 +20,40 @@ export function BoardPage() {
   const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("7d");
   const [rows, setRows] = useState<(TokenRow | WealthRow)[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const lang = useLang();
+  const t = useT();
 
   useEffect(() => {
     setRows(null);
     setError(null);
     const q = by === "tokens" ? `by=tokens&range=${range}` : "by=wealth";
-    api<{ rows: (TokenRow | WealthRow)[] }>(`/api/leaderboard?${q}`).then((r) => setRows(r.rows), (e: Error) => setError(e.message));
+    api<{ rows: (TokenRow | WealthRow)[] }>(`/api/leaderboard?${q}`).then((r) => setRows(r.rows), (e: Error) => setError(tr(e.message, lang)));
   }, [by, range]);
 
   return (
     <section className="section">
       <div className="section-head board-head">
-        <div className="seg seg-icons" role="tablist" aria-label="排行方式">
-          <button role="tab" aria-selected={by === "tokens"} onClick={() => setBy("tokens")} aria-label="燃烧 token" title="燃烧 token">
+        <div className="seg seg-icons" role="tablist" aria-label={t("排行方式", "Rank by")}>
+          <button role="tab" aria-selected={by === "tokens"} onClick={() => setBy("tokens")} aria-label={t("燃烧 token", "Tokens burned")} title={t("燃烧 token", "Tokens burned")}>
             <FlameIcon />
           </button>
-          <button role="tab" aria-selected={by === "wealth"} onClick={() => setBy("wealth")} aria-label="财富" title="财富">
+          <button role="tab" aria-selected={by === "wealth"} onClick={() => setBy("wealth")} aria-label={t("财富", "Wealth")} title={t("财富", "Wealth")}>
             <CoinsIcon />
           </button>
         </div>
         {by === "tokens" && (
-          <div className="seg" role="tablist" aria-label="时间段">
+          <div className="seg" role="tablist" aria-label={t("时间段", "Period")}>
             {RANGES.map((r) => (
               <button key={r.key} role="tab" aria-selected={range === r.key} onClick={() => setRange(r.key)}>
-                {r.label}
+                {t(r.label[0], r.label[1])}
               </button>
             ))}
           </div>
         )}
       </div>
       {error && <p className="error">{error}</p>}
-      {!rows && !error && <p className="empty">加载中…</p>}
-      {rows && rows.length === 0 && <p className="empty">还没有人上榜。</p>}
+      {!rows && !error && <p className="empty">{t("加载中…", "Loading…")}</p>}
+      {rows && rows.length === 0 && <p className="empty">{t("还没有人上榜。", "Nobody on the board yet.")}</p>}
       {rows && rows.length > 0 && (
         <ol className={`board board-${by}`}>
           {rows.map((r) => (
@@ -63,7 +66,7 @@ export function BoardPage() {
               </Link>
               {"tokens" in r ? (
                 <>
-                  <span className="top-model" title="最常用的模型">
+                  <span className="top-model" title={t("最常用的模型", "Most-used model")}>
                     <i className={`dot fill-${r.topApp}`} /> {r.topModel}
                   </span>
                   <span className="num cost" title={`${fmtInt(r.tokens)} tokens`}>{fmtTokens(r.tokens)}</span>
