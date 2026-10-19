@@ -73,15 +73,18 @@ export function AchievementsPage() {
       )}
       {note && <p className="note shop-note" role="status">{note}</p>}
       <div className="ach-grid">
-        {(data?.achievements ?? []).map((a) => {
+        {(data?.achievements ?? []).map((a, idx) => {
           const done = !!a.unlockedAt;
           const wearing = !!data?.badges.includes(a.id);
           const full = (data?.badges.length ?? 0) >= MAX_BADGES;
           const now = progressOf(a, data?.progress ?? null);
           return (
-            <article key={a.id} className={`ach${done ? " done" : ""}${wearing ? " wearing" : ""}`}>
+            <article key={a.id} className={`ach${done ? " done" : ""}${wearing ? " wearing" : ""}`} style={{ "--i": idx } as React.CSSProperties}>
               <div className="ach-badge">
-                <Badge id={a.id} big />
+                {/* 戴上 / 摘下时换 key，徽章弹一下 */}
+                <span key={wearing ? "on" : "off"} className={wearing ? "badge-wear" : undefined}>
+                  <Badge id={a.id} big />
+                </span>
               </div>
               <div className="ach-info">
                 <h3>{pick(a.name, lang)}</h3>

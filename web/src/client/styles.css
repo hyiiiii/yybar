@@ -832,3 +832,40 @@ main { min-height: 60vh; }
   .brand-row { gap: 6px; }
   .guide-ranks li { grid-template-columns: 1fr; }
 }
+.icon-btn .icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+/* 切换入口：和切桌一样，往右的从右边滑进来，往左的从左边滑进来 */
+@media (prefers-reduced-motion: no-preference) {
+  .page-next { animation: page-next .55s cubic-bezier(.22, .9, .3, 1) both; }
+  .page-prev { animation: page-prev .55s cubic-bezier(.22, .9, .3, 1) both; }
+  @keyframes page-next { from { translate: 70px 0; opacity: 0; } }
+  @keyframes page-prev { from { translate: -70px 0; opacity: 0; } }
+  /* 列表、卡片一个接一个浮上来（--i 是第几个） */
+  .board li, .shop-item, .ach { animation: rise-in .5s cubic-bezier(.22, .9, .3, 1) both; animation-delay: calc(var(--i, 0) * 35ms + 60ms); }
+  @keyframes rise-in { from { translate: 0 14px; opacity: 0; } }
+  /* 刚买到：卡片亮一下 */
+  .shop-item.just-bought { animation: bought 1.1s ease-out both; }
+  @keyframes bought { 0% { box-shadow: var(--shadow), 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); scale: .97; } 30% { scale: 1.02; } 100% { box-shadow: var(--shadow), 0 0 0 14px transparent; scale: 1; } }
+  /* 戴上徽章：弹一下 */
+  .badge-wear { display: inline-block; animation: wear-pop .55s cubic-bezier(.2, 1.6, .4, 1) both; }
+  @keyframes wear-pop { from { scale: .4; rotate: -12deg; } }
+  .modal { animation: modal-in .35s cubic-bezier(.2, .9, .3, 1.1) both; }
+  .modal-back { animation: fade-in .25s ease-out both; }
+  @keyframes modal-in { from { scale: .92; translate: 0 10px; opacity: 0; } }
+  @keyframes fade-in { from { opacity: 0; } }
+  .buy-done svg path { stroke-dasharray: 30; animation: draw-check .45s ease-out .05s both; }
+  @keyframes draw-check { from { stroke-dashoffset: 30; } }
+  .buy-done { animation: modal-in .3s ease-out both; }
+}
+/* 购买确认 */
+.buy-confirm { width: min(360px, 100%); text-align: center; display: flex; flex-direction: column; gap: 12px; }
+.buy-confirm h3 { font-size: 17px; }
+.buy-math { display: grid; grid-template-columns: auto auto; justify-content: center; gap: 4px 14px; margin: 0; font-size: 14px; }
+.buy-math span { color: var(--label-2); text-align: right; }
+.buy-math b { text-align: left; font-variant-numeric: tabular-nums; }
+.buy-done { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 22px 0 14px; color: var(--go); }
+.buy-done svg { width: 54px; height: 54px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; padding: 8px; border-radius: 50%; background: color-mix(in srgb, var(--go) 14%, transparent); }
+.buy-done b { color: var(--label); font-size: 16px; }
+/* 燃烧 token 榜：大字是正在排的那一项，小字是另一项 */
+.board-amount { display: flex; flex-direction: column; align-items: flex-end; font-weight: 600; line-height: 1.2; }
+.board-amount small { font-weight: 400; font-size: 11px; color: var(--label-3); }

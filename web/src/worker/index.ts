@@ -125,29 +125,33 @@ app.get("/api/leaderboard", async (c) => {
   if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
   const range = c.req.query("range") ?? "7d";
   if (!(range in RANGES)) return c.json({ error: "range 只能是 today / 7d / 30d / all" }, 400);
+  // 燃烧 token 榜可以按 token 数排，也可以按这些 token 的花费排
+  const sort = c.req.query("sort") === "cost" ? "cost" : "tokens";
   const start = rangeStart(range);
   const { results } = await c.env.DB.prepare(
     `WITH per AS (
        SELECT d.user_id, d.app, d.model,
-         SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens) AS tokens
+         SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens) AS tokens,
+         SUM(d.cost_micro) AS cost_micro
        FROM daily_usage d JOIN users u ON u.id = d.user_id
        WHERE u.show_on_board = 1 AND d.day >= ?
        GROUP BY d.user_id, d.app, d.model
      )
-     SELECT u.login, u.name, u.avatar_url, u.badges, SUM(per.tokens) AS tokens,
+     SELECT u.login, u.name, u.avatar_url, u.badges, SUM(per.tokens) AS tokens, SUM(per.cost_micro) AS cost_micro,
        (SELECT p2.model FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_model,
        (SELECT p2.app FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_app
      FROM per JOIN users u ON u.id = per.user_id
      GROUP BY per.user_id HAVING tokens > 0
-     ORDER BY tokens DESC LIMIT 100`,
+     ORDER BY ${sort === "cost" ? "cost_micro DESC, tokens DESC" : "tokens DESC, cost_micro DESC"} LIMIT 100`,
   )
     .bind(start ?? "0000-00-00")
-    .all<{ login: string; name: string | null; avatar_url: string | null; badges: string; tokens: number; top_model: string; top_app: string }>();
+    .all<{ login: string; name: string | null; avatar_url: string | null; badges: string; tokens: number; cost_micro: number; top_model: string; top_app: string }>();
   return c.json({
     by,
     range,
     since: start,
-    rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), tokens: r.tokens, topModel: r.top_model, topApp: r.top_app })),
+    sort,
+    rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), tokens: r.tokens, costMicro: r.cost_micro, topModel: r.top_model, topApp: r.top_app })),
   });
 });
 

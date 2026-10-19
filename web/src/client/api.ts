@@ -75,6 +75,8 @@ export interface MeResponse extends Partial<Omit<Profile, "user">> {
 export interface TokenRow extends PublicUser {
   rank: number;
   tokens: number;
+  /** 这些 token 的花费（微美元） */
+  costMicro: number;
   topModel: string;
   topApp: App;
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { api, fmtInt } from "../api";
 import { LoginButton, PlayingCard } from "../components";
 import { EmoteSprite } from "../Dealer";
@@ -60,19 +61,38 @@ export function ShopPage() {
     load();
   }, [signedIn]);
 
+  /** 刚买到的那件，卡片闪一下 */
+  const [flash, setFlash] = useState<string | null>(null);
+  /** 购买确认弹窗；done 是买成功后停留的那一下 */
+  const [confirm, setConfirm] = useState<{ key: string; name: string; price: number; preview: ReactNode; buy: () => Promise<boolean>; done?: boolean } | null>(null);
+
   const run = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key);
     setNote(null);
     try {
       await fn();
       setNote(done);
+      setFlash(key);
       notifyMeChanged();
       await load();
+      return true;
     } catch (e) {
       setNote(tr((e as Error).message, lang));
+      return false;
     } finally {
       setBusy(null);
     }
+  };
+
+  /** 点「买下」先弹确认；确认后买，成功了弹窗里打个勾，过一会儿自己关掉 */
+  const ask = (key: string, name: string, price: number, preview: ReactNode, buy: () => Promise<boolean>) =>
+    setConfirm({ key, name, price, preview, buy });
+  const confirmBuy = async () => {
+    if (!confirm) return;
+    const ok = await confirm.buy();
+    if (!ok) return setConfirm(null);
+    setConfirm((c) => c && { ...c, done: true });
+    setTimeout(() => setConfirm(null), 900);
   };
 
   const buyCosmetic = (item: Owned, alsoEquip: boolean) =>
@@ -115,11 +135,15 @@ export function ShopPage() {
             <p className="muted small">{sec.hint}</p>
           </div>
           <div className={`shop-grid${sec.kind === "emote" ? " shop-grid-small" : ""}`}>
-            {(shop?.cosmetics ?? []).filter((x) => x.kind === sec.kind).map((item) => {
+            {(shop?.cosmetics ?? []).filter((x) => x.kind === sec.kind).map((item, idx) => {
               const equipped = item.kind !== "emote" && shop?.equipped?.[item.kind] === item.id;
               const key = `${item.kind}:${item.id}`;
               return (
-                <article key={key} className={`shop-item${equipped ? " equipped" : ""}`}>
+                <article
+                  key={flash === key ? `${key}-flash` : key}
+                  className={`shop-item${equipped ? " equipped" : ""}${flash === key ? " just-bought" : ""}`}
+                  style={{ "--i": idx } as React.CSSProperties}
+                >
                   <Preview item={item} />
                   <div className="shop-info">
                     <h3>{pick(item.name, lang)}</h3>
@@ -129,7 +153,7 @@ export function ShopPage() {
                     {item.price > 0 && !item.owned ? price(item.price) : <span className="muted small">{item.price ? t("已拥有", "Owned") : t("免费", "Free")}</span>}
                     {item.kind === "emote" ? (
                       !item.owned && (
-                        <button className="btn btn-small" disabled={!signedIn || !!busy || balance < item.price} onClick={() => buyCosmetic(item, false)}>
+                        <button className="btn btn-small" disabled={!signedIn || !!busy || balance < item.price} onClick={() => ask(key, pick(item.name, lang), item.price, <Preview item={item} />, () => buyCosmetic(item, false))}>
                           {balance < item.price && signedIn ? t("筹码不够", "Can't afford") : t("买下", "Buy")}
                         </button>
                       )
@@ -138,7 +162,11 @@ export function ShopPage() {
                     ) : item.owned ? (
                       <button className="btn btn-small btn-ghost" disabled={!!busy} onClick={() => buyCosmetic(item, true)}>{t("换上", "Use")}</button>
                     ) : (
-                      <button className="btn btn-small" disabled={!signedIn || !!busy || balance < item.price} onClick={() => buyCosmetic(item, true)}>
+                      <button
+                        className="btn btn-small"
+                        disabled={!signedIn || !!busy || balance < item.price}
+                        onClick={() => ask(key, pick(item.name, lang), item.price, <Preview item={item} />, () => buyCosmetic(item, true))}
+                      >
                         {balance < item.price && signedIn ? t("筹码不够", "Can't afford") : t("买下", "Buy")}
                       </button>
                     )}
@@ -159,7 +187,10 @@ export function ShopPage() {
           {(shop?.items ?? []).map((item) => {
             const Icon = ITEM_ICON[item.id];
             return (
-              <article key={item.id} className="shop-item">
+              <article
+                key={flash === `item:${item.id}` ? `${item.id}-flash-${item.qty}` : item.id}
+                className={`shop-item${flash === `item:${item.id}` ? " just-bought" : ""}`}
+              >
                 <div className="shop-preview shop-preview-item">
                   <Icon />
                 </div>
@@ -172,7 +203,9 @@ export function ShopPage() {
                     {price(item.price)}
                     {signedIn && <span className="muted small">{t(`有 ${item.qty} 张`, `Have ${item.qty}`)}</span>}
                   </span>
-                  <button className="btn btn-small" disabled={!signedIn || !!busy || balance < item.price} onClick={() => buyItem(item)}>
+                  <button className="btn btn-small" disabled={!signedIn || !!busy || balance < item.price} onClick={() =>
+                      ask(`item:${item.id}`, pick(item.name, lang), item.price, <div className="shop-preview shop-preview-item"><Icon /></div>, () => buyItem(item))
+                    }>
                     {balance < item.price && signedIn ? t("筹码不够", "Can't afford") : t("买一张", "Buy one")}
                   </button>
                 </div>
@@ -181,6 +214,37 @@ export function ShopPage() {
           })}
         </div>
       </div>
+      {/* 弹窗挂到 body 上：页面切换动画的 translate 会让 fixed 定位相对页面，而不是相对整个窗口 */}
+      {confirm && createPortal(
+        <div className="modal-back" onClick={() => !busy && !confirm.done && setConfirm(null)}>
+          <div className="modal buy-confirm" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            {confirm.done ? (
+              <div className="buy-done">
+                <svg viewBox="0 0 24 24" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                <b>{t("买到了", "Got it")}</b>
+              </div>
+            ) : (
+              <>
+                {confirm.preview}
+                <h3>{t(`买下「${confirm.name}」？`, `Buy ${confirm.name}?`)}</h3>
+                <p className="buy-math">
+                  <span>{t("价格", "Price")}</span>
+                  <b className="chip-count">{fmtInt(confirm.price)}</b>
+                  <span>{t("余额", "Balance")}</span>
+                  <b>
+                    {fmtInt(balance)} → {fmtInt(balance - confirm.price)}
+                  </b>
+                </p>
+                <div className="panel-row">
+                  <button className="btn btn-text" disabled={!!busy} onClick={() => setConfirm(null)}>{t("再想想", "Not now")}</button>
+                  <button className="btn" disabled={!!busy} onClick={confirmBuy}>{busy ? t("购买中…", "Buying…") : t("确认购买", "Buy")}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
     </section>
   );
 }

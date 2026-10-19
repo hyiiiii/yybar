@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api, fmtInt, fmtTokens, type TokenRow, type WealthRow } from "../api";
+import { api, fmtInt, fmtTokens, fmtUSD, type TokenRow, type WealthRow } from "../api";
 import { Avatar, Badges, StatLine } from "../components";
 import { CoinsIcon, FlameIcon } from "../icons";
 import { tr, useLang, useT } from "../i18n";
@@ -13,11 +13,14 @@ const RANGES = [
 ] as const;
 
 type By = "tokens" | "wealth";
+/** 燃烧 token 榜按 token 数排还是按花费排 */
+type Sort = "tokens" | "cost";
 
 /** 排行榜：用图标切换「燃烧 token」（按 token 数，带最常用的模型）和「财富」（按筹码余额）。 */
 export function BoardPage() {
   const [by, setBy] = useState<By>("tokens");
   const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("7d");
+  const [sort, setSort] = useState<Sort>("tokens");
   const [rows, setRows] = useState<(TokenRow | WealthRow)[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lang = useLang();
@@ -26,9 +29,9 @@ export function BoardPage() {
   useEffect(() => {
     setRows(null);
     setError(null);
-    const q = by === "tokens" ? `by=tokens&range=${range}` : "by=wealth";
+    const q = by === "tokens" ? `by=tokens&range=${range}&sort=${sort}` : "by=wealth";
     api<{ rows: (TokenRow | WealthRow)[] }>(`/api/leaderboard?${q}`).then((r) => setRows(r.rows), (e: Error) => setError(tr(e.message, lang)));
-  }, [by, range]);
+  }, [by, range, sort]);
 
   return (
     <section className="section">
@@ -41,6 +44,16 @@ export function BoardPage() {
             <CoinsIcon />
           </button>
         </div>
+        {by === "tokens" && (
+          <div className="seg" role="tablist" aria-label={t("排序", "Sort by")}>
+            <button role="tab" aria-selected={sort === "tokens"} onClick={() => setSort("tokens")} title={t("按 token 数排", "Sort by tokens")}>
+              Token
+            </button>
+            <button role="tab" aria-selected={sort === "cost"} onClick={() => setSort("cost")} title={t("按花费排", "Sort by spend")}>
+              $
+            </button>
+          </div>
+        )}
         {by === "tokens" && (
           <div className="seg" role="tablist" aria-label={t("时间段", "Period")}>
             {RANGES.map((r) => (
@@ -55,9 +68,10 @@ export function BoardPage() {
       {!rows && !error && <p className="empty">{t("加载中…", "Loading…")}</p>}
       {rows && rows.length === 0 && <p className="empty">{t("还没有人上榜。", "Nobody on the board yet.")}</p>}
       {rows && rows.length > 0 && (
-        <ol className={`board board-${by}`}>
-          {rows.map((r) => (
-            <li key={r.login}>
+        // 换榜、换时间段、换排序时整个列表重新挂载，一行一行滑进来
+        <ol className={`board board-${by}`} key={`${by}-${range}-${sort}`}>
+          {rows.map((r, i) => (
+            <li key={r.login} style={{ "--i": Math.min(i, 20) } as React.CSSProperties}>
               <span className={`rank rank-${r.rank}`}>{r.rank}</span>
               <Avatar url={r.avatarUrl} login={r.login} />
               <Link to={`/u/${r.login}`} className="who">
@@ -72,7 +86,10 @@ export function BoardPage() {
                   <span className="top-model" title={t("最常用的模型", "Most-used model")}>
                     <i className={`dot fill-${r.topApp}`} /> {r.topModel}
                   </span>
-                  <span className="num cost" title={`${fmtInt(r.tokens)} tokens`}>{fmtTokens(r.tokens)}</span>
+                  <span className={`num board-amount${sort === "tokens" ? " primary" : ""}`} title={`${fmtInt(r.tokens)} tokens`}>
+                    {sort === "tokens" ? fmtTokens(r.tokens) : fmtUSD(r.costMicro)}
+                    <small>{sort === "tokens" ? fmtUSD(r.costMicro) : `${fmtTokens(r.tokens)} tokens`}</small>
+                  </span>
                 </>
               ) : (
                 <>

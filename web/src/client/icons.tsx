@@ -115,3 +115,11 @@ export const GiftIcon = ({ open }: { open?: boolean }) => (
     </g>
   </svg>
 );
+
+/** 喇叭：牌桌音效开关；muted 时画一道斜线 */
+export const SpeakerIcon = ({ muted }: { muted?: boolean }) => (
+  <Icon>
+    <path d="M4.5 9.5h3l4-3.5v12l-4-3.5h-3z" />
+    {muted ? <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" /> : <path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 7a7 7 0 0 1 0 10" />}
+  </Icon>
+);

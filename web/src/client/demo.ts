@@ -24,18 +24,23 @@ const TOP: [TokenRow["topApp"], string][] = [
 
 const DEMO_BADGES: (string | null)[] = [null, "streak_30", "big_pot", null, "first_login", null, "spend_1k", null];
 
-function tokenBoard(range: string): TokenRow[] {
+/** 不同模型单价不一样，按花费排和按 token 排名次会不同 */
+const PRICE_FACTOR = [1, 0.7, 1.35, 1.6, 0.5, 0.8, 0.9, 0.4];
+
+function tokenBoard(range: string, sort: string): TokenRow[] {
   const k = SCALE[range] ?? 1;
-  return PEOPLE.map((p, i) => ({
-    rank: i + 1,
+  const rows = PEOPLE.map((p, i) => ({
     login: p.login,
     name: p.name,
     avatarUrl: null,
     tokens: Math.round(p.tokens * k),
+    costMicro: Math.round(p.cost * k * PRICE_FACTOR[i] * 1e6),
     badges: p.login === "hyiiiii" ? badges : DEMO_BADGES[i] ? [DEMO_BADGES[i]!] : [],
     topApp: TOP[i][0],
     topModel: TOP[i][1],
   }));
+  rows.sort((a, b) => (sort === "cost" ? b.costMicro - a.costMicro : b.tokens - a.tokens));
+  return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
 function wealthBoard(): WealthRow[] {
@@ -130,7 +135,7 @@ export function demoSpend(item: ItemId) {
 export function demoApi(path: string, method: string, _json?: unknown): unknown {
   const url = new URL(path, "https://demo.local");
   if (url.pathname === "/api/leaderboard") {
-    return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard() } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d") };
+    return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard() } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d", url.searchParams.get("sort") ?? "tokens") };
   }
   if (url.pathname === "/api/achievements") {
     if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badge: null };

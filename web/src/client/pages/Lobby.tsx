@@ -4,7 +4,8 @@ import { api, fmtInt } from "../api";
 import { Badges, FeltTable, MarqueeSign, PlayingCard, StatLine, fmtMoney, type CardSpec, type Seat } from "../components";
 import type { PokerStats } from "../api";
 import { Dealer, EmoteSprite } from "../Dealer";
-import { EyeIcon, RunoutIcon, SmileIcon, TimeIcon } from "../icons";
+import { EyeIcon, RunoutIcon, SmileIcon, SpeakerIcon, TimeIcon } from "../icons";
+import { setMuted, sfx, useMuted } from "../sound";
 import { nameOf, pick, tr, useLang, useT, type Lang } from "../i18n";
 import type { Suit } from "../suits";
 import { DEFAULT_TABLE, TABLES } from "../tables";
@@ -305,6 +306,31 @@ export function LobbyPage() {
     if (free >= 0) conn.send({ t: "sit", seat: free, buyIn: pendingSit.buyIn });
   }, [pendingSit, view]);
 
+  // 音效：拿这次的牌桌和上一次比，谁下注、过牌、弃牌，发了几张牌，轮没轮到自己，赢没赢
+  const muted = useMuted();
+  const prevView = useRef<TableView | null>(null);
+  useEffect(() => {
+    const prev = prevView.current;
+    prevView.current = view;
+    if (!view || !prev || prev.no !== view.no) return;
+    if (view.handNo !== prev.handNo && view.street === "preflop") {
+      const dealt = view.seats.filter((x) => x?.inHand).length * 2;
+      for (let k = 0; k < Math.min(dealt, 12); k++) sfx.deal(k * 0.06);
+    }
+    for (let k = prev.board.length; k < view.board.length; k++) sfx.deal((k - prev.board.length) * 0.09);
+    if (view.handNo === prev.handNo) {
+      view.seats.forEach((x, i) => {
+        const p = prev.seats[i];
+        if (!x || !p) return;
+        if (x.folded && !p.folded) sfx.fold();
+        else if (x.bet > p.bet) sfx.chips(x.bet - p.bet >= view.blinds[1] * 4 ? 3 : 2);
+        else if (x.last !== p.last && x.last === "过牌") sfx.check();
+      });
+    }
+    if (view.legal && !prev.legal) sfx.turn();
+    if (view.street === "showdown" && prev.street !== "showdown" && view.you !== null && (view.seats[view.you]?.won ?? 0) > 0) sfx.win();
+  }, [view]);
+
   // 桌面事件：表情在那个人头上冒一下；偷偷看、发发看由发牌员告诉全桌；自己用了道具刷新库存
   const [emotes, setEmotes] = useState<Record<number, { id: string; key: number }>>({});
   const handled = useRef(new Set<string>());
@@ -317,6 +343,7 @@ export function LobbyPage() {
       handled.current.add(key);
       if (clock - e.at > 3000) continue; // 刚连上时看到的旧事件不再播
       if (e.kind === "emote") {
+        sfx.pop();
         setEmotes((m) => ({ ...m, [e.seat]: { id: e.what, key: e.id } }));
         setTimeout(() => setEmotes((m) => (m[e.seat]?.key === e.id ? (({ [e.seat]: _, ...rest }) => rest)(m) : m)), 2800);
       } else {
@@ -500,6 +527,10 @@ export function LobbyPage() {
   const buttonAt = view && view.street !== "idle" && view.button >= 0 ? toDisplay(view.button) : null;
   const yourSeat = you !== null ? view?.seats[you] : null;
   const canShow = !!yourSeat && view?.street === "showdown" && yourSeat.inHand && !yourSeat.folded && yourSeat.showMask < 3;
+  // 自己行动的最后 3 秒，每秒滴一声
+  useEffect(() => {
+    if (legal && left !== null && left > 0 && left <= 3) sfx.tick();
+  }, [left]);
   // 每次轮到自己，滑杆先放在第一个快捷额度上
   useEffect(() => {
     if (legal?.canRaise) setRaiseTo(presets[0]?.to ?? legal.minRaiseTo);
@@ -738,6 +769,14 @@ export function LobbyPage() {
                 <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
                 <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
               </svg>
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setMuted(!muted)}
+              aria-label={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
+              title={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
+            >
+              <SpeakerIcon muted={muted} />
             </button>
             <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label={t("开一张桌", "Open a table")} title={t("开一张桌", "Open a table")}>
               <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>

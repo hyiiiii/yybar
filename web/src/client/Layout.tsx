@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { sfx } from "./sound";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { api, fmtInt } from "./api";
 import { Guide } from "./Guide";
@@ -9,29 +10,52 @@ import { loginHref, notifyMeChanged, useMe } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
 
-/** 每日礼盒：没领时在跳，点一下拆开（盖子飞起、冒出 +$100），今天就停在拆开的样子 */
+/** 礼盒拆到一半要先登录：记下这个意图，登录回来自动拆 */
+const GIFT_INTENT = "yyb:open-gift";
+
+/** 每日礼盒：没领就一直在跳，点一下直接领（盖子飞起、冒出 +$100），今天就停在拆开的样子 */
 function DailyGift() {
   const { me } = useMe();
   const t = useT();
   const [popped, setPopped] = useState<number | null>(null);
   const claimed = !!me?.daily?.claimed;
   const amount = me?.daily?.amount ?? 100;
-  const open = async () => {
-    if (!me?.user) {
-      if (DEMO) {
-        (await import("./demo")).demoLogin();
-        notifyMeChanged();
-      } else location.href = loginHref();
-      return;
-    }
-    if (claimed) return;
+  const claim = async () => {
     const r = await api<{ amount: number }>("/api/me/daily", { method: "POST", json: {} });
+    if (r.amount) sfx.pop();
     setPopped(r.amount);
     notifyMeChanged();
   };
+  // 登录回来接着拆
+  useEffect(() => {
+    if (!me?.user || claimed) return;
+    try {
+      if (sessionStorage.getItem(GIFT_INTENT)) {
+        sessionStorage.removeItem(GIFT_INTENT);
+        claim();
+      }
+    } catch {
+      // 读不了就算了，用户再点一下
+    }
+  }, [me?.user?.login, claimed]);
+  const open = async () => {
+    if (claimed) return;
+    if (me?.user) return claim();
+    if (DEMO) {
+      (await import("./demo")).demoLogin();
+      await claim();
+      return;
+    }
+    try {
+      sessionStorage.setItem(GIFT_INTENT, "1");
+    } catch {
+      // 存不了就登录回来再点一下
+    }
+    location.href = loginHref();
+  };
   return (
     <button
-      className={`head-icon gift-btn${!claimed && me?.user ? " gift-waiting" : ""}${claimed ? " gift-done" : ""}`}
+      className={`head-icon gift-btn${claimed ? " gift-done" : " gift-waiting"}`}
       onClick={open}
       aria-label={claimed ? t("今天的礼盒已经拆了", "Today's gift is opened") : t("拆每日礼盒", "Open the daily gift")}
       title={claimed ? t("今天的礼盒已经拆了，明天再来", "Opened — come back tomorrow") : t(`每日礼盒：每天 $${amount}`, `Daily gift: $${amount} every day`)}
@@ -42,6 +66,14 @@ function DailyGift() {
   );
 }
 
+/** 顶栏入口从左到右的顺序；切页面时往右的从右边滑进来，往左的从左边滑进来 */
+function sectionOf(path: string): number {
+  if (path === "/" || path.startsWith("/table") || path.startsWith("/bar")) return 0;
+  const order = ["/shop", "/board", "/achievements", "/me", "/u/", "/connect"];
+  const k = order.findIndex((p) => path.startsWith(p));
+  return k < 0 ? 9 : k + 1;
+}
+
 export function Layout() {
   const { me } = useMe();
   const user = me?.user;
@@ -49,6 +81,11 @@ export function Layout() {
   const lang = useLang();
   const t = useT();
   const [guide, setGuide] = useState(false);
+  // 方向在换入口的那一刻定下来，之后重绘（比如余额刷新）也不变，免得动画被打断
+  const section = sectionOf(location.pathname);
+  const [nav, setNav] = useState({ section, dir: "" });
+  if (nav.section !== section) setNav({ section, dir: section > nav.section ? "page-next" : "page-prev" });
+  const dir = nav.section === section ? nav.dir : "";
   return (
     <div className="shell">
       <header className="topbar">
@@ -97,7 +134,10 @@ export function Layout() {
         </nav>
       </header>
       <main>
-        <Outlet />
+        {/* 换到另一个入口时整页重新挂载，按方向滑进来；同一个入口里（比如切桌）不动 */}
+        <div key={section} className={`page ${dir}`}>
+          <Outlet />
+        </div>
       </main>
       {guide && <Guide onClose={() => setGuide(false)} />}
     </div>
