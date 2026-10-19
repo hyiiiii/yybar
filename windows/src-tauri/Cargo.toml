@@ -1,0 +1,37 @@
+[package]
+name = "yybar"
+version = "0.1.0"
+description = "yybar for Windows: Codex / Claude Code / Grok 额度与用量"
+edition = "2021"
+publish = false
+
+[lib]
+name = "yybar_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+memchr = "2"
+base64 = "0.22"
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+window-vibrancy = "0.6"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
