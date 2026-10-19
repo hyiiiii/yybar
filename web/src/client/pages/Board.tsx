@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, fmtInt, fmtTokens, type TokenRow, type WealthRow } from "../api";
-import { Avatar, Badge } from "../components";
+import { Avatar, Badges, StatLine } from "../components";
 import { CoinsIcon, FlameIcon } from "../icons";
 import { tr, useLang, useT } from "../i18n";
 
@@ -63,7 +63,7 @@ export function BoardPage() {
               <Link to={`/u/${r.login}`} className="who">
                 <strong>
                   {r.name || r.login}
-                  <Badge id={r.badge} />
+                  <Badges ids={r.badges} />
                 </strong>
                 <small>@{r.login}</small>
               </Link>
@@ -75,7 +75,10 @@ export function BoardPage() {
                   <span className="num cost" title={`${fmtInt(r.tokens)} tokens`}>{fmtTokens(r.tokens)}</span>
                 </>
               ) : (
-                <span className="num cost chip-count">{fmtInt(r.balance)}</span>
+                <>
+                  <StatLine stats={r.stats} />
+                  <span className="num cost chip-count">{fmtInt(r.balance)}</span>
+                </>
               )}
             </li>
           ))}

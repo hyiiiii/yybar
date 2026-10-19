@@ -105,6 +105,8 @@ const EXACT: Record<string, string> = {
   慢一点: "Slow down",
   未登录: "Not signed in",
   还没解锁这个成就: "You haven't unlocked that yet",
+  "最多戴 3 个徽章": "You can wear up to 3 badges",
+  没有这个成就: "No such achievement",
 };
 
 const PATTERNS: [RegExp, string][] = [

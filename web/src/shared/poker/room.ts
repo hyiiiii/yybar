@@ -27,8 +27,8 @@ export interface Player {
   /** 商场里换上的牌背、牌面，同桌的人都看得到；机器人和旧存档没有 */
   back?: string;
   face?: string;
-  /** 戴在名字后面的成就徽章 */
-  badge?: string | null;
+  /** 戴在名字后面的成就徽章（最多 3 个） */
+  badges?: string[];
 }
 
 interface RoomSeat extends Player {
@@ -55,6 +55,10 @@ interface RoomSeat extends Player {
   runout?: Card[] | null;
   /** 上次发表情的时刻，防刷屏 */
   lastEmote?: number;
+  /** 这手只赢到边池（没赢主池），WIN 牌子上注明 */
+  sideOnly?: boolean;
+  /** 这一手翻牌前的统计：主动入池、翻前加注、面对一次加注（有机会 3-bet）、3-bet */
+  pf?: { vpip: boolean; pfr: boolean; tbOpp: boolean; tb: boolean };
   last: string | null;
   won: number;
   hand: string | null;
@@ -68,6 +72,16 @@ interface RoomSeat extends Player {
 export interface Hold extends Player {
   start: number;
   until: number;
+}
+
+/** 一个人打完一手的统计：手数、赢没赢、VPIP、PFR、3-bet 机会和 3-bet */
+export interface HandStat {
+  userId: number;
+  won: boolean;
+  vpip: boolean;
+  pfr: boolean;
+  tbOpp: boolean;
+  tb: boolean;
 }
 
 export interface Cashout {
@@ -99,6 +113,10 @@ export interface RoomState {
   emptySince?: number | null;
   /** 每个座位的占座；旧存档没有这个字段 */
   holds?: (Hold | null)[];
+  /** 这一手翻牌前已经有几次加注（大盲不算） */
+  pfRaises?: number;
+  /** 打完的手的统计，宿主写进 poker_stats 后调用 ackStats */
+  stats?: HandStat[];
   /** 牌桌上达成的成就（大赢家、同花顺），宿主写进账户后调用 ackUnlock */
   unlocks?: { userId: number; id: "big_pot" | "straight_flush" }[];
   /** 最近几秒的桌面事件（用了道具、发了表情），推给所有人 */
@@ -375,10 +393,10 @@ export class TableRoom {
   }
 
   /** 重新连上时带来最新的牌背、牌面（在商场换了之后） */
-  setLook(userId: number, back: string | undefined, face: string | undefined, badge?: string | null) {
+  setLook(userId: number, back: string | undefined, face: string | undefined, badges?: string[]) {
     const i = this.seatOf(userId);
     if (i < 0) return;
-    if (badge !== undefined) this.s.seats[i]!.badge = badge;
+    if (badges) this.s.seats[i]!.badges = badges;
     if (back) this.s.seats[i]!.back = back;
     if (face) this.s.seats[i]!.face = face;
   }
@@ -387,6 +405,10 @@ export class TableRoom {
     const i = this.seatOf(userId);
     if (i < 0) return;
     this.s.seats[i]!.away = away ? (this.s.seats[i]!.away ?? now) : null;
+  }
+
+  ackStats(n: number) {
+    this.s.stats = (this.s.stats ?? []).slice(n);
   }
 
   ackUnlock(userId: number, id: string) {
@@ -478,7 +500,8 @@ export class TableRoom {
         cards,
         back: x.back ?? null,
         face: x.face ?? null,
-        badge: x.badge ?? null,
+        badges: x.badges ?? [],
+        sidePot: !!x.sideOnly,
         showMask: x.shown ? 3 : (x.showMask ?? 0),
         away: x.away !== null,
         leaving: x.leaving,
@@ -612,7 +635,7 @@ export class TableRoom {
       if (x.bot && x.stack < MIN_BUY_IN_BB * this.s.config.bb) x.stack = BUY_IN_BB * this.s.config.bb;
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
-        hole: [], shown: false, showMask: 0, peeked: false, runout: null, last: null, won: 0, hand: null,
+        hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, won: 0, hand: null,
       });
     });
     this.syncBots(now);
@@ -657,6 +680,7 @@ export class TableRoom {
     }
 
     this.s.street = "preflop";
+    this.s.pfRaises = 0;
     this.moveOn(bbSeat, now);
   }
 
@@ -700,6 +724,7 @@ export class TableRoom {
   private apply(i: number, action: "fold" | "check" | "call" | "raise", amount: number | undefined, now: number): string | null {
     const seat = this.s.seats[i]!;
     const legal = this.legal(i)!;
+    const raisesBefore = this.s.pfRaises ?? 0;
     switch (action) {
       case "fold":
         seat.folded = true;
@@ -740,6 +765,17 @@ export class TableRoom {
       }
       default:
         return "看不懂的操作";
+    }
+    // 翻牌前的统计：跟注或加注算主动入池（大盲过牌不算），面对正好一次加注时有 3-bet 机会
+    if (this.s.street === "preflop") {
+      const pf = (seat.pf ??= { vpip: false, pfr: false, tbOpp: false, tb: false });
+      if (raisesBefore === 1) pf.tbOpp = true;
+      if (action === "call" && !legal.canCheck) pf.vpip = true;
+      if (action === "raise") {
+        pf.vpip = pf.pfr = true;
+        if (raisesBefore === 1) pf.tb = true;
+        this.s.pfRaises = raisesBefore + 1;
+      }
     }
     seat.acted = true;
     seat.mayRaise = false;
@@ -827,9 +863,11 @@ export class TableRoom {
     const folded = this.s.seats.map((x) => !x || !x.inHand || x.folded);
     // 从庄家左手边开始顺时针，零头先给离庄家最近的赢家
     const order = Array.from({ length: SEATS }, (_, k) => (this.s.button + 1 + k) % SEATS);
-    for (const pot of buildPots(contrib, folded)) {
+    const mainWinners = new Set<number>();
+    buildPots(contrib, folded).forEach((pot, k) => {
       const best = Math.max(...pot.eligible.map((i) => scores.get(i)!));
       const winners = order.filter((i) => pot.eligible.includes(i) && scores.get(i) === best);
+      if (k === 0) winners.forEach((i) => mainWinners.add(i));
       const share = Math.floor(pot.amount / winners.length);
       let rest = pot.amount - share * winners.length;
       for (const i of winners) {
@@ -837,7 +875,8 @@ export class TableRoom {
         this.s.seats[i]!.stack += x;
         this.s.seats[i]!.won += x;
       }
-    }
+    });
+    for (const i of live) this.s.seats[i]!.sideOnly = this.s.seats[i]!.won > 0 && !mainWinners.has(i);
     const top = live.filter((i) => this.s.seats[i]!.won > 0).sort((a, b) => this.s.seats[b]!.won - this.s.seats[a]!.won);
     const say = top
       .map((i) => `${this.s.seats[i]!.login} 以${this.s.seats[i]!.hand}赢下 ${chips(this.s.seats[i]!.won)}`)
@@ -847,9 +886,11 @@ export class TableRoom {
   }
 
   private finish(now: number, pause: number, say: string) {
-    // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出同花顺
+    // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出同花顺；每个真人这一手的统计
     for (const x of this.s.seats) {
       if (!x || x.bot || !x.inHand) continue;
+      const pf = x.pf ?? { vpip: false, pfr: false, tbOpp: false, tb: false };
+      (this.s.stats ??= []).push({ userId: x.userId, won: x.won > 0, ...pf });
       if (x.won >= BIG_POT) (this.s.unlocks ??= []).push({ userId: x.userId, id: "big_pot" });
       if (x.shown && x.hand && (x.hand === "同花顺" || x.hand === "皇家同花顺")) (this.s.unlocks ??= []).push({ userId: x.userId, id: "straight_flush" });
     }

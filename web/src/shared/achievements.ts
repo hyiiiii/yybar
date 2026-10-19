@@ -62,3 +62,16 @@ export function longestStreak(days: string[]): number {
   }
   return best;
 }
+
+/** 最多同时戴几个徽章 */
+export const MAX_BADGES = 3;
+
+/** users.badges 存的 JSON 数组读出来；坏数据当没戴 */
+export function parseBadges(raw: string | null | undefined): string[] {
+  try {
+    const v = JSON.parse(raw ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, MAX_BADGES) : [];
+  } catch {
+    return [];
+  }
+}

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { ACHIEVEMENTS, findAchievement, longestStreak, type AchievementId } from "../shared/achievements";
+import { ACHIEVEMENTS, findAchievement, longestStreak, MAX_BADGES, parseBadges, type AchievementId } from "../shared/achievements";
 import { requireSession, sessionUser } from "./auth";
 import type { AppEnv } from "./types";
 import { addDays, isoDay } from "./util";
@@ -77,24 +77,28 @@ export const achievementRoutes = new Hono<AppEnv>();
 /** 成就列表；登录了顺带检查一遍、给出进度和正在戴的徽章 */
 achievementRoutes.get("/", async (c) => {
   const user = await sessionUser(c);
-  if (!user) return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badge: null });
+  if (!user) return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badges: [] });
   const progress = await syncAchievements(c.env.DB, user.id);
   const { results } = await c.env.DB.prepare("SELECT id, unlocked_at FROM user_achievements WHERE user_id = ?")
     .bind(user.id)
     .all<{ id: string; unlocked_at: string }>();
   const at = new Map(results.map((r) => [r.id, r.unlocked_at]));
-  const badge = await c.env.DB.prepare("SELECT badge FROM users WHERE id = ?").bind(user.id).first<{ badge: string | null }>();
-  return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: at.get(a.id) ?? null })), progress, badge: badge?.badge ?? null });
+  const row = await c.env.DB.prepare("SELECT badges FROM users WHERE id = ?").bind(user.id).first<{ badges: string }>();
+  return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: at.get(a.id) ?? null })), progress, badges: parseBadges(row?.badges) });
 });
 
-/** 戴上一个已解锁成就的徽章；id 为 null 就摘掉。牌桌上下次连上时生效。 */
+/** 戴上或摘下一个徽章：on 为 true 戴上（必须已解锁，最多同时戴 3 个），false 摘下。牌桌上下次连上时生效。 */
 achievementRoutes.post("/wear", requireSession, async (c) => {
-  const body = await c.req.json<{ id?: string | null }>().catch(() => ({ id: undefined }));
+  const body = await c.req.json<{ id?: string; on?: boolean }>().catch(() => ({}) as { id?: string; on?: boolean });
   const user = c.get("user");
-  if (body.id) {
+  if (!body.id || !findAchievement(body.id)) return c.json({ error: "没有这个成就" }, 404);
+  let badges = parseBadges(user.badges).filter((b) => b !== body.id);
+  if (body.on) {
     const ok = await c.env.DB.prepare("SELECT 1 FROM user_achievements WHERE user_id = ? AND id = ?").bind(user.id, body.id).first();
     if (!ok) return c.json({ error: "还没解锁这个成就" }, 400);
+    if (badges.length >= MAX_BADGES) return c.json({ error: `最多戴 ${MAX_BADGES} 个徽章` }, 400);
+    badges = [...badges, body.id];
   }
-  await c.env.DB.prepare("UPDATE users SET badge = ? WHERE id = ?").bind(body.id ?? null, user.id).run();
-  return c.json({ ok: true });
+  await c.env.DB.prepare("UPDATE users SET badges = ? WHERE id = ?").bind(JSON.stringify(badges), user.id).run();
+  return c.json({ ok: true, badges });
 });

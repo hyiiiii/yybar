@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type Profile } from "../api";
-import { Avatar, Badge, LoginButton } from "../components";
+import { Avatar, Badges, LoginButton } from "../components";
 import { notifyMeChanged, useMe } from "../useMe";
 import { ProfileView } from "./User";
 import { tr, useLang, useT } from "../i18n";
@@ -57,7 +57,7 @@ export function MePage() {
         <div>
           <h1>
             {me.user.name || me.user.login}
-            <Badge id={me.user.badge} big />
+            <Badges ids={me.user.badges} />
           </h1>
           <span className="muted">@{me.user.login}</span>
         </div>

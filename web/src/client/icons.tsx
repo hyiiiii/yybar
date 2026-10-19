@@ -93,3 +93,25 @@ export const PodiumIcon = () => (
     <path d="M12 3.2l.9 1.8 2 .3-1.4 1.4.3 2-1.8-.9-1.8.9.3-2-1.4-1.4 2-.3z" />
   </Icon>
 );
+
+/** 小书：德州入门 */
+export const BookIcon = () => (
+  <Icon>
+    <path d="M4.5 5.5c2.5-1 5-1 7.5.5v13c-2.5-1.5-5-1.5-7.5-.5z" />
+    <path d="M19.5 5.5c-2.5-1-5-1-7.5.5v13c2.5-1.5 5-1.5 7.5-.5z" />
+  </Icon>
+);
+
+/** 礼盒：盖子单独一组，拆开时飞起来 */
+export const GiftIcon = ({ open }: { open?: boolean }) => (
+  <svg className={`icon gift${open ? " gift-open" : ""}`} viewBox="0 0 24 24" aria-hidden>
+    <g className="gift-box">
+      <rect x="5" y="11" width="14" height="9" rx="1.2" />
+      <path d="M12 11v9" />
+    </g>
+    <g className="gift-lid">
+      <rect x="4" y="7.5" width="16" height="3.5" rx="1" />
+      <path d="M12 7.5v3.5M12 7.5c-1.4-2.6-4.6-3-4.6-1.2 0 1.4 2.6 1.2 4.6 1.2zM12 7.5c1.4-2.6 4.6-3 4.6-1.2 0 1.4-2.6 1.2-4.6 1.2z" />
+    </g>
+  </svg>
+);

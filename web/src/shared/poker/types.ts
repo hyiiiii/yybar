@@ -34,14 +34,16 @@ export interface SeatView {
   /** 这个人的牌背、牌面款式（商场里换的），null 是默认款 */
   back: string | null;
   face: string | null;
-  /** 戴在名字后面的成就徽章 */
-  badge: string | null;
+  /** 戴在名字后面的成就徽章（最多 3 个） */
+  badges: string[];
   away: boolean;
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */
   last: string | null;
   /** 亮给大家的牌：第 1 位第一张，第 2 位第二张；摊牌是 3 */
   showMask: number;
+  /** 这手只赢到边池（没赢主池） */
+  sidePot: boolean;
   /** 本手赢到的筹码（摊牌后） */
   won: number;
   hand: string | null;

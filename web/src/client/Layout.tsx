@@ -1,9 +1,46 @@
+import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
-import { fmtInt } from "./api";
+import { api, fmtInt } from "./api";
+import { Guide } from "./Guide";
 import { Avatar, LoginButton } from "./components";
-import { BarIcon, CartIcon, PodiumIcon, TrophyIcon } from "./icons";
+import { BarIcon, BookIcon, CartIcon, GiftIcon, PodiumIcon, TrophyIcon } from "./icons";
 import { setLang, useLang, useT } from "./i18n";
-import { useMe } from "./useMe";
+import { loginHref, notifyMeChanged, useMe } from "./useMe";
+
+const DEMO = !!import.meta.env.VITE_DEMO;
+
+/** 每日礼盒：没领时在跳，点一下拆开（盖子飞起、冒出 +$100），今天就停在拆开的样子 */
+function DailyGift() {
+  const { me } = useMe();
+  const t = useT();
+  const [popped, setPopped] = useState<number | null>(null);
+  const claimed = !!me?.daily?.claimed;
+  const amount = me?.daily?.amount ?? 100;
+  const open = async () => {
+    if (!me?.user) {
+      if (DEMO) {
+        (await import("./demo")).demoLogin();
+        notifyMeChanged();
+      } else location.href = loginHref();
+      return;
+    }
+    if (claimed) return;
+    const r = await api<{ amount: number }>("/api/me/daily", { method: "POST", json: {} });
+    setPopped(r.amount);
+    notifyMeChanged();
+  };
+  return (
+    <button
+      className={`head-icon gift-btn${!claimed && me?.user ? " gift-waiting" : ""}${claimed ? " gift-done" : ""}`}
+      onClick={open}
+      aria-label={claimed ? t("今天的礼盒已经拆了", "Today's gift is opened") : t("拆每日礼盒", "Open the daily gift")}
+      title={claimed ? t("今天的礼盒已经拆了，明天再来", "Opened — come back tomorrow") : t(`每日礼盒：每天 $${amount}`, `Daily gift: $${amount} every day`)}
+    >
+      <GiftIcon open={claimed} />
+      {popped !== null && popped > 0 && <span className="gift-pop" key={popped}>+${popped}</span>}
+    </button>
+  );
+}
 
 export function Layout() {
   const { me } = useMe();
@@ -11,6 +48,7 @@ export function Layout() {
   const location = useLocation();
   const lang = useLang();
   const t = useT();
+  const [guide, setGuide] = useState(false);
   return (
     <div className="shell">
       <header className="topbar">
@@ -29,6 +67,10 @@ export function Layout() {
             <span className={lang === "zh" ? "on" : ""}>中</span>
             <span className={lang === "en" ? "on" : ""}>EN</span>
           </button>
+          <button className="head-icon" onClick={() => setGuide(true)} aria-label={t("德州扑克入门", "Hold'em basics")} title={t("德州扑克入门", "Hold'em basics")}>
+            <BookIcon />
+          </button>
+          <DailyGift />
         </div>
         <nav>
           {/* 入口都只用图标：Bar（牌桌）、商场、排行榜、成就 */}
@@ -57,6 +99,7 @@ export function Layout() {
       <main>
         <Outlet />
       </main>
+      {guide && <Guide onClose={() => setGuide(false)} />}
     </div>
   );
 }

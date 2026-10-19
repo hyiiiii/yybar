@@ -4,8 +4,17 @@ export interface PublicUser {
   login: string;
   name: string | null;
   avatarUrl: string | null;
-  /** 戴在名字后面的成就徽章 */
-  badge?: string | null;
+  /** 戴在名字后面的成就徽章（最多 3 个） */
+  badges?: string[];
+}
+
+/** 德州统计：手数和几个比率（0～1，没打过是 null） */
+export interface PokerStats {
+  hands: number;
+  winRate: number | null;
+  vpip: number | null;
+  pfr: number | null;
+  threeBet: number | null;
 }
 
 export interface Totals {
@@ -57,6 +66,8 @@ export interface MeResponse extends Partial<Omit<Profile, "user">> {
   items?: Record<"timecard" | "peek" | "runout", number>;
   /** 自己有的表情 */
   emotes?: string[];
+  /** 每日礼盒：今天领过没有、给多少 */
+  daily?: { claimed: boolean; amount: number };
   tokens?: { id: number; label: string; created_at: string; last_used_at: string | null }[];
 }
 
@@ -72,6 +83,7 @@ export interface TokenRow extends PublicUser {
 export interface WealthRow extends PublicUser {
   rank: number;
   balance: number;
+  stats: PokerStats;
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {

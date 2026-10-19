@@ -44,7 +44,7 @@ export class PokerTable extends DurableObject<Env> {
     server.serializeAttachment(att);
     if (att.userId) {
       this.room.setAway(att.userId, false, Date.now());
-      this.room.setLook(att.userId, att.back, att.face, att.badge);
+      this.room.setLook(att.userId, att.back, att.face, att.badges);
     }
     await this.commit();
     return new Response(null, { status: 101, webSocket: client });
@@ -148,6 +148,7 @@ export class PokerTable extends DurableObject<Env> {
     const room = this.room;
     if (!room) return;
     await this.flushCashouts();
+    await this.flushStats();
     for (const u of [...(room.s.unlocks ?? [])]) {
       try {
         await grantAchievement(this.env.DB, u.userId, u.id);
@@ -226,6 +227,31 @@ export class PokerTable extends DurableObject<Env> {
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
     return true;
+  }
+
+  /** 打完的手的统计加进 poker_stats；写失败留着下次再写 */
+  private async flushStats() {
+    const room = this.room!;
+    const stats = room.s.stats ?? [];
+    if (!stats.length) return;
+    const db = this.env.DB;
+    const b = (x: boolean) => (x ? 1 : 0);
+    try {
+      await db.batch(
+        stats.map((s) =>
+          db
+            .prepare(
+              `INSERT INTO poker_stats (user_id, hands, wins, vpip, pfr, threebet_opp, threebet) VALUES (?, 1, ?, ?, ?, ?, ?)
+               ON CONFLICT (user_id) DO UPDATE SET hands = hands + 1, wins = wins + excluded.wins, vpip = vpip + excluded.vpip,
+                 pfr = pfr + excluded.pfr, threebet_opp = threebet_opp + excluded.threebet_opp, threebet = threebet + excluded.threebet`,
+            )
+            .bind(s.userId, b(s.won), b(s.vpip), b(s.pfr), b(s.tbOpp), b(s.tb)),
+        ),
+      );
+      room.ackStats(stats.length);
+    } catch {
+      // 下次再写
+    }
   }
 
   private async flushCashouts() {

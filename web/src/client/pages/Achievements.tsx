@@ -3,11 +3,11 @@ import { api, fmtInt, fmtTokens } from "../api";
 import { Badge, LoginButton, fmtMoney } from "../components";
 import { pick, tr, useLang, useT } from "../i18n";
 import { notifyMeChanged, useMe } from "../useMe";
-import type { Achievement } from "../../shared/achievements";
+import { MAX_BADGES, type Achievement } from "../../shared/achievements";
 
 type Row = Achievement & { unlockedAt: string | null };
 type Progress = { streak: number; tokens: number; spend: number };
-type Response = { achievements: Row[]; progress: Progress | null; badge: string | null };
+type Response = { achievements: Row[]; progress: Progress | null; badges: string[] };
 
 /** 有进度条的成就现在走到哪了 */
 function progressOf(a: Row, p: Progress | null): number | null {
@@ -37,11 +37,11 @@ export function AchievementsPage() {
     if (data?.progress) notifyMeChanged();
   }, [!!data?.progress]);
 
-  const wear = async (id: string | null) => {
+  const wear = async (id: string, on: boolean) => {
     setBusy(true);
     setNote(null);
     try {
-      await api("/api/achievements/wear", { method: "POST", json: { id } });
+      await api("/api/achievements/wear", { method: "POST", json: { id, on } });
       notifyMeChanged();
       await load();
     } catch (e) {
@@ -65,14 +65,18 @@ export function AchievementsPage() {
       )}
       {signedIn && data && (
         <p className="muted ach-summary">
-          {t(`已解锁 ${unlocked} / ${data.achievements.length}。点「戴上」把徽章挂在名字后面。`, `${unlocked} of ${data.achievements.length} unlocked. Tap "Wear" to show a badge after your name.`)}
+          {t(
+            `已解锁 ${unlocked} / ${data.achievements.length}。点「戴上」把徽章挂在名字后面，最多同时戴 ${MAX_BADGES} 个（正在戴 ${data.badges.length} 个）。`,
+            `${unlocked} of ${data.achievements.length} unlocked. Tap "Wear" to show badges after your name — up to ${MAX_BADGES} at once (wearing ${data.badges.length}).`,
+          )}
         </p>
       )}
       {note && <p className="note shop-note" role="status">{note}</p>}
       <div className="ach-grid">
         {(data?.achievements ?? []).map((a) => {
           const done = !!a.unlockedAt;
-          const wearing = data?.badge === a.id;
+          const wearing = !!data?.badges.includes(a.id);
+          const full = (data?.badges.length ?? 0) >= MAX_BADGES;
           const now = progressOf(a, data?.progress ?? null);
           return (
             <article key={a.id} className={`ach${done ? " done" : ""}${wearing ? " wearing" : ""}`}>
@@ -93,9 +97,16 @@ export function AchievementsPage() {
                 <span className="ach-reward">+{fmtMoney(a.reward)}</span>
                 {done ? (
                   wearing ? (
-                    <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => wear(null)}>{t("摘下", "Take off")}</button>
+                    <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => wear(a.id, false)}>{t("摘下", "Take off")}</button>
                   ) : (
-                    <button className="btn btn-small" disabled={busy} onClick={() => wear(a.id)}>{t("戴上", "Wear")}</button>
+                    <button
+                      className="btn btn-small"
+                      disabled={busy || full}
+                      title={full ? t(`最多戴 ${MAX_BADGES} 个，先摘下一个`, `Up to ${MAX_BADGES} — take one off first`) : undefined}
+                      onClick={() => wear(a.id, true)}
+                    >
+                      {t("戴上", "Wear")}
+                    </button>
                   )
                 ) : (
                   <span className="muted small">{t("未解锁", "Locked")}</span>

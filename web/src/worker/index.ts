@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
 import { achievementRoutes, syncAchievements } from "./achievements";
+import { parseBadges } from "../shared/achievements";
 import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
@@ -10,6 +11,9 @@ import { addDays, isoDay, pointsFromMicro, randomToken, sha256 } from "./util";
 const app = new Hono<AppEnv>();
 
 app.route("/auth", authRoutes);
+
+/** 每日礼盒的筹码 */
+const DAILY_GIFT = 100;
 
 const RANGES: Record<string, number | null> = { today: 0, "7d": 6, "30d": 29, all: null };
 
@@ -73,8 +77,30 @@ async function topModels(db: D1Database, userId: number) {
   return results;
 }
 
-function publicUser(u: { login: string; name: string | null; avatar_url: string | null; badge?: string | null }) {
-  return { login: u.login, name: u.name, avatarUrl: u.avatar_url, badge: u.badge ?? null };
+function publicUser(u: { login: string; name: string | null; avatar_url: string | null; badges?: string | null }) {
+  return { login: u.login, name: u.name, avatarUrl: u.avatar_url, badges: parseBadges(u.badges) };
+}
+
+interface StatRow {
+  hands: number | null;
+  wins: number | null;
+  vpip: number | null;
+  pfr: number | null;
+  threebet_opp: number | null;
+  threebet: number | null;
+}
+
+/** 德州统计：手数和几个比率（0～1）；没打过牌的比率是 null */
+function statsOf(r: StatRow) {
+  const hands = r.hands ?? 0;
+  const ratio = (n: number | null, d: number) => (d > 0 ? (n ?? 0) / d : null);
+  return {
+    hands,
+    winRate: ratio(r.wins, hands),
+    vpip: ratio(r.vpip, hands),
+    pfr: ratio(r.pfr, hands),
+    threeBet: ratio(r.threebet, r.threebet_opp ?? 0),
+  };
 }
 
 // ---------- 公开接口 ----------
@@ -87,13 +113,14 @@ app.get("/api/leaderboard", async (c) => {
   if (by === "wealth") {
     const { results } = await c.env.DB.prepare(
       `SELECT * FROM (
-         SELECT u.login, u.name, u.avatar_url, u.badge,
+         SELECT u.login, u.name, u.avatar_url, u.badges,
+           s.hands, s.wins, s.vpip, s.pfr, s.threebet_opp, s.threebet,
            (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 10000
              + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger l WHERE l.user_id = u.id) AS balance
-         FROM users u WHERE u.show_on_board = 1
+         FROM users u LEFT JOIN poker_stats s ON s.user_id = u.id WHERE u.show_on_board = 1
        ) WHERE balance > 0 ORDER BY balance DESC LIMIT 100`,
-    ).all<{ login: string; name: string | null; avatar_url: string | null; badge: string | null; balance: number }>();
-    return c.json({ by, rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance })) });
+    ).all<{ login: string; name: string | null; avatar_url: string | null; badges: string; balance: number } & StatRow>();
+    return c.json({ by, rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance, stats: statsOf(r) })) });
   }
   if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
   const range = c.req.query("range") ?? "7d";
@@ -107,7 +134,7 @@ app.get("/api/leaderboard", async (c) => {
        WHERE u.show_on_board = 1 AND d.day >= ?
        GROUP BY d.user_id, d.app, d.model
      )
-     SELECT u.login, u.name, u.avatar_url, u.badge, SUM(per.tokens) AS tokens,
+     SELECT u.login, u.name, u.avatar_url, u.badges, SUM(per.tokens) AS tokens,
        (SELECT p2.model FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_model,
        (SELECT p2.app FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_app
      FROM per JOIN users u ON u.id = per.user_id
@@ -115,13 +142,25 @@ app.get("/api/leaderboard", async (c) => {
      ORDER BY tokens DESC LIMIT 100`,
   )
     .bind(start ?? "0000-00-00")
-    .all<{ login: string; name: string | null; avatar_url: string | null; badge: string | null; tokens: number; top_model: string; top_app: string }>();
+    .all<{ login: string; name: string | null; avatar_url: string | null; badges: string; tokens: number; top_model: string; top_app: string }>();
   return c.json({
     by,
     range,
     since: start,
     rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), tokens: r.tokens, topModel: r.top_model, topApp: r.top_app })),
   });
+});
+
+/** 一个人的德州统计（牌桌上点头像看）。牌桌上大家本来就看得到彼此，所以不看「公开主页」设置。 */
+app.get("/api/stats/:login", async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT u.login, u.name, u.avatar_url, u.badges, s.hands, s.wins, s.vpip, s.pfr, s.threebet_opp, s.threebet
+     FROM users u LEFT JOIN poker_stats s ON s.user_id = u.id WHERE u.login = ? COLLATE NOCASE`,
+  )
+    .bind(c.req.param("login"))
+    .first<{ login: string; name: string | null; avatar_url: string | null; badges: string } & StatRow>();
+  if (!row) return c.json({ error: "没有这个用户，或对方未公开" }, 404);
+  return c.json({ user: publicUser(row), stats: statsOf(row) });
 });
 
 app.get("/api/users/:login", async (c) => {
@@ -161,6 +200,11 @@ app.get("/api/me", async (c) => {
   return c.json({
     user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at },
     look: lookOf(user),
+    // 每日礼盒：今天（UTC）领过没有
+    daily: {
+      claimed: !!(await c.env.DB.prepare("SELECT 1 FROM points_ledger WHERE ref = ?").bind(`daily:${user.id}:${isoDay(new Date())}`).first()),
+      amount: DAILY_GIFT,
+    },
     items,
     emotes,
     totals,
@@ -188,6 +232,15 @@ async function createApiToken(db: D1Database, userId: number, label: string) {
     .run();
   return token;
 }
+
+/** 拆每日礼盒：每天（UTC）一次，固定 $100；按 ref 去重，重复点不会多发 */
+me.post("/daily", async (c) => {
+  const user = c.get("user");
+  const res = await c.env.DB.prepare("INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref) VALUES (?, ?, 'daily', ?)")
+    .bind(user.id, DAILY_GIFT, `daily:${user.id}:${isoDay(new Date())}`)
+    .run();
+  return c.json({ ok: true, amount: res.meta.changes ? DAILY_GIFT : 0 });
+});
 
 me.post("/tokens", async (c) => {
   const body = await c.req.json<{ label?: unknown }>();

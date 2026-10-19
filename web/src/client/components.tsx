@@ -109,7 +109,11 @@ export interface Seat {
   /** 显示用的名字（机器人按语言翻译） */
   name?: string;
   /** 名字后面戴的成就徽章 */
-  badge?: string | null;
+  badges?: string[];
+  /** 点头像看这个人的统计 */
+  onInfo?: () => void;
+  /** 头像旁边弹出的统计卡 */
+  info?: ReactNode;
   /** 「入座」「买入中…」这些字，按语言给 */
   labels?: { join: string; buying: string; you: string };
 }
@@ -148,7 +152,8 @@ export function FeltTable({
         >
           {s.login ? (
             <>
-              <div className="seat-disc" title={s.you ? "你" : s.login}>
+              {s.info && <div className="seat-info">{s.info}</div>}
+              <div className={`seat-disc${s.onInfo ? " seat-disc-click" : ""}`} title={s.you ? "你" : s.login} onClick={s.onInfo}>
                 {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
                 {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
                 <span className="seat-pos">{s.position}</span>
@@ -207,7 +212,7 @@ export function FeltTable({
                 <div className="seat-plate">
                   <span className="plate-name">
                     {s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}
-                    <Badge id={s.badge} />
+                    <Badges ids={s.badges} />
                   </span>
                   <b className="plate-stack">{s.held ? (s.labels?.buying ?? "买入中…") : fmtMoney(s.stack ?? 0)}</b>
                 </div>
@@ -264,6 +269,33 @@ function TurnRing({ total, elapsed, hold }: { total: number; elapsed: number; ho
 }
 
 const cardKey = (c: CardSpec) => (c === "back" ? "b" : c.rank + c.suit);
+
+/** 名字后面戴的几枚徽章 */
+export function Badges({ ids }: { ids?: string[] | null }) {
+  return <>{(ids ?? []).map((id) => <Badge key={id} id={id} />)}</>;
+}
+
+/** 德州统计的一行小字：手数、胜率、VPIP、PFR、3B */
+export function StatLine({ stats }: { stats: { hands: number; winRate: number | null; vpip: number | null; pfr: number | null; threeBet: number | null } }) {
+  const pct = (x: number | null) => (x === null ? "—" : `${Math.round(x * 100)}%`);
+  const items: [string, string, string][] = [
+    ["Hands", fmtInt(stats.hands), "总手数 / Hands played"],
+    ["Win", pct(stats.winRate), "胜率 / Hands won"],
+    ["VPIP", pct(stats.vpip), "入局率：翻牌前主动跟注或加注 / Voluntarily put in pot"],
+    ["PFR", pct(stats.pfr), "翻牌前加注率 / Preflop raise"],
+    ["3B", pct(stats.threeBet), "3-bet 率：面对一次加注时再加注 / 3-bet"],
+  ];
+  return (
+    <span className="stat-line">
+      {items.map(([k, v, title]) => (
+        <span key={k} title={title}>
+          <small>{k}</small>
+          <b>{v}</b>
+        </span>
+      ))}
+    </span>
+  );
+}
 
 /** 成就徽章：小小一枚，戴在名字后面；悬停显示是哪个成就 */
 export function Badge({ id, big }: { id?: string | null; big?: boolean }) {

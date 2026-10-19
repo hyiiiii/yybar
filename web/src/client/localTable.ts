@@ -2,7 +2,7 @@
 import { TableRoom } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { TableInfo } from "./tables";
-import { demoBadge, demoEmotes, demoLook, demoSpend } from "./demo";
+import { demoBadges, demoEmotes, demoLook, demoSpend } from "./demo";
 
 const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
 const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
@@ -83,7 +83,7 @@ export function openLocalTable(
       if (!err && typeof amount === "string") err = amount;
       if (!err && typeof amount === "number") {
         balance -= amount;
-        err = local.room.sit({ ...YOU, back: demoLook().back, face: demoLook().face, badge: demoBadge() }, msg.seat, amount, now);
+        err = local.room.sit({ ...YOU, back: demoLook().back, face: demoLook().face, badges: demoBadges() }, msg.seat, amount, now);
       }
     } else if (msg.t === "leave") err = local.room.leave(YOU.userId, now);
     else if (msg.t === "hold") err = local.room.hold(YOU, msg.seat, now);

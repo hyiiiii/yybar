@@ -32,14 +32,18 @@ function tokenBoard(range: string): TokenRow[] {
     name: p.name,
     avatarUrl: null,
     tokens: Math.round(p.tokens * k),
-    badge: p.login === "hyiiiii" ? badge : DEMO_BADGES[i] ?? null,
+    badges: p.login === "hyiiiii" ? badges : DEMO_BADGES[i] ? [DEMO_BADGES[i]!] : [],
     topApp: TOP[i][0],
     topModel: TOP[i][1],
   }));
 }
 
 function wealthBoard(): WealthRow[] {
-  const rows = PEOPLE.map((p, i) => ({ login: p.login, name: p.name, avatarUrl: null, balance: p.login === "hyiiiii" ? localBalance() : Math.floor(p.cost * 100 * (0.7 + ((i * 37) % 60) / 100)) }));
+  const rows = PEOPLE.map((p, i) => ({
+    login: p.login, name: p.name, avatarUrl: null,
+    badges: p.login === "hyiiiii" ? badges : DEMO_BADGES[i] ? [DEMO_BADGES[i]!] : [],
+    stats: demoStats(p.login),
+    balance: p.login === "hyiiiii" ? localBalance() : Math.floor(p.cost * 100 * (0.7 + ((i * 37) % 60) / 100)) }));
   return rows.sort((a, b) => b.balance - a.balance).map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
@@ -92,10 +96,20 @@ const stock: Record<ItemId, number> = { timecard: 2, peek: 1, runout: 1 };
 
 /** 预览里的成就：这几个算已经解锁 */
 const demoUnlocked: Record<string, string> = { first_login: "2026-09-02", streak_7: "2026-09-20", tokens_100m: "2026-09-28", top_today: "2026-10-12", spend_1k: "2026-10-15" };
-let badge: string | null = "top_today";
+let badges: string[] = ["top_today", "streak_7"];
+/** 预览里每日礼盒今天领过没有 */
+let dailyClaimed = false;
 
-export function demoBadge() {
-  return badge;
+/** 预览里的德州统计：按名字算一组看着像样的数 */
+function demoStats(login: string) {
+  let h = 0;
+  for (const ch of login) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const r = (k: number) => ((h >> k) % 1000) / 1000;
+  return { hands: 120 + (h % 2400), winRate: 0.18 + r(3) * 0.2, vpip: 0.16 + r(5) * 0.3, pfr: 0.08 + r(7) * 0.18, threeBet: 0.03 + r(9) * 0.09 };
+}
+
+export function demoBadges() {
+  return badges;
 }
 
 export function demoLook() {
@@ -123,12 +137,25 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     return {
       achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: demoUnlocked[a.id] ? `${demoUnlocked[a.id]}T08:00:00Z` : null })),
       progress: { streak: 23, tokens: 912_000_000, spend: 1_842 },
-      badge,
+      badges,
     };
   }
   if (url.pathname === "/api/achievements/wear") {
-    badge = ((_json ?? {}) as { id: string | null }).id;
-    return { ok: true };
+    const { id, on } = (_json ?? {}) as { id: string; on: boolean };
+    const rest = badges.filter((b) => b !== id);
+    if (on && rest.length >= 3) throw new Error("最多戴 3 个徽章");
+    badges = on ? [...rest, id] : rest;
+    return { ok: true, badges };
+  }
+  if (url.pathname.startsWith("/api/stats/")) {
+    const login = decodeURIComponent(url.pathname.slice(11));
+    return { user: { login, name: login, avatarUrl: null, badges: login === "hyiiiii" ? badges : [] }, stats: demoStats(login) };
+  }
+  if (url.pathname === "/api/me/daily") {
+    const amount = dailyClaimed ? 0 : 100;
+    if (!dailyClaimed) spendLocal(-100);
+    dailyClaimed = true;
+    return { ok: true, amount };
   }
   if (url.pathname === "/api/shop") {
     return {
@@ -165,7 +192,8 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     const p = profile("hyiiiii");
     return {
       ...p,
-      user: { ...p.user, showOnBoard, badge },
+      user: { ...p.user, showOnBoard, badges },
+      daily: { claimed: dailyClaimed, amount: 100 },
       look: { ...look },
       items: { ...stock },
       emotes: demoEmotes(),

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { BLIND_LEVELS } from "../shared/poker/room";
 import { requireSession, sessionUser } from "./auth";
 import { emotesOf } from "./shop";
+import { parseBadges } from "../shared/achievements";
 import type { AppEnv } from "./types";
 
 interface TableRow {
@@ -75,7 +76,7 @@ tableRoutes.get("/:no/ws", async (c) => {
   headers.set(
     "x-user",
     // 请求头只能放 ASCII，用户名转义一下
-    user ? JSON.stringify({ userId: user.id, login: user.login, avatarUrl: user.avatar_url, back: user.card_back, face: user.card_face, badge: user.badge, emotes: await emotesOf(c.env.DB, user.id) }).replace(/[^\x20-\x7e]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`) : "null",
+    user ? JSON.stringify({ userId: user.id, login: user.login, avatarUrl: user.avatar_url, back: user.card_back, face: user.card_face, badges: parseBadges(user.badges), emotes: await emotesOf(c.env.DB, user.id) }).replace(/[^\x20-\x7e]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`) : "null",
   );
   const stub = c.env.TABLES.get(c.env.TABLES.idFromName(String(no)));
   return stub.fetch(new Request(c.req.raw.url, { headers }));

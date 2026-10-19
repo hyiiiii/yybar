@@ -113,7 +113,36 @@ describe("table flow", () => {
     expect(total(room)).toBe(1100);
     // 公共牌 Qs Jd 3c 4s 6h，1 号座的 AA 主池边池都赢
     expect(room.s.seats[1]!.stack).toBe(1100);
+    expect(room.s.seats[1]!.sideOnly).toBe(false);
     expect(room.s.seats[0]!.stack).toBe(0);
+  });
+
+  it("pays side pots like the screenshot hand: trips take main, equal pairs split the last side pot", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 5000, 0); // BTN
+    room.sit(p(2), 1, 1000, 0); // SB
+    room.sit(p(3), 2, 300, 0); // BB
+    room.sit(p(4), 3, 5000, 0); // CO
+    room.s.button = 3;
+    room.s.nextHandAt = 1;
+    room.tick(1);
+    expect(room.s.button).toBe(0);
+    room.s.seats.forEach((x) => x && (x.hole = []));
+    // 发牌从小盲开始：SB、BB、CO、BTN 各一张轮两圈；公共牌 8 6 Q 8 A（中间烧牌）
+    rig(room, "9d Kc Jg 9g 8s 3c Kg Ks 2s 8g 6d Qc 2d 8c 2c As");
+    for (let k = 0; k < 2; k++) for (const i of [1, 2, 3, 0]) room.s.seats[i]!.hole.push(room.s.deck.pop()!);
+    room.act(4, "raise", 2000, 2); // CO
+    room.act(1, "call", undefined, 3); // BTN
+    room.act(2, "call", undefined, 4); // SB 全下 1000
+    room.act(3, "call", undefined, 5); // BB 全下 300
+    while (room.s.street !== "showdown") room.act(room.s.seats[room.s.toAct]!.userId, "check", undefined, 6);
+    const seat = (i: number) => room.s.seats[i]!;
+    expect(seat(1).hand).toBe("三条");
+    expect(seat(1).won).toBe(1200 + 2100); // 主池 + 第一个边池
+    expect(seat(2).won).toBe(0); // BB 的一对 8 带 A K Q 也一样大，但它只有资格争主池
+    expect([seat(0).won, seat(3).won]).toEqual([1000, 1000]); // 一样大，平分最后的边池
+    expect([seat(0).sideOnly, seat(3).sideOnly, seat(1).sideOnly]).toEqual([true, true, false]);
+    expect(total(room)).toBe(11300);
   });
 
   it("returns an uncalled bet instead of paying it out as a win", () => {
@@ -139,6 +168,28 @@ describe("table flow", () => {
     expect(room.s.seats[2]!.won).toBe(0);
     expect(room.s.seats[2]!.stack).toBe(1600);
     expect(total(room)).toBe(3400);
+  });
+
+  it("records preflop stats: VPIP, PFR, 3-bet chances and 3-bets", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 1, 1000, 0);
+    room.sit(p(3), 2, 1000, 0);
+    room.s.button = 2; // 下一手：0 庄、1 小盲、2 大盲；三人桌庄家先说话
+    room.s.nextHandAt = 1;
+    room.tick(1);
+    room.act(1, "raise", 30, 2); // 庄家开局加注
+    room.act(2, "raise", 90, 3); // 小盲 3-bet
+    room.act(3, "fold", undefined, 4); // 大盲面对两次加注，不算 3-bet 机会
+    room.act(1, "call", undefined, 5);
+    room.act(2, "check", undefined, 6);
+    room.act(1, "fold", undefined, 7);
+    const by = Object.fromEntries(room.s.stats!.map((x) => [x.userId, x]));
+    expect(by[1]).toMatchObject({ won: false, vpip: true, pfr: true, tbOpp: false, tb: false });
+    expect(by[2]).toMatchObject({ won: true, vpip: true, pfr: true, tbOpp: true, tb: true });
+    expect(by[3]).toMatchObject({ won: false, vpip: false, pfr: false, tbOpp: false, tb: false });
+    room.ackStats(3);
+    expect(room.s.stats).toEqual([]);
   });
 
   it("returns chips on leave and refuses to act out of turn", () => {

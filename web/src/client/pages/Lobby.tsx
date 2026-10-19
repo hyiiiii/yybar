@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, fmtInt } from "../api";
-import { FeltTable, MarqueeSign, PlayingCard, fmtMoney, type CardSpec, type Seat } from "../components";
+import { Badges, FeltTable, MarqueeSign, PlayingCard, StatLine, fmtMoney, type CardSpec, type Seat } from "../components";
+import type { PokerStats } from "../api";
 import { Dealer, EmoteSprite } from "../Dealer";
 import { EyeIcon, RunoutIcon, SmileIcon, TimeIcon } from "../icons";
 import { nameOf, pick, tr, useLang, useT, type Lang } from "../i18n";
@@ -382,6 +383,41 @@ export function LobbyPage() {
     </>
   );
 
+  // 点头像看这个人的统计（手数、胜率、VPIP、PFR、3B），再点一下或点别处收起
+  const [info, setInfo] = useState<{ seat: number; login: string; stats: PokerStats | null; error?: boolean } | null>(null);
+  const showInfo = (seat: number, login: string) => {
+    if (info?.seat === seat) return setInfo(null);
+    setInfo({ seat, login, stats: null });
+    if (login.startsWith("bot-")) return;
+    api<{ stats: PokerStats }>(`/api/stats/${encodeURIComponent(login)}`).then(
+      (r) => setInfo((cur) => (cur?.seat === seat ? { ...cur, stats: r.stats } : cur)),
+      () => setInfo((cur) => (cur?.seat === seat ? { ...cur, error: true } : cur)),
+    );
+  };
+  useEffect(() => setInfo(null), [table.no]);
+  useEffect(() => {
+    if (!info) return;
+    const close = (e: PointerEvent) => !(e.target as Element).closest?.(".seat-info, .seat-disc-click") && setInfo(null);
+    addEventListener("pointerdown", close);
+    return () => removeEventListener("pointerdown", close);
+  }, [!!info]);
+  const infoSeat = info ? view?.seats[info.seat] : null;
+  const infoCard = info && (
+    <div className="info-card">
+      <div className="info-name">
+        <b>{nameOf(info.login, lang)}</b>
+        <Badges ids={infoSeat?.badges} />
+      </div>
+      {info.login.startsWith("bot-") ? (
+        <span className="muted small">{t("练习桌的机器人，不记统计。", "Practice bot — no stats.")}</span>
+      ) : info.stats ? (
+        <StatLine stats={info.stats} />
+      ) : (
+        <span className="muted small">{info.error ? t("没拿到统计", "Couldn't load stats") : t("加载中…", "Loading…")}</span>
+      )}
+    </div>
+  );
+
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
   const seats: Seat[] = useMemo(() => {
@@ -430,14 +466,19 @@ export function LobbyPage() {
         cards,
         back: x.back,
         face: x.face,
-        badge: x.badge,
+        badges: x.badges,
+        onInfo: () => showInfo(i, x.login),
+        info: info?.seat === i ? infoCard : undefined,
         peeked: view.peek?.[i]?.map(toSpec),
         emote: emotes[i],
         tools: i === you ? tools : undefined,
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
         // 用了加时卡 turnMs 会变长，key 带上它让圈按新时长重画
         timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}-${view.turnMs}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
-        win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand && tr(x.hand, lang) } : undefined,
+        // 只赢到边池的在牌型前面注明「边池」，不然几个人同时 WIN 看着像算错了
+        win: showdown && x.won > 0
+          ? { amount: x.won, hand: x.hand && (x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang)) }
+          : undefined,
         // 摊牌亮出来的牌留在手里翻开；赢了没摊牌主动亮的丢到桌面上
         tossed: x.hand ? 0 : x.showMask,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
@@ -445,7 +486,7 @@ export function LobbyPage() {
       };
     });
     return list;
-  }, [view, you, shownRot, conn.skew, lang, emotes, tools]);
+  }, [view, you, shownRot, conn.skew, lang, emotes, tools, info]);
 
   // 没翻出来的位置：用了发发看就摆上看到的牌（只有自己看得到）
   const runoutFrom = view?.board.length ?? 0;
