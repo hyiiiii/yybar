@@ -81,6 +81,8 @@ final class AppState {
     var grokBotRefreshState = QuotaRefreshState()
     /// 本机 agy 登录的 Google 邮箱(从 agy 日志读，只用于显示和识别重复账号)。
     var googleEmail: String?
+    /// 本机 agy 的套餐名(只取 /usage 输出里自带的，没有就是 nil)。
+    var googlePlan: String?
     /// agy 每次查询要起一个 CLI 进程(约 10~15 秒),定时刷新至少间隔 100 秒(默认 2 分钟一次);
     /// 手动刷新不受此限(429 退避仍然生效)。
     private let googleMinPeriodicInterval: TimeInterval = 100
@@ -379,6 +381,7 @@ final class AppState {
 
     var hasRemovedLocalAccounts: Bool {
         AccountProvider.allCases.contains { isLocalAccountRemoved($0) }
+            || Self.quotaOnlyApps.contains { isQuotaOnlyRemoved($0) }
     }
 
     func restoreRemovedLocalAccounts() {
@@ -386,6 +389,42 @@ final class AppState {
             SettingsStore.shared.removedLocalAccounts.removeValue(forKey: provider.rawValue)
             setLocalAccountEnabled(provider, true)
         }
+        for app in Self.quotaOnlyApps where isQuotaOnlyRemoved(app) {
+            SettingsStore.shared.removedLocalAccounts.removeValue(forKey: app.rawValue)
+            setQuotaOnlyEnabled(app, true)
+        }
+    }
+
+    /// 只有本机账号的服务(Grok Bot / Gemini / agy)。删除同样记在 removedLocalAccounts,键为 UsageApp.rawValue。
+    static let quotaOnlyApps: [UsageApp] = [.grokBot, .gemini, .agy]
+
+    /// 身份:Gemini / agy 用 Google 邮箱(读不到时 "local"),Grok Bot 用 "local"。换账号后自动重新出现。
+    private func quotaOnlyIdentity(_ app: UsageApp) -> String {
+        switch app {
+        case .gemini, .agy: return nonEmpty(googleEmail) ?? "local"
+        default: return "local"
+        }
+    }
+
+    func isQuotaOnlyRemoved(_ app: UsageApp) -> Bool {
+        SettingsStore.shared.removedLocalAccounts[app.rawValue] == quotaOnlyIdentity(app)
+    }
+
+    func removeQuotaOnlyAccount(_ app: UsageApp) {
+        SettingsStore.shared.removedLocalAccounts[app.rawValue] = quotaOnlyIdentity(app)
+        setQuotaOnlyEnabled(app, false)
+    }
+
+    private func setQuotaOnlyEnabled(_ app: UsageApp, _ enabled: Bool) {
+        let settings = SettingsStore.shared
+        switch app {
+        case .grokBot: settings.showGrokBot = enabled
+        case .gemini: settings.showGemini = enabled
+        case .agy: settings.showAgy = enabled
+        default: return
+        }
+        if enabled, app != .grokBot { Task { await loadGoogleQuota(reason: .userInitiated) } }
+        FloatingPanelController.shared.sync()
     }
 
     private func setLocalAccountEnabled(_ provider: AccountProvider, _ enabled: Bool) {
@@ -1070,7 +1109,7 @@ final class AppState {
                                              "这就是本机 agy 正在使用的 Google 账号，不需要重复添加。"))
         }
         let id = "google:" + (email?.lowercased() ?? folder)
-        let extra = ExtraAccount(id: id, provider: .google, alias: "", email: email, plan: nil,
+        let extra = ExtraAccount(id: id, provider: .google, alias: "", email: email, plan: result.plan,
                                  visibleInPopover: true, addedAt: Date(), homeFolder: folder)
         try upsertExtraAccount(extra)
         if let gemini = result.gemini { storeExtraQuota(id: id, snapshot: gemini) }
@@ -1702,6 +1741,7 @@ final class AppState {
             markActivityIfConsumed(.gemini, old: geminiQuota, new: result.gemini)
             markActivityIfConsumed(.agy, old: agyQuota, new: result.agy)
             googleEmail = GoogleQuotaClient.signedInEmail(home: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini"))
+            googlePlan = result.plan
             if let gemini = result.gemini {
                 geminiQuota = gemini
                 quotaCache.gemini = QuotaCacheRecord(snapshot: gemini, source: .api, updatedAt: gemini.fetchedAt)

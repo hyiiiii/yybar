@@ -24,6 +24,8 @@ enum GoogleQuotaClient {
     nonisolated struct Result: Sendable {
         var gemini: QuotaSnapshot?
         var agy: QuotaSnapshot?
+        /// 套餐名：只在 /usage 输出里带了才有(目前 agy 1.3.5 不带),不另去读凭据。
+        var plan: String?
     }
 
     /// agy CLI 位置：PATH 常见目录(Homebrew / ~/.local/bin)。Gemini.app 内置的 agy 走宿主 App 的登录，不能单独调用。
@@ -197,6 +199,9 @@ enum GoogleQuotaClient {
         }
 
         var result = Result()
+        result.plan = ["plan", "plan_name", "planName", "tier", "subscription"].lazy
+            .compactMap { (payload[$0] ?? root[$0]) as? String }
+            .first { !$0.isEmpty }
         for group in groups {
             let name = (group["name"] as? String ?? "").lowercased()
             let buckets = group["buckets"] as? [[String: Any]] ?? []

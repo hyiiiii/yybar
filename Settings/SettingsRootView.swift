@@ -11,6 +11,7 @@ struct SettingsRootView: View {
     @State private var launchAtLoginError: String?
     /// 待确认删除的本机账号。
     @State private var localDeleteTarget: AccountProvider?
+    @State private var quotaOnlyDeleteTarget: UsageApp?
 
     var body: some View {
         @Bindable var settings = SettingsStore.shared
@@ -99,15 +100,17 @@ struct SettingsRootView: View {
                     OtherAccountRows(provider: provider, leadingDivider: showLocal)
                 }
                 // Grok Bot 紧跟 Grok;Gemini / agy 排在最后(和菜单栏顺序一致)。
-                if provider == .grok {
+                if provider == .grok, !appState.isQuotaOnlyRemoved(.grokBot) {
                     Divider()
                     quotaOnlyRow(.grokBot, settings: settings)
                 }
             }
-            Divider()
-            quotaOnlyRow(.gemini, settings: settings)
-            Divider()
-            quotaOnlyRow(.agy, settings: settings)
+            ForEach([UsageApp.gemini, .agy], id: \.self) { app in
+                if !appState.isQuotaOnlyRemoved(app) {
+                    Divider()
+                    quotaOnlyRow(app, settings: settings)
+                }
+            }
             // 其他 Google 账号(Gemini · Antigravity 两个池子一起)。
             OtherAccountRows(provider: .claude, extraProvider: .google)
             Divider()
@@ -152,6 +155,24 @@ struct SettingsRootView: View {
         } message: {
             Text(tr("yybar stops showing and refreshing it. The \(localDeleteTarget?.title ?? "") CLI stays signed in. It comes back if the CLI signs in to another account, or use \u{201C}Restore\u{201D} below.",
                     "yybar 将不再显示和刷新它，本机 \(localDeleteTarget?.title ?? "") CLI 的登录不受影响。CLI 换成其他账号后会重新出现，也可以在下方「恢复」。"))
+        }
+        .confirmationDialog(
+            tr("Remove this account from yybar?", "从 yybar 中删除这个账号？"),
+            isPresented: Binding(get: { quotaOnlyDeleteTarget != nil }, set: { if !$0 { quotaOnlyDeleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = quotaOnlyDeleteTarget {
+                Button(tr("Remove", "删除"), role: .destructive) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.88)) {
+                        appState.removeQuotaOnlyAccount(target)
+                    }
+                    quotaOnlyDeleteTarget = nil
+                }
+                Button(tr("Cancel", "取消"), role: .cancel) { quotaOnlyDeleteTarget = nil }
+            }
+        } message: {
+            Text(tr("yybar stops showing and refreshing it. \(quotaOnlyDeleteTarget?.displayName ?? "") on this Mac stays signed in. Use \u{201C}Restore\u{201D} below to bring it back.",
+                    "yybar 将不再显示和刷新它，本机 \(quotaOnlyDeleteTarget?.displayName ?? "") 的登录不受影响。可以在下方「恢复」。"))
         }
     }
 
@@ -220,23 +241,28 @@ struct SettingsRootView: View {
     }
 
     /// Grok Bot / Gemini / agy:只有本机账号(读本机 App / CLI 的登录),没有其他账号和切换。
+    /// 和 Codex / Claude 本机行同一组件、同样字段:服务名 + 套餐标签 + 邮箱 + 开关 + 查看额度 + 删除。
     /// 本机没装对应 App / CLI 时整行禁用(显示「未识别」)。
     private func quotaOnlyRow(_ app: UsageApp, settings: SettingsStore) -> some View {
         let detected: Bool
-        let detail: String
+        let email: String?
+        let plan: String?
         let enabled: Binding<Bool>
         let menuBar: Binding<Bool>
         let floating: Binding<Bool>
         switch app {
         case .grokBot:
             detected = GrokBotQuotaClient.isInstalled
-            detail = tr("Grok Bot app · quota not connected yet", "Grok Bot app · 额度未接通")
+            // 额度未接通，拿不到账号邮箱 / 套餐，留空(「查看额度」里显示未接通)。
+            email = nil
+            plan = appState.grokBotQuota?.planType
             enabled = Binding(get: { settings.showGrokBot }, set: { settings.showGrokBot = $0 })
             menuBar = Binding(get: { settings.menuBarShowGrokBot }, set: { settings.menuBarShowGrokBot = $0 })
             floating = floatingBinding(get: { settings.floatingShowGrokBot }, set: { settings.floatingShowGrokBot = $0 })
         case .gemini:
             detected = GoogleQuotaClient.isGeminiInstalled
-            detail = appState.googleEmail ?? tr("Google account · Gemini models (via agy)", "Google 账号 · Gemini 模型(经 agy 读取)")
+            email = appState.googleEmail
+            plan = appState.googlePlan
             enabled = Binding(get: { settings.showGemini }, set: {
                 settings.showGemini = $0
                 if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
@@ -245,7 +271,8 @@ struct SettingsRootView: View {
             floating = floatingBinding(get: { settings.floatingShowGemini }, set: { settings.floatingShowGemini = $0 })
         default:
             detected = GoogleQuotaClient.isAgyInstalled
-            detail = appState.googleEmail ?? tr("Google account · Claude + GPT models", "Google 账号 · Claude + GPT 模型")
+            email = appState.googleEmail
+            plan = appState.googlePlan
             enabled = Binding(get: { settings.showAgy }, set: {
                 settings.showAgy = $0
                 if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
@@ -255,15 +282,16 @@ struct SettingsRootView: View {
         }
         return ServiceMatrixRow(
             title: app.displayName, logoName: app.rawValue, fallback: app.fallbackLetter, tint: app.accent,
-            email: detail,
-            plan: nil,
+            email: email,
+            plan: plan,
             switchState: detected ? .inUse : .none,
             detected: detected,
             enabled: enabled,
             menuBar: menuBar,
             floating: floating,
             floatingAvailable: settings.floatingEnabled,
-            quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState))
+            quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState)),
+            onDelete: { quotaOnlyDeleteTarget = app }
         )
     }
 
