@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
 import { longestStreak } from "../src/shared/achievements";
-import { buildPots, EMPTY_TABLE_MS, HOLD_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
+import { buildPots, EMPTY_TABLE_MS, HOLD_MS, RUNOUT_STEP_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
   const r = { T: 10, J: 11, Q: 12, K: 13, A: 14 }[s[0]] ?? Number(s[0]);
@@ -40,6 +40,11 @@ describe("side pots", () => {
 function rig(room: TableRoom, order: string) {
   const s = room.s as RoomState;
   s.deck = cards(order).reverse();
+}
+
+/** 都全下之后剩下的街按节奏发：一直往后拨时钟，直到发完 */
+function runOut(room: TableRoom) {
+  while (room.s.runoutAt) room.tick(room.s.runoutAt);
 }
 
 /** 桌上筹码总数：牌局中是剩余 + 已投入，摊牌后底池已经分到各人手里。 */
@@ -109,6 +114,7 @@ describe("table flow", () => {
     room.act(2, "check", undefined, 5);
     room.act(3, "raise", 200, 6); // 3 全下
     room.act(2, "call", undefined, 7);
+    runOut(room);
     expect(room.s.street).toBe("showdown");
     expect(total(room)).toBe(1100);
     // 公共牌 Qs Jd 3c 4s 6h，1 号座的 AA 主池边池都赢
@@ -145,6 +151,33 @@ describe("table flow", () => {
     expect(total(room)).toBe(11300);
   });
 
+  it("deals the rest of the board one street at a time after everyone is all-in", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 500, 0);
+    room.sit(p(2), 1, 500, 0);
+    room.tick(2000);
+    const a = room.s.seats[room.s.toAct]!.userId;
+    const b = a === 1 ? 2 : 1;
+    room.act(a, "raise", 500, 3000); // 翻牌前全下
+    room.act(b, "call", undefined, 3001);
+    // 翻牌马上发，两个人的牌都亮出来；转牌、河牌按节奏一条一条来
+    expect(room.s.street).toBe("flop");
+    expect(room.s.board).toHaveLength(3);
+    expect(room.view(null, 3001).seats.filter(Boolean).every((x) => x!.cards.every(Boolean))).toBe(true);
+    expect(room.nextWake()).toBe(3001 + RUNOUT_STEP_MS);
+    room.tick(3001 + RUNOUT_STEP_MS - 1);
+    expect(room.s.board).toHaveLength(3);
+    room.tick(3001 + RUNOUT_STEP_MS);
+    expect(room.s.street).toBe("turn");
+    expect(room.s.board).toHaveLength(4);
+    room.tick(3001 + 2 * RUNOUT_STEP_MS);
+    expect(room.s.board).toHaveLength(5);
+    expect(room.s.street).toBe("river");
+    room.tick(3001 + 3 * RUNOUT_STEP_MS);
+    expect(room.s.street).toBe("showdown");
+    expect(total(room)).toBe(1000);
+  });
+
   it("returns an uncalled bet instead of paying it out as a win", () => {
     const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
     room.sit(p(1), 0, 1000, 0);
@@ -161,6 +194,7 @@ describe("table flow", () => {
     room.act(1, "fold", undefined, 2);
     room.act(2, "raise", 400, 3); // 小盲全下 400
     room.act(3, "raise", 2000, 4); // 大盲全下 2000，多出来的 1600 没人跟
+    runOut(room);
     expect(room.s.street).toBe("showdown");
     expect(room.s.seats[1]!.stack).toBe(800);
     expect(room.s.seats[1]!.won).toBe(800);

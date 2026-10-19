@@ -45,16 +45,6 @@ export function BoardPage() {
           </button>
         </div>
         {by === "tokens" && (
-          <div className="seg" role="tablist" aria-label={t("排序", "Sort by")}>
-            <button role="tab" aria-selected={sort === "tokens"} onClick={() => setSort("tokens")} title={t("按 token 数排", "Sort by tokens")}>
-              Token
-            </button>
-            <button role="tab" aria-selected={sort === "cost"} onClick={() => setSort("cost")} title={t("按花费排", "Sort by spend")}>
-              $
-            </button>
-          </div>
-        )}
-        {by === "tokens" && (
           <div className="seg" role="tablist" aria-label={t("时间段", "Period")}>
             {RANGES.map((r) => (
               <button key={r.key} role="tab" aria-selected={range === r.key} onClick={() => setRange(r.key)}>
@@ -90,6 +80,20 @@ export function BoardPage() {
                     {sort === "tokens" ? fmtTokens(r.tokens) : fmtUSD(r.costMicro)}
                     <small>{sort === "tokens" ? fmtUSD(r.costMicro) : `${fmtTokens(r.tokens)} tokens`}</small>
                   </span>
+                  {/* 第一名最右边一个小按钮：点一下在按 token 排和按花费排之间切换；其他行留个空位对齐 */}
+                  {i === 0 ? (
+                    <button
+                      className="sort-flip"
+                      onClick={() => setSort(sort === "tokens" ? "cost" : "tokens")}
+                      aria-label={sort === "tokens" ? t("改成按花费排", "Sort by spend") : t("改成按 token 排", "Sort by tokens")}
+                      title={sort === "tokens" ? t("改成按花费排", "Sort by spend") : t("改成按 token 排", "Sort by tokens")}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3v10M2.5 10.5 5 13l2.5-2.5M11 13V3M8.5 5.5 11 3l2.5 2.5" /></svg>
+                      <span>{sort === "tokens" ? "$" : "T"}</span>
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                 </>
               ) : (
                 <>

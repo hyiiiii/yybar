@@ -106,6 +106,8 @@ export interface RoomState {
   turnStart?: number | null;
   deadline: number | null;
   nextHandAt: number | null;
+  /** 没人能再行动（都全下了）时，下一条街什么时候发；旧存档没有 */
+  runoutAt?: number | null;
   say: string | null;
   /** 待写回账户的筹码；宿主写成功后调用 ackCashout */
   cashouts: Cashout[];
@@ -143,6 +145,8 @@ const AWAY_TURN_MS = 5_000;
 /** 断线超过这么久，下一手开始前自动离桌 */
 const AWAY_KICK_MS = 60_000;
 const START_DELAY_MS = 1_500;
+/** 都全下之后，一条街一条街按这个节奏发，不一下子发完 */
+export const RUNOUT_STEP_MS = 1_800;
 const SHOWDOWN_PAUSE_MS = 6_000;
 const FOLD_WIN_PAUSE_MS = 3_000;
 
@@ -199,7 +203,7 @@ export class TableRoom {
   nextWake(): number | null {
     const closeAt = this.emptyFrom() === null ? null : this.emptyFrom()! + EMPTY_TABLE_MS;
     const holdEnd = this.holds().reduce<number | null>((m, h) => (h && (m === null || h.until < m) ? h.until : m), null);
-    const t = [this.s.deadline, this.s.nextHandAt, closeAt, this.idleKickAt(), holdEnd].filter((x): x is number => x !== null);
+    const t = [this.s.deadline, this.s.nextHandAt, this.s.runoutAt ?? null, closeAt, this.idleKickAt(), holdEnd].filter((x): x is number => x !== null);
     return t.length ? Math.min(...t) : null;
   }
 
@@ -422,6 +426,11 @@ export class TableRoom {
   /** 时钟推进：处理超时、机器人行动、开下一手。宿主在 nextWake() 时刻调用。 */
   tick(now: number) {
     for (let guard = 0; guard < 100; guard++) {
+      if (this.inProgress && this.s.runoutAt && now >= this.s.runoutAt) {
+        this.s.runoutAt = null;
+        this.endStreet(now);
+        continue;
+      }
       if (this.inProgress && this.s.deadline !== null && now >= this.s.deadline) {
         const i = this.s.toAct;
         const seat = this.s.seats[i]!;
@@ -817,7 +826,12 @@ export class TableRoom {
     this.s.street = order[k + 1];
 
     const next = this.findNext(this.s.button);
-    if (next === -1) return this.endStreet(now); // 都全下了，直接发完
+    if (next === -1) {
+      // 没人能再行动了（都全下了）：把牌亮出来，剩下的街隔一会儿发一条，按节奏翻
+      for (const i of this.live()) this.s.seats[i]!.shown = true;
+      this.s.runoutAt = now + RUNOUT_STEP_MS;
+      return;
+    }
     this.moveOn(this.s.button, now);
   }
 
@@ -886,6 +900,7 @@ export class TableRoom {
   }
 
   private finish(now: number, pause: number, say: string) {
+    this.s.runoutAt = null;
     // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出同花顺；每个真人这一手的统计
     for (const x of this.s.seats) {
       if (!x || x.bot || !x.inHand) continue;
