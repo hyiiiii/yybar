@@ -193,8 +193,8 @@ describe("table flow", () => {
   it("holds a seat for 10 seconds while picking a buy-in", () => {
     const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
     expect(room.hold(p(1), 2, 0)).toBeNull();
-    expect(room.hold(p(2), 2, 1)).toMatch(/正在入座/);
-    expect(room.sit(p(2), 2, 1000, 1)).toMatch(/正在入座/);
+    expect(room.hold(p(2), 2, 1)).toMatch(/正在买入/);
+    expect(room.sit(p(2), 2, 1000, 1)).toMatch(/正在买入/);
     expect(room.view(2, 1).holds[2]).toEqual({ login: "u1", start: 0, until: HOLD_MS, you: false });
     expect(room.view(1, 1).holds[2]!.you).toBe(true);
     // 换个座位占：原来那个放开
@@ -207,6 +207,22 @@ describe("table flow", () => {
     room.hold(p(1), 0, 20_000);
     expect(room.sit(p(1), 0, 1000, 20_001)).toBeNull();
     expect(room.view(1, 20_001).holds[0]).toBeNull();
+  });
+
+  it("holds the seat for a busted player to buy back in", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 1, 1000, 0);
+    room.tick(2000);
+    room.s.seats[0]!.stack = 0; // 假装 1 号这手输光了
+    room.s.street = "showdown";
+    room.s.nextHandAt = 3000;
+    room.tick(3000);
+    expect(room.s.seats[0]).toBeNull();
+    expect(room.view(1, 3000).holds[0]).toEqual({ login: "u1", start: 3000, until: 3000 + HOLD_MS, you: true });
+    expect(room.sit(p(3), 0, 1000, 3001)).toMatch(/正在买入/);
+    expect(room.sit(p(1), 0, 800, 3002)).toBeNull();
+    expect(room.s.seats[0]!.stack).toBe(800);
   });
 
   it("lets the winner show cards after everyone folds", () => {

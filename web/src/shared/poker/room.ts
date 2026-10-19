@@ -214,7 +214,7 @@ export class TableRoom {
     if (this.seatOf(userId) >= 0) return "你已经在这张桌上了";
     if (this.s.seats[seat]) return "这个座位有人了";
     const hold = this.holds()[seat];
-    if (hold && hold.userId !== userId) return "这个座位有人正在入座";
+    if (hold && hold.userId !== userId) return "这个座位有人正在买入";
     return null;
   }
 
@@ -487,7 +487,13 @@ export class TableRoom {
     this.s.seats.forEach((x, i) => {
       if (!x) return;
       if (!x.bot && x.away !== null && now - x.away > AWAY_KICK_MS) x.leaving = true;
-      if (x.leaving || (!x.bot && x.stack === 0)) return this.standUp(i);
+      if (x.leaving) return this.standUp(i);
+      // 在这张桌输光了：先站起来，座位替他占 10 秒，有余额的话可以原位再买入
+      if (!x.bot && x.stack === 0) {
+        this.standUp(i);
+        this.holds()[i] = { userId: x.userId, login: x.login, avatarUrl: x.avatarUrl, start: now, until: now + HOLD_MS };
+        return;
+      }
       if (x.bot && x.stack < MIN_BUY_IN_BB * this.s.config.bb) x.stack = BUY_IN_BB * this.s.config.bb;
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,

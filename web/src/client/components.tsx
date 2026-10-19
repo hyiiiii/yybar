@@ -80,7 +80,7 @@ export interface Seat {
   mucked?: CardSpec[];
   /** 轮到这个座位时的倒计时：key 换了就重新开始；total、elapsed 单位毫秒 */
   timer?: { key: string; total: number; elapsed: number };
-  /** 有人点了这个空位正在选带入：灰色头像 + 橙色倒计时 */
+  /** 有人点了这个空位（或在这桌输光了）正在买入：灰色头像 + 橙色倒计时，走过的部分变白 */
   held?: { key: string; total: number; elapsed: number };
   /** 这手赢了：赢了多少、什么牌（别人都弃了就没有牌型） */
   win?: { amount: number; hand: string | null };
@@ -174,7 +174,7 @@ export function FeltTable({
               ) : (
                 <div className="seat-plate">
                   <span className="plate-name">{s.you ? "你" : s.login}</span>
-                  <b className="plate-stack">{s.held ? "入座中…" : fmtMoney(s.stack ?? 0)}</b>
+                  <b className="plate-stack">{s.held ? "买入中…" : fmtMoney(s.stack ?? 0)}</b>
                 </div>
               )}
               {!!s.bet && <div key={s.bet} className="seat-bet">{fmtMoney(s.bet)}</div>}
@@ -220,7 +220,9 @@ function TurnRing({ total, elapsed, hold }: { total: number; elapsed: number; ho
   const [delay] = useState(() => `${-Math.max(0, elapsed)}ms`);
   return (
     <svg className={`turn-ring${hold ? " turn-ring-hold" : ""}`} viewBox="0 0 100 100" aria-hidden>
-      <circle cx="50" cy="50" r="47" pathLength={100} style={{ animationDuration: `${total}ms`, animationDelay: delay }} />
+      {/* 底下一圈白色轨道：走过的部分露出白色 */}
+      <circle className="turn-ring-track" cx="50" cy="50" r="47" />
+      <circle className="turn-ring-bar" cx="50" cy="50" r="47" pathLength={100} style={{ animationDuration: `${total}ms`, animationDelay: delay }} />
     </svg>
   );
 }

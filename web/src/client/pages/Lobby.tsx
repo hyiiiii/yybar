@@ -245,6 +245,28 @@ export function LobbyPage() {
     }
   }, [myTurnKey]);
 
+  // 在这桌输光了：服务端替你占着座位 10 秒，有余额就弹出买入面板，没余额直接放开
+  const rebuyFor = useRef("");
+  useEffect(() => {
+    if (!view || you !== null || !me?.points) return;
+    const i = view.holds.findIndex((h) => h?.you);
+    const h = view.holds[i];
+    if (!h) return;
+    // 每次占座只处理一次；自己点空位占的（面板已经开着）也记下，免得取消后又弹出来
+    const key = `${view.no}-${i}-${h.start}`;
+    if (rebuyFor.current === key) return;
+    rebuyFor.current = key;
+    if (panel) return;
+    if (balance < MIN_BUY_IN_BB * bb) {
+      conn.send({ t: "release" });
+      return;
+    }
+    holdSeen.current = true;
+    setBuyIn(defaultBuyIn(bb, balance));
+    setPanel({ kind: "sit", seat: i });
+    setNote("筹码输光了，10 秒内可以在原位再买入");
+  }, [view, you, panel, me?.points]);
+
   // 占座：服务端确认后才算占到；10 秒没入座被放开，就收起面板
   useEffect(() => {
     if (panel?.kind !== "sit" || !view) return;
