@@ -59,12 +59,17 @@ export function DealerSprite({ mood }: { mood: Mood }) {
 /** 闲着时随机做的小动作，对应 styles.css 里的 .act-* 动画 */
 const ACTS = ["look-l", "look-r", "wave", "shuffle", "jump", "sway", "peek", "stretch"] as const;
 
+/** 说一句话停留多久 */
+const SAY_MS = 4500;
+
 /**
- * 发牌员：不说话，会眨眼、上下晃，隔一会儿做个小动作（东张西望、招手、洗牌、蹦一下…）。
+ * 发牌员：平时不说话，会眨眼、上下晃，隔一会儿做个小动作（东张西望、招手、洗牌、蹦一下…）。
+ * say 换了就冒个气泡说一句（例如登录后的问候），过一会儿自己消失。
  * stage 由外部控制（0 翻牌前 … 4 摊牌），每推进一条街换个表情；点一下会蹦一下。
  */
-export function Dealer({ stage, onPoke }: { stage: number; onPoke?: () => void }) {
+export function Dealer({ stage, say, onPoke }: { stage: number; say?: string | null; onPoke?: () => void }) {
   const [mood, setMood] = useState<Mood>("idle");
+  const [bubble, setBubble] = useState<{ text: string; leaving: boolean } | null>(null);
   const [act, setAct] = useState<(typeof ACTS)[number] | "">("");
   const [hop, setHop] = useState(0);
   const base = useRef<Mood>("idle");
@@ -116,6 +121,20 @@ export function Dealer({ stage, onPoke }: { stage: number; onPoke?: () => void }
     }
   }, [stage]);
 
+  useEffect(() => {
+    if (!say) return;
+    setBubble({ text: say, leaving: false });
+    setMood("happy");
+    setAct("wave");
+    const t1 = setTimeout(() => {
+      setAct("");
+      setMood(base.current);
+    }, 1400);
+    const t2 = setTimeout(() => setBubble((b) => b && { ...b, leaving: true }), SAY_MS);
+    const t3 = setTimeout(() => setBubble(null), SAY_MS + 600);
+    return () => [t1, t2, t3].forEach(clearTimeout);
+  }, [say]);
+
   const poke = () => {
     setHop((h) => h + 1);
     setMood("happy");
@@ -125,6 +144,11 @@ export function Dealer({ stage, onPoke }: { stage: number; onPoke?: () => void }
 
   return (
     <div className={`dealer${act ? ` act-${act}` : ""}`}>
+      {bubble && (
+        <div className={`bubble${bubble.leaving ? " bubble-bye" : ""}`} role="status">
+          {bubble.text}
+        </div>
+      )}
       <button
         className={`dealer-btn${hop % 2 ? " hop-a" : hop ? " hop-b" : ""}`}
         onClick={poke}

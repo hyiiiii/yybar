@@ -84,8 +84,8 @@ export interface Seat {
   held?: { key: string; total: number; elapsed: number };
   /** 这手赢了：赢了多少、什么牌（别人都弃了就没有牌型） */
   win?: { amount: number; hand: string | null };
-  /** 自己的牌里已经亮给大家的（第 1 位第一张，第 2 位第二张） */
-  shownMask?: number;
+  /** 赢了没摊牌时丢到桌面上亮给大家的牌（第 1 位第一张，第 2 位第二张） */
+  tossed?: number;
   /** 能亮牌时点自己的牌调用，k 是第几张 */
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
@@ -134,21 +134,27 @@ export function FeltTable({
               {s.note && !s.win && <span key={s.note} className="seat-note">{s.note}</span>}
               {s.cards && !s.folded && (
                 <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}`}>
+                  {/* key 带上牌面：背面翻成正面（摊牌）时重新挂载，播翻牌动画 */}
                   {s.cards.map((c, j) =>
-                    s.you ? (
+                    ((s.tossed ?? 0) >> j) & 1 ? null : s.you ? (
                       <button
-                        key={j}
-                        className={`card-btn${((s.shownMask ?? 0) >> j) & 1 ? " card-shown" : ""}`}
-                        disabled={!s.onShow || !!(((s.shownMask ?? 0) >> j) & 1)}
+                        key={`${j}-${cardKey(c)}`}
+                        className="card-btn"
+                        disabled={!s.onShow}
                         onClick={() => s.onShow?.(j)}
-                        aria-label={s.onShow ? "亮这张牌" : undefined}
+                        aria-label={s.onShow ? "把这张牌亮到桌上" : undefined}
                       >
                         <PlayingCard card={c} />
                       </button>
                     ) : (
-                      <PlayingCard key={j} card={c} />
+                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} />
                     ),
                   )}
+                </div>
+              )}
+              {!!s.tossed && s.cards && (
+                <div className="seat-tossed">
+                  {s.cards.map((c, j) => (((s.tossed ?? 0) >> j) & 1 ? <PlayingCard key={j} card={c} /> : null))}
                 </div>
               )}
               {s.mucked && (
@@ -217,6 +223,8 @@ function TurnRing({ total, elapsed, hold }: { total: number; elapsed: number; ho
     </svg>
   );
 }
+
+const cardKey = (c: CardSpec) => (c === "back" ? "b" : c.rank + c.suit);
 
 /** 筹码按美元显示：$1,250 */
 export function fmtMoney(n: number): string {

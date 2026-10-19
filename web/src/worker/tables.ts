@@ -39,6 +39,9 @@ tableRoutes.post("/", requireSession, async (c) => {
   const blinds = BLIND_LEVELS.find(([sb, bb]) => Array.isArray(body.blinds) && body.blinds[0] === sb && body.blinds[1] === bb);
   if (!blinds) return c.json({ error: "没有这档盲注" }, 400);
   const user = c.get("user");
+  // 坐着的时候不能开新桌，免得一个人开一堆桌
+  const sitting = await c.env.DB.prepare("SELECT table_no FROM poker_seats WHERE user_id = ? LIMIT 1").bind(user.id).first<{ table_no: number }>();
+  if (sitting) return c.json({ error: `你还坐在 #${sitting.table_no}，离桌后才能开新桌` }, 400);
   const { count } = (await c.env.DB.prepare("SELECT COUNT(*) AS count FROM poker_tables WHERE created_by = ?")
     .bind(user.id)
     .first<{ count: number }>())!;

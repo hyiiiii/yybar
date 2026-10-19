@@ -86,32 +86,16 @@ function BuyInSlider({ bb, balance, value, onChange }: { bb: number; balance: nu
 const defaultBuyIn = (bb: number, balance: number) =>
   Math.max(MIN_BUY_IN_BB * bb, Math.min(BUY_IN_BB * bb, MAX_BUY_IN_BB * bb, balance));
 
-/** Claude 的星芒标，问候语前面那个橙色小图标 */
-function ClaudeMark() {
-  return (
-    <svg className="claude-mark" viewBox="0 0 24 24" aria-hidden>
-      {Array.from({ length: 12 }, (_, k) => (
-        <rect key={k} x={11} y={1.5} width={2} height={9.5} rx={1} transform={`rotate(${k * 30} 12 12)`} />
-      ))}
-    </svg>
-  );
+/** 登录后发牌员说的一句问候，像 Claude 官网那样：「又开工了，hyi」 */
+function greeting(name: string) {
+  const h = new Date().getHours();
+  const byTime = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
+  const lines = [`又开工了，${name}`, `${name}，来两手？`, `欢迎回来，${name}`, `${byTime}，${name}`, `${byTime}，${name}`];
+  return lines[Math.floor(Math.random() * lines.length)];
 }
 
-/** 登录后桌子上方的一句问候，像 Claude 官网那样：「✱ 又开工了，hyi」 */
-function Greeting({ name }: { name: string }) {
-  const [line] = useState(() => {
-    const h = new Date().getHours();
-    const byTime = h < 5 ? "夜深了" : h < 11 ? "早上好" : h < 14 ? "中午好" : h < 18 ? "下午好" : h < 23 ? "晚上好" : "夜深了";
-    const more = ["又开工了", "来两手？", "欢迎回来", byTime, byTime];
-    return more[Math.floor(Math.random() * more.length)];
-  });
-  return (
-    <h1 className="greeting">
-      <ClaudeMark />
-      <span>{line}，{name}</span>
-    </h1>
-  );
-}
+/** 入座后桌子转动时每走一格的时长，和 styles.css 里 .seat 的 transition 一致 */
+const ROTATE_STEP_MS = 240;
 
 /**
  * 大厅就是一张牌桌：右下角切桌、开桌、铃铛，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
@@ -189,12 +173,35 @@ export function LobbyPage() {
   }, [conn.closed]);
 
   const signedIn = !!me?.user;
+  // 登录后发牌员打个招呼，几秒后气泡自己消失
+  const [greet, setGreet] = useState<string | null>(null);
+  useEffect(() => {
+    if (me?.user) setGreet(greeting(me.user.name || me.user.login));
+  }, [me?.user?.login]);
   const balance = me?.points?.balance ?? 0;
   const bb = table.blinds[1];
   const you = view?.you ?? null;
-  // 入座后把自己转到下方中间（3 号显示位），其他人按顺时针相对位置排；座位会滑过去
-  const toDisplay = (i: number) => (you === null ? i : (i - you + 3 + SEAT_COUNT) % SEAT_COUNT);
-  const fromDisplay = (d: number) => (you === null ? d : (d + you - 3 + SEAT_COUNT) % SEAT_COUNT);
+  // 入座后把自己转到下方（3 号显示位），其他人按顺时针相对位置排。
+  // rot 一格一格追上目标，座位沿着桌边一个位置一个位置走过去，看得出桌子在转
+  const rotTarget = you === null ? 0 : (3 - you + SEAT_COUNT) % SEAT_COUNT;
+  const [rot, setRot] = useState(rotTarget);
+  // 刚切到一张桌（第一次拿到牌桌）直接摆好，不转
+  const placed = useRef<number | null>(null);
+  useEffect(() => {
+    if (!view || placed.current === view.no) return;
+    placed.current = view.no;
+    setRot(rotTarget);
+  }, [view?.no, rotTarget]);
+  useEffect(() => {
+    if (rot === rotTarget || placed.current !== view?.no) return;
+    const step = (rotTarget - rot + SEAT_COUNT) % SEAT_COUNT <= SEAT_COUNT / 2 ? 1 : -1;
+    const t = setTimeout(() => setRot((r) => (r + step + SEAT_COUNT) % SEAT_COUNT), ROTATE_STEP_MS);
+    return () => clearTimeout(t);
+  }, [rot, rotTarget]);
+  // 还没摆好（刚切桌的第一帧）就按目标摆，免得从上一张桌的角度滑过来
+  const shownRot = placed.current === view?.no ? rot : rotTarget;
+  const toDisplay = (i: number) => (i + shownRot) % SEAT_COUNT;
+  const fromDisplay = (d: number) => (d - shownRot + SEAT_COUNT) % SEAT_COUNT;
   // 入座扣了带入、离桌退回筹码，顶栏的余额跟着刷新
   useEffect(() => {
     if (view) notifyMeChanged();
@@ -300,13 +307,14 @@ export function LobbyPage() {
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
         timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
         win: showdown && x.won > 0 ? { amount: x.won, hand: x.hand } : undefined,
-        shownMask: x.showMask,
+        // 摊牌亮出来的牌留在手里翻开；赢了没摊牌主动亮的丢到桌面上
+        tossed: x.hand ? 0 : x.showMask,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
         note: seatNote,
       };
     });
     return list;
-  }, [view, you, conn.skew]);
+  }, [view, you, shownRot, conn.skew]);
 
   const board: CardSpec[] = [0, 1, 2, 3, 4].map((i) => (view?.board[i] ? toSpec(view.board[i]) : "back"));
   const stage = view ? STAGE[view.street] : 0;
@@ -365,6 +373,13 @@ export function LobbyPage() {
 
   const showOpenPanel = async () => {
     if (!(await ensureSignedIn())) return;
+    // 坐着的时候不能开新桌，免得一个人开一堆桌
+    const sitting = [...mySeats];
+    if (sitting.length) {
+      setPanel(null);
+      setNote(`你还坐在 #${sitting.join("、#")}，离桌后才能开新桌`);
+      return;
+    }
     const blinds = BLIND_LEVELS.find(([s, b]) => s === table.blinds[0] && b === table.blinds[1]) ?? BLIND_LEVELS[1];
     setOpenBlinds(blinds);
     setBuyIn(defaultBuyIn(blinds[1], balance));
@@ -489,7 +504,6 @@ export function LobbyPage() {
   return (
     <div className="lobby">
       <MarqueeSign text="yybar" />
-      {me?.user && <Greeting name={me.user.name || me.user.login} />}
 
       <FeltTable
         key={table.id}
@@ -545,7 +559,7 @@ export function LobbyPage() {
         }
         center={
           <div className="felt-center">
-            <Dealer stage={stage} />
+            <Dealer stage={stage} say={greet} />
             <div className="board-cards">
               {board.map((c, i) => (
                 <PlayingCard key={`${i}-${c === "back" ? "b" : c.rank + c.suit}`} card={c} />
