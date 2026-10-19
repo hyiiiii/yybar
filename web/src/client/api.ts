@@ -4,6 +4,8 @@ export interface PublicUser {
   login: string;
   name: string | null;
   avatarUrl: string | null;
+  /** 戴在名字后面的成就徽章 */
+  badge?: string | null;
 }
 
 export interface Totals {

@@ -7,6 +7,7 @@ import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { Env } from "./types";
 import { DEFAULT_EMOTES, findItem, type ItemId } from "../shared/cosmetics";
 import { spendItem } from "./shop";
+import { grantAchievement } from "./achievements";
 
 /** 连接附带的身份：未登录的旁观者 userId 为 0。emotes 是这个人有的表情。 */
 interface Attachment extends Player {
@@ -43,7 +44,7 @@ export class PokerTable extends DurableObject<Env> {
     server.serializeAttachment(att);
     if (att.userId) {
       this.room.setAway(att.userId, false, Date.now());
-      this.room.setLook(att.userId, att.back, att.face);
+      this.room.setLook(att.userId, att.back, att.face, att.badge);
     }
     await this.commit();
     return new Response(null, { status: 101, webSocket: client });
@@ -147,6 +148,14 @@ export class PokerTable extends DurableObject<Env> {
     const room = this.room;
     if (!room) return;
     await this.flushCashouts();
+    for (const u of [...(room.s.unlocks ?? [])]) {
+      try {
+        await grantAchievement(this.env.DB, u.userId, u.id);
+        room.ackUnlock(u.userId, u.id);
+      } catch {
+        // 留着下次再写
+      }
+    }
     room.checkEmpty(Date.now());
     if (room.closable(Date.now()) && (await this.close())) return;
     await this.ctx.storage.put("room", room.s);

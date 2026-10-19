@@ -85,3 +85,11 @@ export const SmileIcon = () => (
     <path d="M9 9.5v1M15 9.5v1" />
   </Icon>
 );
+
+/** 领奖台：排行榜 */
+export const PodiumIcon = () => (
+  <Icon>
+    <path d="M9 20.5V9.5h6v11M3.5 20.5v-7h5.5M15 15.5h5.5v5M2.5 20.5h19" />
+    <path d="M12 3.2l.9 1.8 2 .3-1.4 1.4.3 2-1.8-.9-1.8.9.3-2-1.4-1.4 2-.3z" />
+  </Icon>
+);

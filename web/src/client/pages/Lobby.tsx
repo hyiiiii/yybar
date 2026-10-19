@@ -430,6 +430,7 @@ export function LobbyPage() {
         cards,
         back: x.back,
         face: x.face,
+        badge: x.badge,
         peeked: view.peek?.[i]?.map(toSpec),
         emote: emotes[i],
         tools: i === you ? tools : undefined,

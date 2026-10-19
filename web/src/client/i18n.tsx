@@ -104,6 +104,7 @@ const EXACT: Record<string, string> = {
   还没有这个表情: "You don't own that emote",
   慢一点: "Slow down",
   未登录: "Not signed in",
+  还没解锁这个成就: "You haven't unlocked that yet",
 };
 
 const PATTERNS: [RegExp, string][] = [

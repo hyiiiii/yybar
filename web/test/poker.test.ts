@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
+import { longestStreak } from "../src/shared/achievements";
 import { buildPots, EMPTY_TABLE_MS, HOLD_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
@@ -113,6 +114,31 @@ describe("table flow", () => {
     // 公共牌 Qs Jd 3c 4s 6h，1 号座的 AA 主池边池都赢
     expect(room.s.seats[1]!.stack).toBe(1100);
     expect(room.s.seats[0]!.stack).toBe(0);
+  });
+
+  it("returns an uncalled bet instead of paying it out as a win", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 1, 400, 0);
+    room.sit(p(3), 2, 2000, 0);
+    room.s.button = 2; // 下一手：0 庄、1 小盲、2 大盲
+    room.s.nextHandAt = 1;
+    room.tick(1);
+    room.s.seats.forEach((x) => x && (x.hole = []));
+    // 发牌从小盲开始：1、2、0 各一张，轮两圈；公共牌 Q 9 J 3 3（照截图那手）
+    rig(room, "8s 2d 4c Kh Td 5c  7h Qs 9d Jc  6s 3h  2c 3d".replace(/\s+/g, " "));
+    for (let k = 0; k < 2; k++) for (const i of [1, 2, 0]) room.s.seats[i]!.hole.push(room.s.deck.pop()!);
+    // 1: 8s Kh（一对 3 带 K），2: 2d Td（一对 3 带 Q），0: 4c 5c
+    room.act(1, "fold", undefined, 2);
+    room.act(2, "raise", 400, 3); // 小盲全下 400
+    room.act(3, "raise", 2000, 4); // 大盲全下 2000，多出来的 1600 没人跟
+    expect(room.s.street).toBe("showdown");
+    expect(room.s.seats[1]!.stack).toBe(800);
+    expect(room.s.seats[1]!.won).toBe(800);
+    // 没人跟的部分原样退回，不算赢
+    expect(room.s.seats[2]!.won).toBe(0);
+    expect(room.s.seats[2]!.stack).toBe(1600);
+    expect(total(room)).toBe(3400);
   });
 
   it("returns chips on leave and refuses to act out of turn", () => {
@@ -306,5 +332,37 @@ describe("table flow", () => {
       if (room.s.street === "idle" && room.s.handNo > 0) break;
     }
     expect(room.s.handNo).toBeGreaterThan(10);
+  });
+});
+
+describe("achievements", () => {
+  it("finds the longest run of consecutive days", () => {
+    expect(longestStreak([])).toBe(0);
+    expect(longestStreak(["2026-10-01"])).toBe(1);
+    expect(longestStreak(["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-03", "2026-10-04"])).toBe(3);
+    // 跨月、跨年
+    expect(longestStreak(["2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02"])).toBe(4);
+  });
+
+  it("records a big pot for the winner at the table", () => {
+    const room = TableRoom.create({ no: 1, sb: 100, bb: 200, bots: false });
+    room.sit({ userId: 1, login: "u1", avatarUrl: null }, 0, 20_000, 0);
+    room.sit({ userId: 2, login: "u2", avatarUrl: null }, 1, 20_000, 0);
+    room.tick(2000);
+    const a = room.s.seats[room.s.toAct]!.userId;
+    const b = a === 1 ? 2 : 1;
+    room.act(a, "raise", 12_000, 2001);
+    room.act(b, "call", undefined, 2002);
+    for (let k = 0; k < 3; k++) {
+      room.act(room.s.seats[room.s.toAct]!.userId, "check", undefined, 2003);
+      room.act(room.s.seats[room.s.toAct]!.userId, "check", undefined, 2004);
+    }
+    expect(room.s.street).toBe("showdown");
+    // 底池 $24,000：赢家（平分就两个人各 $12,000）都算大赢家
+    const winners = room.s.seats.filter((x) => x && x.won >= 10_000).map((x) => x!.userId);
+    expect(winners.length).toBeGreaterThan(0);
+    expect(room.s.unlocks).toEqual(winners.map((userId) => ({ userId, id: "big_pot" })));
+    for (const w of winners) room.ackUnlock(w, "big_pot");
+    expect(room.s.unlocks).toEqual([]);
   });
 });

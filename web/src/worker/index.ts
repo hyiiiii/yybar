@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
+import { achievementRoutes, syncAchievements } from "./achievements";
 import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
@@ -72,8 +73,8 @@ async function topModels(db: D1Database, userId: number) {
   return results;
 }
 
-function publicUser(u: { login: string; name: string | null; avatar_url: string | null }) {
-  return { login: u.login, name: u.name, avatarUrl: u.avatar_url };
+function publicUser(u: { login: string; name: string | null; avatar_url: string | null; badge?: string | null }) {
+  return { login: u.login, name: u.name, avatarUrl: u.avatar_url, badge: u.badge ?? null };
 }
 
 // ---------- 公开接口 ----------
@@ -86,12 +87,12 @@ app.get("/api/leaderboard", async (c) => {
   if (by === "wealth") {
     const { results } = await c.env.DB.prepare(
       `SELECT * FROM (
-         SELECT u.login, u.name, u.avatar_url,
+         SELECT u.login, u.name, u.avatar_url, u.badge,
            (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 10000
              + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger l WHERE l.user_id = u.id) AS balance
          FROM users u WHERE u.show_on_board = 1
        ) WHERE balance > 0 ORDER BY balance DESC LIMIT 100`,
-    ).all<{ login: string; name: string | null; avatar_url: string | null; balance: number }>();
+    ).all<{ login: string; name: string | null; avatar_url: string | null; badge: string | null; balance: number }>();
     return c.json({ by, rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance })) });
   }
   if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
@@ -106,7 +107,7 @@ app.get("/api/leaderboard", async (c) => {
        WHERE u.show_on_board = 1 AND d.day >= ?
        GROUP BY d.user_id, d.app, d.model
      )
-     SELECT u.login, u.name, u.avatar_url, SUM(per.tokens) AS tokens,
+     SELECT u.login, u.name, u.avatar_url, u.badge, SUM(per.tokens) AS tokens,
        (SELECT p2.model FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_model,
        (SELECT p2.app FROM per p2 WHERE p2.user_id = per.user_id ORDER BY p2.tokens DESC LIMIT 1) AS top_app
      FROM per JOIN users u ON u.id = per.user_id
@@ -114,7 +115,7 @@ app.get("/api/leaderboard", async (c) => {
      ORDER BY tokens DESC LIMIT 100`,
   )
     .bind(start ?? "0000-00-00")
-    .all<{ login: string; name: string | null; avatar_url: string | null; tokens: number; top_model: string; top_app: string }>();
+    .all<{ login: string; name: string | null; avatar_url: string | null; badge: string | null; tokens: number; top_model: string; top_app: string }>();
   return c.json({
     by,
     range,
@@ -142,6 +143,8 @@ app.get("/api/users/:login", async (c) => {
 app.get("/api/me", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.json({ user: null });
+  // 先检查成就（第一次登录、连续天数…），新解锁的奖励要算进下面的余额
+  await syncAchievements(c.env.DB, user.id);
   const [totals, series, models, points, tokens, items, emotes] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
@@ -245,6 +248,8 @@ app.route("/api/v1", v1);
 app.route("/api/tables", tableRoutes);
 
 app.route("/api/shop", shopRoutes);
+
+app.route("/api/achievements", achievementRoutes);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

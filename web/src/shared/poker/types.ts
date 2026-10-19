@@ -34,6 +34,8 @@ export interface SeatView {
   /** 这个人的牌背、牌面款式（商场里换的），null 是默认款 */
   back: string | null;
   face: string | null;
+  /** 戴在名字后面的成就徽章 */
+  badge: string | null;
   away: boolean;
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */

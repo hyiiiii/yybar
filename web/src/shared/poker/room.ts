@@ -6,6 +6,7 @@ import { bestScore, handName, newDeck, shuffle, type Card } from "./cards";
 import { botDecide } from "./bot";
 import { SEATS, type Legal, type SeatView, type Street, type TableEvent, type TableView } from "./types";
 import { TIME_CARD_MS, type ItemId } from "../cosmetics";
+import { BIG_POT } from "../achievements";
 
 export interface RoomConfig {
   no: number;
@@ -26,6 +27,8 @@ export interface Player {
   /** 商场里换上的牌背、牌面，同桌的人都看得到；机器人和旧存档没有 */
   back?: string;
   face?: string;
+  /** 戴在名字后面的成就徽章 */
+  badge?: string | null;
 }
 
 interface RoomSeat extends Player {
@@ -96,6 +99,8 @@ export interface RoomState {
   emptySince?: number | null;
   /** 每个座位的占座；旧存档没有这个字段 */
   holds?: (Hold | null)[];
+  /** 牌桌上达成的成就（大赢家、同花顺），宿主写进账户后调用 ackUnlock */
+  unlocks?: { userId: number; id: "big_pot" | "straight_flush" }[];
   /** 最近几秒的桌面事件（用了道具、发了表情），推给所有人 */
   events?: TableEvent[];
   eventSeq?: number;
@@ -370,9 +375,10 @@ export class TableRoom {
   }
 
   /** 重新连上时带来最新的牌背、牌面（在商场换了之后） */
-  setLook(userId: number, back: string | undefined, face: string | undefined) {
+  setLook(userId: number, back: string | undefined, face: string | undefined, badge?: string | null) {
     const i = this.seatOf(userId);
     if (i < 0) return;
+    if (badge !== undefined) this.s.seats[i]!.badge = badge;
     if (back) this.s.seats[i]!.back = back;
     if (face) this.s.seats[i]!.face = face;
   }
@@ -381,6 +387,10 @@ export class TableRoom {
     const i = this.seatOf(userId);
     if (i < 0) return;
     this.s.seats[i]!.away = away ? (this.s.seats[i]!.away ?? now) : null;
+  }
+
+  ackUnlock(userId: number, id: string) {
+    this.s.unlocks = (this.s.unlocks ?? []).filter((u) => u.userId !== userId || u.id !== id);
   }
 
   ackCashout(ref: string) {
@@ -468,6 +478,7 @@ export class TableRoom {
         cards,
         back: x.back ?? null,
         face: x.face ?? null,
+        badge: x.badge ?? null,
         showMask: x.shown ? 3 : (x.showMask ?? 0),
         away: x.away !== null,
         leaving: x.leaving,
@@ -774,7 +785,25 @@ export class TableRoom {
     this.moveOn(this.s.button, now);
   }
 
+  /**
+   * 没人跟的下注退回：投入最多的人比第二多的人多出来的部分，没有人能跟，原样还给他，不算赢。
+   * 不退的话，边池里只有他一个人有资格，会被当成「赢」显示出来。
+   */
+  private returnUncalled() {
+    const order = this.s.seats
+      .map((x, i) => ({ i, c: x?.committed ?? 0 }))
+      .sort((a, b) => b.c - a.c);
+    const [top, second] = order;
+    const extra = top.c - (second?.c ?? 0);
+    if (extra <= 0) return;
+    const seat = this.s.seats[top.i]!;
+    seat.committed -= extra;
+    seat.bet = Math.max(0, seat.bet - extra);
+    seat.stack += extra;
+  }
+
   private winByFold(now: number) {
+    this.returnUncalled();
     const [w] = this.live();
     const seat = this.s.seats[w]!;
     const pot = this.s.seats.reduce((sum, x) => sum + (x?.committed ?? 0), 0);
@@ -784,6 +813,7 @@ export class TableRoom {
   }
 
   private showdown(now: number) {
+    this.returnUncalled();
     const live = this.live();
     const scores = new Map<number, number>();
     for (const i of live) {
@@ -817,6 +847,12 @@ export class TableRoom {
   }
 
   private finish(now: number, pause: number, say: string) {
+    // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出同花顺
+    for (const x of this.s.seats) {
+      if (!x || x.bot || !x.inHand) continue;
+      if (x.won >= BIG_POT) (this.s.unlocks ??= []).push({ userId: x.userId, id: "big_pot" });
+      if (x.shown && x.hand && (x.hand === "同花顺" || x.hand === "皇家同花顺")) (this.s.unlocks ??= []).push({ userId: x.userId, id: "straight_flush" });
+    }
     this.s.street = "showdown";
     this.s.toAct = -1;
     this.s.deadline = null;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, fmtInt, fmtTokens, type TokenRow, type WealthRow } from "../api";
-import { Avatar } from "../components";
+import { Avatar, Badge } from "../components";
 import { CoinsIcon, FlameIcon } from "../icons";
 import { tr, useLang, useT } from "../i18n";
 
@@ -61,7 +61,10 @@ export function BoardPage() {
               <span className={`rank rank-${r.rank}`}>{r.rank}</span>
               <Avatar url={r.avatarUrl} login={r.login} />
               <Link to={`/u/${r.login}`} className="who">
-                <strong>{r.name || r.login}</strong>
+                <strong>
+                  {r.name || r.login}
+                  <Badge id={r.badge} />
+                </strong>
                 <small>@{r.login}</small>
               </Link>
               {"tokens" in r ? (

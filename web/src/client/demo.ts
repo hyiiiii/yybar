@@ -1,6 +1,7 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
 import type { MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
 import { localBalance, spendLocal } from "./localTable";
+import { ACHIEVEMENTS } from "../shared/achievements";
 import { COSMETICS, DEFAULT_BACK, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type CosmeticKind, type ItemId } from "../shared/cosmetics";
 
 const PEOPLE = [
@@ -21,6 +22,8 @@ const TOP: [TokenRow["topApp"], string][] = [
   ["grok", "grok-4"], ["codex", "gpt-5-codex"], ["codex", "gpt-5"], ["grok", "grok-4"],
 ];
 
+const DEMO_BADGES: (string | null)[] = [null, "streak_30", "big_pot", null, "first_login", null, "spend_1k", null];
+
 function tokenBoard(range: string): TokenRow[] {
   const k = SCALE[range] ?? 1;
   return PEOPLE.map((p, i) => ({
@@ -29,6 +32,7 @@ function tokenBoard(range: string): TokenRow[] {
     name: p.name,
     avatarUrl: null,
     tokens: Math.round(p.tokens * k),
+    badge: p.login === "hyiiiii" ? badge : DEMO_BADGES[i] ?? null,
     topApp: TOP[i][0],
     topModel: TOP[i][1],
   }));
@@ -86,6 +90,14 @@ const owned = new Set<string>();
 const look = { back: DEFAULT_BACK, face: DEFAULT_FACE };
 const stock: Record<ItemId, number> = { timecard: 2, peek: 1, runout: 1 };
 
+/** 预览里的成就：这几个算已经解锁 */
+const demoUnlocked: Record<string, string> = { first_login: "2026-09-02", streak_7: "2026-09-20", tokens_100m: "2026-09-28", top_today: "2026-10-12", spend_1k: "2026-10-15" };
+let badge: string | null = "top_today";
+
+export function demoBadge() {
+  return badge;
+}
+
 export function demoLook() {
   return look;
 }
@@ -105,6 +117,18 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
   const url = new URL(path, "https://demo.local");
   if (url.pathname === "/api/leaderboard") {
     return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard() } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d") };
+  }
+  if (url.pathname === "/api/achievements") {
+    if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badge: null };
+    return {
+      achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: demoUnlocked[a.id] ? `${demoUnlocked[a.id]}T08:00:00Z` : null })),
+      progress: { streak: 23, tokens: 912_000_000, spend: 1_842 },
+      badge,
+    };
+  }
+  if (url.pathname === "/api/achievements/wear") {
+    badge = ((_json ?? {}) as { id: string | null }).id;
+    return { ok: true };
   }
   if (url.pathname === "/api/shop") {
     return {
@@ -141,7 +165,7 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     const p = profile("hyiiiii");
     return {
       ...p,
-      user: { ...p.user, showOnBoard },
+      user: { ...p.user, showOnBoard, badge },
       look: { ...look },
       items: { ...stock },
       emotes: demoEmotes(),

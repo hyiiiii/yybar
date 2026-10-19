@@ -3,7 +3,8 @@ import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type Ser
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { DEFAULT_BACK, DEFAULT_FACE } from "../shared/cosmetics";
 import { EmoteSprite } from "./Dealer";
-import { useT } from "./i18n";
+import { pick, useLang, useT } from "./i18n";
+import { findAchievement } from "../shared/achievements";
 import { loginHref, notifyMeChanged } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -107,6 +108,8 @@ export interface Seat {
   emote?: { id: string; key: number };
   /** 显示用的名字（机器人按语言翻译） */
   name?: string;
+  /** 名字后面戴的成就徽章 */
+  badge?: string | null;
   /** 「入座」「买入中…」这些字，按语言给 */
   labels?: { join: string; buying: string; you: string };
 }
@@ -202,7 +205,10 @@ export function FeltTable({
                 </div>
               ) : (
                 <div className="seat-plate">
-                  <span className="plate-name">{s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}</span>
+                  <span className="plate-name">
+                    {s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}
+                    <Badge id={s.badge} />
+                  </span>
                   <b className="plate-stack">{s.held ? (s.labels?.buying ?? "买入中…") : fmtMoney(s.stack ?? 0)}</b>
                 </div>
               )}
@@ -258,6 +264,18 @@ function TurnRing({ total, elapsed, hold }: { total: number; elapsed: number; ho
 }
 
 const cardKey = (c: CardSpec) => (c === "back" ? "b" : c.rank + c.suit);
+
+/** 成就徽章：小小一枚，戴在名字后面；悬停显示是哪个成就 */
+export function Badge({ id, big }: { id?: string | null; big?: boolean }) {
+  const lang = useLang();
+  const a = id ? findAchievement(id) : undefined;
+  if (!a) return null;
+  return (
+    <span className={`badge badge-${a.badge.tier}${big ? " badge-big" : ""}`} title={pick(a.name, lang)} aria-label={pick(a.name, lang)}>
+      {a.badge.label}
+    </span>
+  );
+}
 
 /** 筹码按美元显示：$1,250 */
 export function fmtMoney(n: number): string {

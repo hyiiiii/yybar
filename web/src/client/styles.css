@@ -524,6 +524,36 @@ main { min-height: 60vh; }
 .emote-shades rect { fill: #141413; }
 .emote-mark { fill: var(--clawd-ink); font-weight: 700; font-family: var(--mono); }
 
+/* 成就徽章：小圆角牌子，铜 / 银 / 金 / 陶土 / 墨五档 */
+.badge {
+  display: inline-grid; place-items: center; min-width: 17px; height: 15px; padding: 0 4px; margin-left: 4px; vertical-align: 1px;
+  border-radius: 5px; font: 800 9px/1 var(--font); letter-spacing: 0.02em; color: #fff; white-space: nowrap;
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+.badge-big { min-width: 26px; height: 22px; padding: 0 6px; margin-left: 8px; border-radius: 7px; font-size: 12px; vertical-align: 3px; }
+.badge-bronze { background: linear-gradient(180deg, #d79a66, #a8673a); }
+.badge-silver { background: linear-gradient(180deg, #c9ccd3, #8f949e); }
+.badge-gold { background: linear-gradient(180deg, #f6cf5a, #c99212); color: #4a3200; }
+.badge-clay { background: linear-gradient(180deg, #e68a6e, #c45a3a); }
+.badge-ink { background: linear-gradient(180deg, #3b3b40, #141416); color: #f6d36b; }
+.plate-name .badge { margin-left: 3px; }
+/* 成就页 */
+.ach-summary { margin: 0 0 14px; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.ach { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--panel); box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
+.ach:not(.done) .ach-badge { filter: grayscale(1); opacity: 0.45; }
+.ach.wearing { box-shadow: var(--shadow), 0 0 0 1.5px var(--accent); }
+.ach-badge { display: grid; place-items: center; height: 64px; border-radius: 10px; background: var(--table-top); box-shadow: inset 0 0 0 1px var(--table-line-2); }
+.ach-badge .badge-big { margin: 0; transform: scale(1.5); }
+.ach-info h3 { font-size: 15px; }
+.ach-info p { margin: 2px 0 0; font-size: 13px; color: var(--label-2); }
+.ach-progress { position: relative; height: 16px; margin-top: 8px; border-radius: 999px; overflow: hidden; background: var(--fill); }
+.ach-progress i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.ach-progress span { position: relative; display: block; text-align: center; font-size: 10px; line-height: 16px; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.ach-foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; }
+.ach-reward { font-weight: 600; font-variant-numeric: tabular-nums; color: #c88a0e; }
+.ach-date { position: absolute; top: 22px; right: 24px; font-size: 10px; color: var(--label-3); font-variant-numeric: tabular-nums; }
+
 /* 左上角中英切换 */
 .brand-row { display: flex; align-items: center; gap: 10px; }
 .lang-toggle { display: inline-flex; padding: 2px; border: 0; border-radius: 999px; cursor: pointer; background: var(--fill); font: inherit; font-size: 11px; color: var(--label-3); }

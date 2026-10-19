@@ -21,6 +21,8 @@ export interface UserRow {
   /** 商场里换上的牌背、牌面 */
   card_back: string;
   card_face: string;
+  /** 戴在名字后面的成就徽章 */
+  badge: string | null;
 }
 
 export type AppEnv = { Bindings: Env; Variables: { user: UserRow } };

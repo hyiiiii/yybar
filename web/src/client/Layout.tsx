@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { fmtInt } from "./api";
 import { Avatar, LoginButton } from "./components";
-import { BarIcon, CartIcon, TrophyIcon } from "./icons";
+import { BarIcon, CartIcon, PodiumIcon, TrophyIcon } from "./icons";
 import { setLang, useLang, useT } from "./i18n";
 import { useMe } from "./useMe";
 
@@ -31,7 +31,7 @@ export function Layout() {
           </button>
         </div>
         <nav>
-          {/* 三个入口都只用图标：Bar（牌桌）、商场、排行榜 */}
+          {/* 入口都只用图标：Bar（牌桌）、商场、排行榜、成就 */}
           <NavLink to="/" end className={({ isActive }) => `nav-icon${isActive || /^\/(table|bar)/.test(location.pathname) ? " active" : ""}`} aria-label="Bar" title="Bar">
             <BarIcon />
           </NavLink>
@@ -39,6 +39,9 @@ export function Layout() {
             <CartIcon />
           </NavLink>
           <NavLink to="/board" className="nav-icon" aria-label={t("排行榜", "Leaderboard")} title={t("排行榜", "Leaderboard")}>
+            <PodiumIcon />
+          </NavLink>
+          <NavLink to="/achievements" className="nav-icon" aria-label={t("成就", "Achievements")} title={t("成就", "Achievements")}>
             <TrophyIcon />
           </NavLink>
           {user ? (

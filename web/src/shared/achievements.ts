@@ -1,0 +1,64 @@
+// 成就：达成后送一笔筹码（按 $ 显示），并解锁一个徽章，可以挑一个戴在名字后面。
+// 大部分按用量和流水算（打开网站时检查），「大赢家」「同花顺」由牌桌在一手结束时记下。
+
+import type { Text } from "./cosmetics";
+
+export type AchievementId =
+  | "first_login"
+  | "streak_7"
+  | "streak_30"
+  | "streak_365"
+  | "top_today"
+  | "first_sit"
+  | "first_purchase"
+  | "tokens_100m"
+  | "tokens_1b"
+  | "spend_1k"
+  | "big_pot"
+  | "straight_flush";
+
+export interface Achievement {
+  id: AchievementId;
+  name: Text;
+  how: Text;
+  /** 奖励的筹码 */
+  reward: number;
+  /** 徽章上的字和配色档次 */
+  badge: { label: string; tier: "bronze" | "silver" | "gold" | "clay" | "ink" };
+  /** 有进度条的成就：目标值（连续天数、token 数、美元） */
+  target?: number;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: "first_login", name: { zh: "第一次登录！", en: "First Login!" }, how: { zh: "登录 yybar 网站。", en: "Sign in to the yybar website." }, reward: 1_000, badge: { label: "Hi", tier: "bronze" } },
+  { id: "first_sit", name: { zh: "入座", en: "Take a Seat" }, how: { zh: "第一次在 Bar 里坐下。", en: "Sit at a table in the Bar for the first time." }, reward: 500, badge: { label: "♠", tier: "bronze" } },
+  { id: "first_purchase", name: { zh: "剁手", en: "Retail Therapy" }, how: { zh: "在商场买第一件东西。", en: "Buy your first thing in the shop." }, reward: 500, badge: { label: "$", tier: "bronze" } },
+  { id: "streak_7", name: { zh: "连续 7 天 work", en: "7-Day Work Streak" }, how: { zh: "连续 7 天都有用量上传。", en: "Usage uploaded 7 days in a row." }, reward: 2_000, badge: { label: "7", tier: "silver" }, target: 7 },
+  { id: "streak_30", name: { zh: "连续 30 天 work", en: "30-Day Work Streak" }, how: { zh: "连续 30 天都有用量上传。", en: "Usage uploaded 30 days in a row." }, reward: 10_000, badge: { label: "30", tier: "gold" }, target: 30 },
+  { id: "streak_365", name: { zh: "连续 365 天 work", en: "365-Day Work Streak" }, how: { zh: "整整一年，一天没歇。", en: "A full year without a day off." }, reward: 100_000, badge: { label: "365", tier: "clay" }, target: 365 },
+  { id: "top_today", name: { zh: "今天 token 第一！", en: "Today's #1!" }, how: { zh: "某一天烧的 token 是全站第一。", en: "Burn the most tokens on the site in a day." }, reward: 5_000, badge: { label: "#1", tier: "gold" } },
+  { id: "tokens_100m", name: { zh: "一亿 token", en: "100M Tokens" }, how: { zh: "累计烧掉 1 亿 token。", en: "Burn 100 million tokens in total." }, reward: 3_000, badge: { label: "100M", tier: "silver" }, target: 100_000_000 },
+  { id: "tokens_1b", name: { zh: "十亿 token", en: "1B Tokens" }, how: { zh: "累计烧掉 10 亿 token。", en: "Burn 1 billion tokens in total." }, reward: 20_000, badge: { label: "1B", tier: "gold" }, target: 1_000_000_000 },
+  { id: "spend_1k", name: { zh: "千刀俱乐部", en: "$1K Club" }, how: { zh: "累计 AI 花费到 $1,000。", en: "Reach $1,000 in total AI spend." }, reward: 10_000, badge: { label: "$1K", tier: "ink" }, target: 1_000 },
+  { id: "big_pot", name: { zh: "大赢家", en: "Big Pot" }, how: { zh: "一手赢下 $10,000 以上。", en: "Win $10,000 or more in one hand." }, reward: 5_000, badge: { label: "BIG", tier: "clay" } },
+  { id: "straight_flush", name: { zh: "同花顺！", en: "Straight Flush!" }, how: { zh: "摊牌时亮出同花顺（皇家同花顺也算）。", en: "Show down a straight flush (royal counts)." }, reward: 20_000, badge: { label: "SF", tier: "ink" } },
+];
+
+/** 一手赢这么多算「大赢家」 */
+export const BIG_POT = 10_000;
+
+export function findAchievement(id: string): Achievement | undefined {
+  return ACHIEVEMENTS.find((a) => a.id === id);
+}
+
+/** 一串日期（YYYY-MM-DD，升序、不重复）里最长的连续天数 */
+export function longestStreak(days: string[]): number {
+  let best = 0, run = 0, prev = 0;
+  for (const d of days) {
+    const t = Date.parse(`${d}T00:00:00Z`) / 86_400_000;
+    run = t - prev === 1 ? run + 1 : 1;
+    prev = t;
+    best = Math.max(best, run);
+  }
+  return best;
+}

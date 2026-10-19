@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type Profile } from "../api";
-import { Avatar, LoginButton } from "../components";
+import { Avatar, Badge, LoginButton } from "../components";
 import { notifyMeChanged, useMe } from "../useMe";
 import { ProfileView } from "./User";
 import { tr, useLang, useT } from "../i18n";
@@ -55,7 +55,10 @@ export function MePage() {
       <div className="profile-head">
         <Avatar url={me.user.avatarUrl} login={me.user.login} size={56} />
         <div>
-          <h1>{me.user.name || me.user.login}</h1>
+          <h1>
+            {me.user.name || me.user.login}
+            <Badge id={me.user.badge} big />
+          </h1>
           <span className="muted">@{me.user.login}</span>
         </div>
         <button className="btn btn-ghost push-right" onClick={logout} disabled={busy}>{t("退出登录", "Sign out")}</button>
