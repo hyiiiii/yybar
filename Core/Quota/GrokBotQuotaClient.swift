@@ -1,5 +1,6 @@
 import CommonCrypto
 import Foundation
+import Security
 
 // MARK: - Grok Bot
 //
@@ -100,28 +101,24 @@ enum GrokBotAuth {
             .appendingPathComponent("Library/Application Support/Grok Bot/sand-secrets.json")
     }
 
-    /// 读钥匙串口令并派生 AES 密钥。首次读取 macOS 会弹窗，点「始终允许」后不再询问。
-    /// 会阻塞到 `security` 退出，调用方放到后台执行。
+    /// 读钥匙串口令并派生 AES 密钥。用 Security 框架在 yybar 进程内读，macOS 弹窗问的是 yybar 本身，
+    /// 「始终允许」只把 yybar 加进这一项的访问列表(不用 /usr/bin/security,免得任何脚本都能静默读取)。
+    /// 自签名构建每次重新构建后可能再问一次。会阻塞到用户回应弹窗，调用方放到后台执行。
     nonisolated static func loadKey() -> Result<Data, GrokBotAuthError> {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        proc.arguments = ["find-generic-password", "-s", keychainService, "-w"]
-        let out = Pipe()
-        let err = Pipe()
-        proc.standardOutput = out
-        proc.standardError = err
-        do { try proc.run() } catch { return .failure(.keychainDenied(error.localizedDescription)) }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
-        let password = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        // 44 = errSecItemNotFound:Grok Bot 还没在这台 Mac 上存过登录。
-        if proc.terminationStatus == 44 { return .failure(.notSignedIn) }
-        guard proc.terminationStatus == 0, !password.isEmpty else {
-            let msg = String(data: errData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return .failure(.keychainDenied(msg.isEmpty ? "exit \(proc.terminationStatus)" : msg))
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return .failure(.notSignedIn) }
+        guard status == errSecSuccess, let data = item as? Data,
+              let password = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !password.isEmpty else {
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
+            return .failure(.keychainDenied(message))
         }
         guard let key = deriveKey(password: password) else { return .failure(.keychainDenied("key derivation failed")) }
         return .success(key)
