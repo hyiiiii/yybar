@@ -25,7 +25,7 @@ enum GrokBotQuotaClient {
 
     nonisolated static func fetch(accessToken: String) async -> Result<QuotaSnapshot, QuotaError> {
         // 复合登录串(`账号::JWT`)多数端点要整串当 Bearer;万一端点只认里面那段 JWT,401 时再用 JWT 试一次。
-        let jwtOnly = embeddedJWT(accessToken)
+        let jwtOnly = GrokBotAuth.embeddedJWT(accessToken)
         let result = await request(bearer: accessToken)
         if case .failure(let error) = result, error.httpStatusCode == 401,
            let jwtOnly, jwtOnly != accessToken {
@@ -313,8 +313,15 @@ enum GrokBotAuth {
         return tiers.lazy.compactMap(latest).first
     }
 
+    /// 三段都只含 base64url 字符(签名段可空)且载荷能解开。不查字符集的话，`账号%3A%3A<JWT>` 这种复合串
+    /// 整体也能按点拆成三段、解开载荷，被误当成纯 JWT。
     nonisolated static func isJWT(_ value: String) -> Bool {
-        value.split(separator: ".").count == 3 && JWT.decodePayload(value) != nil
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty else { return false }
+        let base64URL = parts.allSatisfy { part in
+            part.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) && $0.isASCII || $0 == "-" || $0 == "_" }
+        }
+        return base64URL && JWT.decodePayload(value) != nil
     }
 
     /// 值本身是 JWT,或复合登录串(`账号::JWT`,分隔符可能是 `::` 或转义的 `%3A%3A`)里的某一段是 JWT。
