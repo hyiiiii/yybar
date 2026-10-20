@@ -134,6 +134,15 @@ struct GoogleQuotaRegression {
         }
         precondition(t3b == access)
 
+        // 3c. 复合登录串(账号::JWT,分隔符转义成 %3A%3A),键名叫 session:整串原样返回。
+        let composite = "user_abc123%3A%3A" + access
+        let file3c = "{\"workos\":\"" + encrypt("{\"WorkosCursorSessionToken\":\"" + composite + "\"}", key: key).base64EncodedString() + "\"}"
+        guard case .success(let t3c) = GrokBotAuth.extractToken(fileData: Data(file3c.utf8), key: key, now: now) else {
+            preconditionFailure("expected composite session token")
+        }
+        precondition(t3c == composite)
+        precondition(GrokBotAuth.embeddedJWT(composite) == access)
+
         // 4. 过期 token → expired;口令不对 → noToken;没有密文 → noToken。
         let expiredInner = "{\"accessToken\":\"" + jwt(exp: 1_700_000_000) + "\"}"
         let expiredFile = "{\"a\":\"" + encrypt(expiredInner, key: key).base64EncodedString() + "\"}"

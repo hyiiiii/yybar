@@ -24,10 +24,21 @@ enum GrokBotQuotaClient {
     }
 
     nonisolated static func fetch(accessToken: String) async -> Result<QuotaSnapshot, QuotaError> {
+        // 复合登录串(`账号::JWT`)多数端点要整串当 Bearer;万一端点只认里面那段 JWT,401 时再用 JWT 试一次。
+        let jwtOnly = embeddedJWT(accessToken)
+        let result = await request(bearer: accessToken)
+        if case .failure(let error) = result, error.httpStatusCode == 401,
+           let jwtOnly, jwtOnly != accessToken {
+            return await request(bearer: jwtOnly)
+        }
+        return result
+    }
+
+    nonisolated private static func request(bearer: String) async -> Result<QuotaSnapshot, QuotaError> {
         var request = URLRequest(url: endpoint, timeoutInterval: 20)
         request.httpMethod = "POST"
         request.httpBody = Data("{}".utf8)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
         do {
@@ -280,20 +291,24 @@ enum GrokBotAuth {
         }
     }
 
-    /// 优先级：键名含 access 的 JWT > 键名含 access 的长字符串 > 任意 JWT。键名含 refresh 的一律不用。
-    /// 同一档里有多个(多个 Cursor 账号)时取过期时间最晚的，Grok Bot 当前登录的账号 token 最新。
+    /// 挑登录串。Grok Bot 用 Cursor 账号,登录串常是复合形式(`账号::一串 JWT`,`::` 可能被转义成
+    /// `%3A%3A`),整串就是请求要带的 Bearer,不是纯 JWT;也可能直接是一串 JWT。所以只要值里含有一段
+    /// 合法 JWT(本身是，或按 `::` / `%3A%3A` 拆开后某段是)就算候选,整串原样返回。
+    /// 优先级:键名含 access / token / session / auth 的 > 其他含 JWT 的。键名含 refresh 的一律不用。
+    /// 同一档里有多个(多个 Cursor 账号)时取内嵌 JWT 过期时间最晚的,当前登录的账号最新。
     nonisolated static func pickAccessToken(_ strings: [(path: String, value: String)]) -> String? {
         let usable = strings
             .map { (path: $0.path.lowercased(), value: $0.value.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            .filter { !$0.path.contains("refresh") && !$0.value.contains(" ") }
-        func isAccess(_ path: String) -> Bool { path.contains("access") }
+            .filter { !$0.path.contains("refresh") && !$0.value.contains(" ") && embeddedJWT($0.value) != nil }
+        func named(_ path: String) -> Bool {
+            ["access", "token", "session", "auth"].contains { path.contains($0) }
+        }
         func latest(_ values: [String]) -> String? {
             values.max { (expiry(of: $0) ?? .distantPast) < (expiry(of: $1) ?? .distantPast) }
         }
         let tiers: [[String]] = [
-            usable.filter { isAccess($0.path) && isJWT($0.value) }.map { $0.value },
-            usable.filter { isAccess($0.path) && $0.value.count >= 20 }.map { $0.value },
-            usable.filter { isJWT($0.value) }.map { $0.value },
+            usable.filter { named($0.path) }.map { $0.value },
+            usable.map { $0.value },
         ]
         return tiers.lazy.compactMap(latest).first
     }
@@ -302,8 +317,17 @@ enum GrokBotAuth {
         value.split(separator: ".").count == 3 && JWT.decodePayload(value) != nil
     }
 
+    /// 值本身是 JWT,或复合登录串(`账号::JWT`,分隔符可能是 `::` 或转义的 `%3A%3A`)里的某一段是 JWT。
+    nonisolated static func embeddedJWT(_ value: String) -> String? {
+        if isJWT(value) { return value }
+        let normalized = value.replacingOccurrences(of: "%3A%3A", with: "::")
+            .replacingOccurrences(of: "%3a%3a", with: "::")
+        guard normalized.contains("::") else { return nil }
+        return normalized.components(separatedBy: "::").first(where: isJWT)
+    }
+
     nonisolated static func expiry(of token: String) -> Date? {
-        guard let payload = JWT.decodePayload(token) else { return nil }
+        guard let jwt = embeddedJWT(token), let payload = JWT.decodePayload(jwt) else { return nil }
         if let exp = payload["exp"] as? Double { return Date(timeIntervalSince1970: exp) }
         if let exp = payload["exp"] as? Int { return Date(timeIntervalSince1970: TimeInterval(exp)) }
         return nil
