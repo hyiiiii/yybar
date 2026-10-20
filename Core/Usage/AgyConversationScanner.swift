@@ -10,7 +10,8 @@ import SQLite3
 ///   5 = 缓存读取、9 = 其中思考、10 = 其中回复)、field 11 = 模型枚举。
 ///   缓存读取字段号按 CodexBar 的解析(本机库里暂未出现过);按 Gemini API 口径视为包含在输入里，记账时从输入扣掉。
 /// - `gen_metadata.data`:field 1 → 3 = 模型枚举、19 = 模型名(如 `gemini-3.8-flash-n`、`claude-opus-4-6-thinking`)。
-/// 归属与额度池一致:Gemini 模型记到 Gemini,其余(Claude / GPT-OSS)记到 Antigravity。
+/// 按工具归属：agy 里的所有调用(包括 Gemini 模型)都记到 Antigravity;Gemini 只记 Gemini 自己的客户端(目前本机读不到)。
+/// 额度格子仍按池子分(Gemini 模型池 / Claude + GPT 池),所以统计和额度不是一一对应。
 ///
 /// agy 运行中会持有库并写 WAL,所以先把 `.db` / `-wal` 复制到临时目录再打开副本，不锁原库。
 /// 增量：库和 WAL 的修改时间、大小都没变就跳过;变了则重读该库，已记过的 step(按 idx,存在 seenTurnIds)不重复计。
@@ -66,10 +67,8 @@ enum AgyConversationScanner {
         return .init(entries: entries, newState: states, filesScanned: files.count, linesParsed: stepsParsed)
     }
 
-    /// Gemini 模型 → Gemini 池，其余 → Antigravity 池。
-    nonisolated static func app(forModel model: String) -> UsageApp {
-        model.lowercased().hasPrefix("gemini") ? .gemini : .agy
-    }
+    /// agy 产生的用量一律记到 Antigravity(按工具，不按模型)。
+    nonisolated static func app(forModel model: String) -> UsageApp { .agy }
 
     /// agy 的模型名带变体后缀(`-thinking`、`-n` 等),去掉后才能对上价格表。
     nonisolated static func canonicalModel(_ raw: String) -> String {

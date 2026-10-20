@@ -14,7 +14,8 @@ struct ScanState: Sendable, Equatable, Codable {
     /// version 管「结构变更」（字段增减导致解码不兼容时 bump）；价格变更由 pricingFingerprint 接管。
     /// v5: Codex 累计去重及 Grok 扫描；重建历史聚合。
     /// v6: 新增 agy 会话库扫描(Gemini / Antigravity)。
-    static let currentVersion: Int = 6
+    /// v7: agy 用量改为全部记到 Antigravity(重建时旧的 Gemini 桶并入 Antigravity,见 UsageService.mergePreservingHistory)。
+    static let currentVersion: Int = 7
     var version: Int = ScanState.currentVersion
     /// 写盘时记录的价格表指纹；load 时与当前 `Pricing.fingerprint` 不一致即视为缓存失效、全量重扫重算。
     var pricingFingerprint: String = ""

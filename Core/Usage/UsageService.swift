@@ -204,6 +204,12 @@ final class UsageService {
         func tokens(_ buckets: [UsageBucket]) -> Int {
             buckets.reduce(0) { $0 + $1.inputTokens + $1.outputTokens + $1.cacheReadTokens + $1.cacheCreationTokens }
         }
+        // Gemini 的用量只来自过 agy 会话库，v7 起改记 Antigravity:旧桶先并过去，免得按天比较时被当成「日志已删的历史」留下。
+        let old = old.map { bucket -> UsageBucket in
+            var moved = bucket
+            if moved.app == .gemini { moved.app = .agy }
+            return moved
+        }
         let oldByDay = Dictionary(grouping: old) { DayApp(day: $0.day, app: $0.app) }
         let freshByDay = Dictionary(grouping: fresh) { DayApp(day: $0.day, app: $0.app) }
         var result: [UsageBucket] = []

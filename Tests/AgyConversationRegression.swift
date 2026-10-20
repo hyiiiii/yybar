@@ -56,7 +56,7 @@ struct AgyConversationRegression {
         precondition(calls[1].model == "claude-opus-4-6" && calls[1].input == 15_975 && calls[1].output == 60)
         precondition(calls[2].model == "agy-model-77" && calls[2].input == 60 && calls[2].cacheRead == 40)
         precondition(calls[1].cacheRead == 0)
-        precondition(AgyConversationScanner.app(forModel: calls[0].model) == .gemini)
+        precondition(AgyConversationScanner.app(forModel: calls[0].model) == .agy)   // 按工具归属
         precondition(AgyConversationScanner.app(forModel: calls[1].model) == .agy)
         precondition(AgyConversationScanner.app(forModel: calls[2].model) == .agy)
         precondition(AgyConversationScanner.canonicalModel("gpt-oss-120b-medium") == "gpt-oss-120b")
@@ -64,7 +64,7 @@ struct AgyConversationRegression {
         // 增量：同一个库第二次扫描不重复计。
         let roots = [dir]
         let first = AgyConversationScanner.scan(previous: [:], roots: roots)
-        precondition(first.entries.count == 3 && first.entries.filter { $0.app == .gemini }.count == 1)
+        precondition(first.entries.count == 3 && first.entries.allSatisfy { $0.app == .agy })
         precondition(first.entries[0].costUSD > 0)   // gemini-3.8-flash 有价
         let second = AgyConversationScanner.scan(previous: first.newState, roots: roots)
         precondition(second.entries.isEmpty)
