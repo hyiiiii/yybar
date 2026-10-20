@@ -79,9 +79,7 @@ struct QuotaOnlyServiceCard: View {
                 windows: QuotaCardView.grokWindows(appState.grokBotQuota),
                 inUse: true,
                 refreshState: appState.grokBotRefreshState,
-                error: GrokBotQuotaClient.isConnected ? appState.grokBotQuotaError
-                    : tr("Quota not connected yet: reading the Grok Bot app sign-in is not implemented.",
-                         "额度未接通：尚未实现读取 Grok Bot app 的登录。")
+                error: appState.grokBotQuotaError
             )
         default:
             QuotaCardView(

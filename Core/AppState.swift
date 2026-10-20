@@ -71,7 +71,7 @@ final class AppState {
     //
     // Gemini 与 agy 的额度来自同一次 `agy -p /usage`(Google 账号的两个池子):
     // Gemini 池(Pro + Flash 共用)→ geminiQuota,Claude + GPT 池 → agyQuota,共用一个刷新状态。
-    // Grok Bot 额度尚未接通(见 GrokBotQuotaClient),grokBotQuota 恒为 nil。
+    // Grok Bot 额度用本机 Grok Bot app 的登录读取(见 GrokBotQuotaClient / GrokBotAuth)。
     var geminiQuota: QuotaSnapshot?
     var agyQuota: QuotaSnapshot?
     var googleQuotaError: String?
@@ -79,6 +79,10 @@ final class AppState {
     var grokBotQuota: QuotaSnapshot?
     var grokBotQuotaError: String?
     var grokBotRefreshState = QuotaRefreshState()
+    /// 从钥匙串「Grok Bot Safe Storage」派生的解密密钥，只留在内存，避免每次刷新都读钥匙串。
+    private var grokBotKey: Data?
+    /// 钥匙串读取被拒绝后，定时刷新不再自动弹窗，等手动刷新再问。
+    private var grokBotKeychainDenied = false
     /// 本机 agy 登录的 Google 邮箱(从 agy 日志读，只用于显示和识别重复账号)。
     var googleEmail: String?
     /// 本机 agy 的套餐名(只取 /usage 输出里自带的，没有就是 nil)。
@@ -207,12 +211,14 @@ final class AppState {
     func refreshQuotas(reason: QuotaRefreshReason = .periodic) async {
         async let grokRefresh: Void = loadGrokQuota(reason: reason)
         async let googleRefresh: Void = loadGoogleQuota(reason: reason)
+        async let grokBotRefresh: Void = loadGrokBotQuota(reason: reason)
         await loadCodex()
         await loadClaude()
         await loadCodexQuota(reason: reason)
         await loadClaudeQuota(reason: reason)
         await grokRefresh
         await googleRefresh
+        await grokBotRefresh
         await loadAllImportedCodexQuotas(reason: reason)
         await loadAllExtraQuotas(reason: reason)
         logQuotaSummary()
@@ -349,8 +355,10 @@ final class AppState {
             googleRefreshState.lastSuccessAt = updated
             googleRefreshState.source = .cache
         }
-        if GrokBotQuotaClient.isInstalled, !GrokBotQuotaClient.isConnected {
-            grokBotQuotaError = "Grok Bot 额度未接通"
+        if let record = quotaCache.grokBot {
+            grokBotQuota = record.snapshot
+            grokBotRefreshState.lastSuccessAt = record.updatedAt
+            grokBotRefreshState.source = .cache
         }
         for (id, record) in quotaCache.extra ?? [:] {
             extraQuotas[id] = record.snapshot
@@ -442,7 +450,13 @@ final class AppState {
         case .agy: settings.showAgy = enabled
         default: return
         }
-        if enabled, app != .grokBot { Task { await loadGoogleQuota(reason: .userInitiated) } }
+        if enabled {
+            if app == .grokBot {
+                Task { await loadGrokBotQuota(reason: .userInitiated) }
+            } else {
+                Task { await loadGoogleQuota(reason: .userInitiated) }
+            }
+        }
         FloatingPanelController.shared.sync()
     }
 
@@ -1815,6 +1829,85 @@ final class AppState {
             googleQuotaError = message
             googleRefreshState.lastError = message
         }
+    }
+
+    /// Grok Bot:解密本机 Grok Bot app 存的 Cursor token(只读),再查每周额度。失败保留旧快照。
+    func loadGrokBotQuota(reason: QuotaRefreshReason) async {
+        guard SettingsStore.shared.showGrokBot, GrokBotQuotaClient.isInstalled,
+              !grokBotRefreshState.inFlight else { return }
+        let now = Date()
+        if let until = grokBotRefreshState.backoffUntil, until > now { return }
+        if reason == .periodic {
+            if grokBotKeychainDenied { return }
+            if let last = grokBotRefreshState.lastSuccessAt, now.timeIntervalSince(last) < minSuccessInterval { return }
+        }
+        grokBotRefreshState.inFlight = true
+        grokBotRefreshState.lastAttemptAt = now
+        defer { grokBotRefreshState.inFlight = false }
+
+        let key: Data
+        if let cached = grokBotKey {
+            key = cached
+        } else {
+            switch await Task.detached(operation: { GrokBotAuth.loadKey() }).value {
+            case .success(let loaded):
+                key = loaded
+                grokBotKey = loaded
+                grokBotKeychainDenied = false
+            case .failure(.notSignedIn):
+                markGrokBotFailure("Grok Bot 未登录，请打开 Grok Bot app 登录")
+                return
+            case .failure:
+                grokBotKeychainDenied = true
+                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝。点刷新会再询问，选「始终允许」后不再弹出")
+                return
+            }
+        }
+        let token: String
+        switch await Task.detached(operation: { GrokBotAuth.loadToken(key: key) }).value {
+        case .success(let value):
+            token = value
+        case .failure(let error):
+            switch error {
+            case .notSignedIn:
+                markGrokBotFailure("Grok Bot 未登录，请打开 Grok Bot app 登录")
+            case .expired:
+                markGrokBotFailure("Grok Bot 登录已过期，打开 Grok Bot app 让它续期后再刷新")
+            case .noToken, .keychainDenied:
+                // 钥匙串口令可能变了(重装 / 重新登录),下次重新读。
+                grokBotKey = nil
+                markGrokBotFailure("没能从 Grok Bot app 的登录里解出 token")
+            }
+            return
+        }
+        switch await GrokBotQuotaClient.fetch(accessToken: token) {
+        case .success(let snapshot):
+            markActivityIfConsumed(.grokBot, old: grokBotQuota, new: snapshot)
+            grokBotQuota = snapshot
+            quotaCache.grokBot = QuotaCacheRecord(snapshot: snapshot, source: .api, updatedAt: snapshot.fetchedAt)
+            saveQuotaCache()
+            recordQuotaHistory(accountKey: QuotaHistoryAccountKey.grokBotPrimary(), app: .grokBot,
+                               kind: .grokBotPrimary, snapshot: snapshot, sampledAt: snapshot.fetchedAt)
+            grokBotQuotaError = nil
+            grokBotRefreshState.lastError = nil
+            grokBotRefreshState.backoffUntil = nil
+            grokBotRefreshState.lastSuccessAt = Date()
+            grokBotRefreshState.source = .api
+        case .failure(let error):
+            if error.isRateLimited {
+                grokBotRefreshState.backoffUntil = Date().addingTimeInterval(rateLimitBackoff)
+            }
+            if error.httpStatusCode == 401 {
+                markGrokBotFailure("Grok Bot 登录已过期，打开 Grok Bot app 让它续期后再刷新")
+            } else {
+                markGrokBotFailure(error.description)
+            }
+        }
+    }
+
+    private func markGrokBotFailure(_ message: String) {
+        grokBotQuotaError = message
+        grokBotRefreshState.lastError = message
     }
 
     /// 没有本地会话日志的服务：两次刷新之间剩余减少了(5H 或 WK),就让菜单栏图标呼吸到下次刷新之后。

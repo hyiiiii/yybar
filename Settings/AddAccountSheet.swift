@@ -260,8 +260,8 @@ struct AddAccountSheet: View {
                 }
             }
             if choice == .grokBot {
-                Text(tr("Grok Bot can't have extra accounts: yybar can only read the sign-in of the Grok Bot app on this Mac (and its quota isn't connected yet).",
-                        "Grok Bot 暂不能添加其他账号：yybar 只能读取本机 Grok Bot app 的登录(而且它的额度还没接通)。"))
+                Text(tr("Grok Bot can't have extra accounts: yybar can only read the sign-in of the Grok Bot app on this Mac.",
+                        "Grok Bot 暂不能添加其他账号：yybar 只能读取本机 Grok Bot app 的登录。"))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

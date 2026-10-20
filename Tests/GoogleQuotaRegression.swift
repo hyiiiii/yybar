@@ -1,6 +1,8 @@
+import CommonCrypto
 import Foundation
 
-// 此独立回归不读真实登录、不联网、不运行 agy;只验证 Gemini / agy 与 Grok Bot 的响应解析。
+// 此独立回归不读真实登录、不读钥匙串、不联网、不运行 agy;只验证 Gemini / agy 与 Grok Bot 的响应解析和
+// Grok Bot 登录文件的解密(用自造的口令和 token)。
 
 @main
 struct GoogleQuotaRegression {
@@ -65,6 +67,85 @@ struct GoogleQuotaRegression {
             _ = try GrokBotQuotaClient.parse(data: Data(#"{"usesPooledEnterpriseAllowance":true}"#.utf8))
             preconditionFailure("expected pooled allowance error")
         } catch is QuotaError {}
+
+        try grokBotAuth()
         print("GoogleQuotaRegression OK")
+    }
+
+    /// Electron safeStorage 格式的自造样例:"v10" + AES-128-CBC(PKCS7,IV 16 个空格)。
+    static func grokBotAuth() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let key = GrokBotAuth.deriveKey(password: "test-safe-storage-password")!
+        precondition(key.count == 16)
+        func jwt(exp: Int) -> String {
+            func b64(_ s: String) -> String {
+                Data(s.utf8).base64EncodedString()
+                    .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: "=", with: "")
+            }
+            return b64(#"{"alg":"HS256","typ":"JWT"}"#) + "." + b64("{\"sub\":\"user_test\",\"exp\":\(exp)}") + ".c2ln"
+        }
+        func encrypt(_ text: String, key: Data) -> Data {
+            let plain = [UInt8](text.utf8), keyBytes = [UInt8](key)
+            let iv = [UInt8](repeating: 0x20, count: kCCBlockSizeAES128)
+            var out = [UInt8](repeating: 0, count: plain.count + kCCBlockSizeAES128)
+            let capacity = out.count
+            var moved = 0
+            let status = CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                                 keyBytes, keyBytes.count, iv, plain, plain.count, &out, capacity, &moved)
+            precondition(Int(status) == kCCSuccess)
+            return Data("v10".utf8) + Data(out.prefix(moved))
+        }
+        let access = jwt(exp: 1_800_003_600), refresh = jwt(exp: 1_900_000_000)
+
+        // 解密往返。
+        precondition(GrokBotAuth.decrypt(encrypt("hello", key: key), key: key) == Data("hello".utf8))
+
+        // 1. 整个登录 JSON 加密后以 base64 存:取 accessToken,不取 refreshToken。
+        let inner = "{\"refreshToken\":\"\(refresh)\",\"accessToken\":\"\(access)\"}"
+        let file1 = "{\"sand.auth\":\"\(encrypt(inner, key: key).base64EncodedString())\"}"
+        guard case .success(let t1) = GrokBotAuth.extractToken(fileData: Data(file1.utf8), key: key, now: now) else {
+            preconditionFailure("expected token from base64 blob")
+        }
+        precondition(t1 == access)
+
+        // 2. 每个值单独加密，存成 Node Buffer JSON:按外层键名挑 access。
+        func buffer(_ data: Data) -> String { "{\"type\":\"Buffer\",\"data\":[" + data.map { String($0) }.joined(separator: ",") + "]}" }
+        let file2 = "{\"cursorRefreshToken\":\(buffer(encrypt(refresh, key: key))),\"cursorAccessToken\":\(buffer(encrypt(access, key: key)))}"
+        guard case .success(let t2) = GrokBotAuth.extractToken(fileData: Data(file2.utf8), key: key, now: now) else {
+            preconditionFailure("expected token from Buffer blob")
+        }
+        precondition(t2 == access)
+
+        // 3. hex 字符串，键名不含 access:退回取 JWT。
+        let hex = encrypt(access, key: key).map { String(format: "%02x", $0) }.joined()
+        guard case .success(let t3) = GrokBotAuth.extractToken(fileData: Data("{\"token\":\"\(hex)\"}".utf8), key: key, now: now) else {
+            preconditionFailure("expected token from hex blob")
+        }
+        precondition(t3 == access)
+
+        // 3b. cursor-accounts 里有两个账号：取过期时间最晚(当前登录)的 access token。
+        let older = jwt(exp: 1_800_001_000)
+        let accounts = "{\"cursor-accounts\":[{\"cursor-access-token\":\"" + older + "\",\"cursor-refresh-token\":\"" + refresh
+            + "\"},{\"cursor-access-token\":\"" + access + "\"}]}"
+        let file3b = "{\"secrets\":\"" + encrypt(accounts, key: key).base64EncodedString() + "\"}"
+        guard case .success(let t3b) = GrokBotAuth.extractToken(fileData: Data(file3b.utf8), key: key, now: now) else {
+            preconditionFailure("expected token from cursor-accounts")
+        }
+        precondition(t3b == access)
+
+        // 4. 过期 token → expired;口令不对 → noToken;没有密文 → noToken。
+        let expiredInner = "{\"accessToken\":\"" + jwt(exp: 1_700_000_000) + "\"}"
+        let expiredFile = "{\"a\":\"" + encrypt(expiredInner, key: key).base64EncodedString() + "\"}"
+        guard case .failure(.expired) = GrokBotAuth.extractToken(fileData: Data(expiredFile.utf8), key: key, now: now) else {
+            preconditionFailure("expected expired")
+        }
+        let wrongKey = GrokBotAuth.deriveKey(password: "other")!
+        guard case .failure(.noToken) = GrokBotAuth.extractToken(fileData: Data(file1.utf8), key: wrongKey, now: now) else {
+            preconditionFailure("expected noToken with wrong key")
+        }
+        guard case .failure(.noToken) = GrokBotAuth.extractToken(fileData: Data(#"{"x":"plain"}"#.utf8), key: key, now: now) else {
+            preconditionFailure("expected noToken without blobs")
+        }
     }
 }

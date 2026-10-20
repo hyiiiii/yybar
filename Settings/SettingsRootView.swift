@@ -253,7 +253,7 @@ struct SettingsRootView: View {
         switch app {
         case .grokBot:
             detected = GrokBotQuotaClient.isInstalled
-            // 额度未接通，拿不到账号邮箱 / 套餐，留空(「查看额度」里显示未接通)。
+            // Grok Bot 的 token 里没有邮箱，只显示额度接口返回的套餐。
             email = nil
             plan = appState.grokBotQuota?.planType
             enabled = Binding(get: { settings.showGrokBot }, set: { settings.showGrokBot = $0 })

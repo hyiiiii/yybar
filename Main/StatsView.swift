@@ -1066,8 +1066,7 @@ struct StatsView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
                 ForEach(Array(apps.enumerated()), id: \.element) { index, app in
                     QuotaTile(app: app, lanes: quotaLanes(for: app), note: quotaNote(for: app),
-                              unavailable: (app == .grokBot && !GrokBotQuotaClient.isConnected)
-                                || (app == .gemini && !GoogleQuotaClient.isGeminiAppConnected))
+                              unavailable: app == .gemini && !GoogleQuotaClient.isGeminiAppConnected)
                         .padding(.vertical, 8)
                         .overlay(alignment: .top) {
                             if index >= 2 { Divider() }
@@ -1102,8 +1101,7 @@ struct StatsView: View {
         case .codex, .claude: return nil
         case .grok: return appState.grokPlan
         case .grokBot:
-            return GrokBotQuotaClient.isConnected ? appState.grokBotQuota?.planType
-                : tr("Not connected yet (Grok Bot app sign-in)", "未接通(需读取 Grok Bot app 的登录)")
+            return appState.grokBotQuota?.planType ?? appState.grokBotQuotaError
         case .gemini:
             return GoogleQuotaClient.isGeminiAppConnected ? nil
                 : tr("Not connected (Gemini app quota has no readable source)", "未接通(Gemini app 的额度没有可读来源)")
@@ -1369,11 +1367,11 @@ struct StatsView: View {
                     provider: "Grok", plan: account.plan, email: account.email, index: idx + 1,
                     tint: .grokAccent, snapshot: appState.extraQuotas[account.id], accountExists: true)
             }
-            // Grok Bot 只有周额度(额度接通后才会有记录)。
+            // Grok Bot 只有周额度。
             add(base: QuotaHistoryAccountKey.grokBotPrimary(),
                 provider: "Grok Bot", plan: appState.grokBotQuota?.planType, email: nil, index: nil,
                 tint: .grokAccent, snapshot: appState.grokBotQuota,
-                accountExists: GrokBotQuotaClient.isConnected && SettingsStore.shared.showGrokBot)
+                accountExists: SettingsStore.shared.showGrokBot)
         }
 
         // Antigravity:agy 的 Gemini 池和 Claude·GPT 池各一条。
@@ -2133,7 +2131,7 @@ private struct QuotaTile: View {
     let app: UsageApp
     let lanes: [(label: String, window: QuotaWindow?)]
     let note: String?
-    /// 额度还没接通(Grok Bot):不画额度行。
+    /// 额度还没接通(Gemini app):不画额度行。
     var unavailable = false
 
     var body: some View {

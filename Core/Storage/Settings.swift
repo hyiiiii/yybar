@@ -164,8 +164,8 @@ final class SettingsStore {
         // 菜单栏
         menuBarShowCodex = defaults.object(forKey: Keys.menuBarShowCodex) as? Bool ?? true
         menuBarShowClaude = defaults.object(forKey: Keys.menuBarShowClaude) as? Bool ?? true
-        // Grok Bot 额度未接通前，菜单栏 / 悬浮窗默认不放它(只会显示 --)。
-        menuBarShowGrokBot = defaults.object(forKey: Keys.menuBarShowGrokBot) as? Bool ?? GrokBotQuotaClient.isConnected
+        // 本机装了 Grok Bot 才默认放进菜单栏 / 悬浮窗。
+        menuBarShowGrokBot = defaults.object(forKey: Keys.menuBarShowGrokBot) as? Bool ?? GrokBotQuotaClient.isInstalled
         menuBarShowGemini = defaults.object(forKey: Keys.menuBarShowGemini) as? Bool ?? true
         menuBarShowAgy = defaults.object(forKey: Keys.menuBarShowAgy) as? Bool ?? true
         let mbWindowRaw = defaults.string(forKey: Keys.menuBarWindow) ?? MenuBarWindowChoice.fiveHour.rawValue
@@ -177,7 +177,7 @@ final class SettingsStore {
         floatingShowCodex = defaults.object(forKey: Keys.floatingShowCodex) as? Bool ?? true
         floatingShowClaude = defaults.object(forKey: Keys.floatingShowClaude) as? Bool ?? true
         floatingShowGrok = defaults.object(forKey: Keys.floatingShowGrok) as? Bool ?? true
-        floatingShowGrokBot = defaults.object(forKey: Keys.floatingShowGrokBot) as? Bool ?? GrokBotQuotaClient.isConnected
+        floatingShowGrokBot = defaults.object(forKey: Keys.floatingShowGrokBot) as? Bool ?? GrokBotQuotaClient.isInstalled
         floatingShowGemini = defaults.object(forKey: Keys.floatingShowGemini) as? Bool ?? true
         floatingShowAgy = defaults.object(forKey: Keys.floatingShowAgy) as? Bool ?? true
         // 刷新
