@@ -370,8 +370,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Service status dot",
                 chinese: "服务状态圆点",
-                desc: "Show OpenAI / Anthropic / xAI status on the service filter buttons in Statistics.",
-                chineseDesc: "在统计页的服务筛选按钮上显示 OpenAI / Anthropic / xAI 官方状态"
+                desc: "Show OpenAI / Anthropic / xAI / Cursor / Google status on the service filter buttons in Statistics.",
+                chineseDesc: "在统计页的服务筛选按钮上显示 OpenAI / Anthropic / xAI / Cursor / Google 官方状态"
             ) {
                 Toggle("", isOn: Binding(get: { settings.showServiceStatus }, set: { settings.showServiceStatus = $0 }))
                     .labelsHidden()

@@ -113,11 +113,14 @@ enum StatsServiceFilter: Hashable, CaseIterable {
     case grokBot
     case gemini
     case agy
+    /// 两两合并的标签(和「今天」面板一样可拆开):Grok + Grok Bot、Gemini + Antigravity。
+    case grokPair
+    case googlePair
 
-    /// 单个服务的筛选对应的服务;「全部」为 nil。
+    /// 单个服务的筛选对应的服务;「全部」和合并标签为 nil。
     var app: UsageApp? {
         switch self {
-        case .all: return nil
+        case .all, .grokPair, .googlePair: return nil
         case .codex: return .codex
         case .claude: return .claude
         case .grok: return .grok
@@ -127,8 +130,17 @@ enum StatsServiceFilter: Hashable, CaseIterable {
         }
     }
 
+    /// 合并标签包含的两个服务。
+    var pairApps: [UsageApp]? {
+        switch self {
+        case .grokPair: return [.grok, .grokBot]
+        case .googlePair: return [.gemini, .agy]
+        default: return nil
+        }
+    }
+
     var englishLabel: String {
-        app?.displayName ?? "All"
+        app?.displayName ?? pairApps.map { $0.map(\.displayName).joined(separator: " · ") } ?? "All"
     }
 
     var chineseLabel: String {
@@ -138,18 +150,20 @@ enum StatsServiceFilter: Hashable, CaseIterable {
         case .claude: return "Anthropic"
         case .grok: return "xAI"
         case .grokBot: return "Cursor"
-        case .gemini, .agy: return "Google"
+        case .gemini, .agy, .googlePair: return "Google"
+        case .grokPair: return "xAI · Cursor"
         }
     }
 
     /// 工具栏筛选按钮上的文字。
     var chipLabel: String {
+        if let pairApps { return pairApps.map(\.displayName).joined(separator: " · ") }
         guard let app else { return tr("All", "全部") }
         return app == .claude ? "Claude" : app.displayName
     }
 
     var tint: Color? {
-        app?.accent
+        app?.accent ?? pairApps?.first?.accent
     }
 }
 
@@ -214,6 +228,9 @@ fileprivate struct StatsSelections: Equatable {
     /// 「今天」面板里 Grok + Grok Bot、Gemini + agy 两行是否拆成并列两条(默认合并)。
     var splitGrokPair = false
     var splitGooglePair = false
+    /// 工具栏服务筛选里 Grok + Grok Bot、Gemini + Antigravity 两个合并标签是否拆开(默认合并)。
+    var splitGrokChips = false
+    var splitGoogleChips = false
     var hiddenTimelineAccounts: Set<String> = []
     var expandedTimelineAccounts: Set<String> = []
     var timelineWindow: QuotaHistoryWindow = .fiveHour
@@ -248,6 +265,8 @@ struct StatsView: View {
     @State private var mergeTokens = StatsSelections.current.mergeTokens
     @State private var splitGrokPair = StatsSelections.current.splitGrokPair
     @State private var splitGooglePair = StatsSelections.current.splitGooglePair
+    @State private var splitGrokChips = StatsSelections.current.splitGrokChips
+    @State private var splitGoogleChips = StatsSelections.current.splitGoogleChips
     @State private var kpiRowWidth: CGFloat = 0
     @State private var selectedDay: Date?
     /// 额度变化页：隐藏曲线的账号 / 展开详情的账号(QuotaHistoryAccountKey)。
@@ -264,6 +283,7 @@ struct StatsView: View {
     private var selections: StatsSelections {
         StatsSelections(range: range, serviceFilter: serviceFilter, metric: metric, baseline: baseline,
                         mergeTokens: mergeTokens, splitGrokPair: splitGrokPair, splitGooglePair: splitGooglePair,
+                        splitGrokChips: splitGrokChips, splitGoogleChips: splitGoogleChips,
                         hiddenTimelineAccounts: hiddenTimelineAccounts,
                         expandedTimelineAccounts: expandedTimelineAccounts, timelineWindow: timelineWindow,
                         modelSortKey: modelSortKey, modelSortAscending: modelSortAscending,
@@ -374,11 +394,11 @@ struct StatsView: View {
 
     private var serviceChips: some View {
         HStack(spacing: 6) {
-            // Grok Bot / Gemini / Antigravity 的按钮只在设置里启用时出现。
-            ForEach(StatsServiceFilter.allCases.filter { $0.app.map { [.codex, .claude, .grok].contains($0) || SettingsStore.shared.isEnabled($0) } ?? true },
-                    id: \.self) { item in
+            ForEach([StatsServiceFilter.all, .codex, .claude], id: \.self) { item in
                 serviceChip(item)
             }
+            pairChips(.grokPair)
+            pairChips(.googlePair)
         }
         .fixedSize()
         // 选中背景 / 描边总是平滑切换(只作用于按钮本身，不影响页面内容)。
@@ -400,6 +420,54 @@ struct StatsView: View {
         } else {
             change()
         }
+    }
+
+    private static func singleFilter(_ app: UsageApp) -> StatsServiceFilter {
+        StatsServiceFilter.allCases.first { $0.app == app } ?? .all
+    }
+
+    /// Grok + Grok Bot / Gemini + Antigravity 两两一组：合并时一个标签，拆开时两个，后面跟拆分 / 合并按钮(同「今天」面板)。
+    /// Grok 总是显示，Grok Bot / Gemini / Antigravity 只在设置里启用时出现;一组只剩一个服务时不显示按钮。
+    @ViewBuilder
+    private func pairChips(_ pair: StatsServiceFilter) -> some View {
+        let apps = (pair.pairApps ?? []).filter { $0 == .grok || SettingsStore.shared.isEnabled($0) }
+        if apps.count == 2 {
+            let split = pair == .grokPair ? splitGrokChips : splitGoogleChips
+            if split {
+                serviceChip(Self.singleFilter(apps[0]))
+                chipPairButton(pair, split: true)
+                serviceChip(Self.singleFilter(apps[1]))
+            } else {
+                serviceChip(pair)
+                chipPairButton(pair, split: false)
+            }
+        } else {
+            ForEach(apps, id: \.self) { serviceChip(Self.singleFilter($0)) }
+        }
+    }
+
+    private func chipPairButton(_ pair: StatsServiceFilter, split: Bool) -> some View {
+        let names = (pair.pairApps ?? []).map(\.displayName).joined(separator: tr(" and ", " 和 "))
+        return Button {
+            applyFilterChange {
+                if pair == .grokPair { splitGrokChips.toggle() } else { splitGoogleChips.toggle() }
+                // 选中的标签被拆开 / 合并掉时，改选对应的新标签。
+                let apps = pair.pairApps ?? []
+                if split, let app = serviceFilter.app, apps.contains(app) {
+                    serviceFilter = pair
+                } else if !split, serviceFilter == pair, let first = apps.first {
+                    serviceFilter = Self.singleFilter(first)
+                }
+            }
+        } label: {
+            Image(systemName: split ? "arrow.triangle.merge" : "arrow.triangle.branch")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(split ? tr("Merge \(names)", "合并 \(names)") : tr("Show \(names) separately", "拆开 \(names)"))
     }
 
     private func serviceChip(_ item: StatsServiceFilter) -> some View {
@@ -435,8 +503,10 @@ struct StatsView: View {
             case .codex: return appState.codexServiceStatus
             case .claude: return appState.claudeServiceStatus
             case .grok: return appState.grokServiceStatus
-            // 这三个没有接官方状态源，显示灰点。
-            case .grokBot, .gemini, .agy: return nil
+            case .grokBot: return appState.cursorServiceStatus
+            case .gemini, .agy, .googlePair: return appState.googleServiceStatus
+            // Grok + Grok Bot:取两者里更严重的。
+            case .grokPair: return Self.worse(appState.grokServiceStatus, appState.cursorServiceStatus)
             }
         }()
         Circle()
@@ -444,6 +514,13 @@ struct StatsView: View {
                   ?? Color.secondary.opacity(0.4))
             .frame(width: 7, height: 7)
             .help(status.map { $0.description ?? $0.indicator.label } ?? tr("Status unavailable", "暂无状态"))
+    }
+
+    private static func worse(_ a: ServiceStatus?, _ b: ServiceStatus?) -> ServiceStatus? {
+        let rank: [ServiceStatusIndicator: Int] = [.unknown: -1, .none: 0, .maintenance: 1, .minor: 2, .major: 3, .critical: 4]
+        guard let a else { return b }
+        guard let b else { return a }
+        return (rank[b.indicator] ?? 0) > (rank[a.indicator] ?? 0) ? b : a
     }
 
     private var customRangeFields: some View {
@@ -989,7 +1066,8 @@ struct StatsView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
                 ForEach(Array(apps.enumerated()), id: \.element) { index, app in
                     QuotaTile(app: app, lanes: quotaLanes(for: app), note: quotaNote(for: app),
-                              unavailable: app == .grokBot && !GrokBotQuotaClient.isConnected)
+                              unavailable: (app == .grokBot && !GrokBotQuotaClient.isConnected)
+                                || (app == .gemini && !GoogleQuotaClient.isGeminiAppConnected))
                         .padding(.vertical, 8)
                         .overlay(alignment: .top) {
                             if index >= 2 { Divider() }
@@ -1026,7 +1104,9 @@ struct StatsView: View {
         case .grokBot:
             return GrokBotQuotaClient.isConnected ? appState.grokBotQuota?.planType
                 : tr("Not connected yet (Grok Bot app sign-in)", "未接通(需读取 Grok Bot app 的登录)")
-        case .gemini: return tr("Shared with Antigravity (same Google quota)", "与 Antigravity 共用(同一份 Google 额度)")
+        case .gemini:
+            return GoogleQuotaClient.isGeminiAppConnected ? nil
+                : tr("Not connected (Gemini app quota has no readable source)", "未接通(Gemini app 的额度没有可读来源)")
         case .agy: return tr("From agy", "数据来自 agy")
         }
     }
@@ -1289,6 +1369,28 @@ struct StatsView: View {
                     provider: "Grok", plan: account.plan, email: account.email, index: idx + 1,
                     tint: .grokAccent, snapshot: appState.extraQuotas[account.id], accountExists: true)
             }
+            // Grok Bot 只有周额度(额度接通后才会有记录)。
+            add(base: QuotaHistoryAccountKey.grokBotPrimary(),
+                provider: "Grok Bot", plan: appState.grokBotQuota?.planType, email: nil, index: nil,
+                tint: .grokAccent, snapshot: appState.grokBotQuota,
+                accountExists: GrokBotQuotaClient.isConnected && SettingsStore.shared.showGrokBot)
+        }
+
+        // Antigravity:agy 的 Gemini 池和 Claude·GPT 池各一条。
+        let agyShown = SettingsStore.shared.showAgy
+        for (pool, label, snapshot) in [("gemini", "Antigravity · Gemini", appState.geminiQuota),
+                                        ("3p", "Antigravity · Claude·GPT", appState.agyQuota)] {
+            add(base: QuotaHistoryAccountKey.agyPrimary(pool: pool),
+                provider: label, plan: nil, email: appState.googleEmail, index: nil,
+                tint: .googleAccent, snapshot: agyShown ? snapshot : nil, accountExists: agyShown && snapshot != nil)
+        }
+        for (idx, account) in appState.extraAccounts(for: .google).enumerated() {
+            add(base: QuotaHistoryAccountKey.extra(id: account.id),
+                provider: "Antigravity · Gemini", plan: nil, email: account.email, index: idx + 1,
+                tint: .googleAccent, snapshot: appState.extraQuotas[account.id], accountExists: true)
+            add(base: QuotaHistoryAccountKey.extra(id: account.antigravityQuotaKey),
+                provider: "Antigravity · Claude·GPT", plan: nil, email: account.email, index: idx + 1,
+                tint: .googleAccent, snapshot: appState.extraQuotas[account.antigravityQuotaKey], accountExists: true)
         }
         return sections
     }
@@ -1389,6 +1491,8 @@ struct StatsView: View {
         case .all: return UsageApp.allCases.filter { [.codex, .claude, .grok].contains($0) || SettingsStore.shared.isEnabled($0) }
         case .codex, .claude, .grok, .grokBot, .gemini, .agy:
             return serviceFilter.app.map { [$0] } ?? []
+        case .grokPair, .googlePair:
+            return (serviceFilter.pairApps ?? []).filter { $0 == .grok || SettingsStore.shared.isEnabled($0) }
         }
     }
 
@@ -2109,6 +2213,8 @@ private struct QuotaTimelineOverview: View {
     @Binding var hidden: Set<String>
     @Binding var expanded: Set<String>
     @State private var selectedTime: Date?
+    /// 账号列表收起(记住状态)。
+    @AppStorage("yybar.settings.quotaTimelineAccountsCollapsed") private var accountsCollapsed = false
 
     private struct Point: Identifiable {
         var id: String { "\(accountKey)-\(time.timeIntervalSince1970)" }
@@ -2283,17 +2389,36 @@ private struct QuotaTimelineOverview: View {
         let colors = colors
         return VStack(spacing: 0) {
             HStack {
-                Text(tr("Accounts", "账号"))
-                    .font(.system(size: 12.5, weight: .semibold))
+                Button {
+                    withAnimation(QuotaTimelineOverview.animation) { accountsCollapsed.toggle() }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(accountsCollapsed ? 0 : 90))
+                        Text(tr("Accounts", "账号"))
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Text("\(sections.count)")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(accountsCollapsed ? tr("Show accounts", "展开账号列表") : tr("Hide accounts", "收起账号列表"))
                 Spacer()
-                Text(tr("Show in chart", "显示曲线"))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                if !accountsCollapsed {
+                    Text(tr("Show in chart", "显示曲线"))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            ForEach(sections) { section in
+            ForEach(accountsCollapsed ? [] : sections) { section in
                 Divider()
                 accountRow(section, color: colors[section.accountKey] ?? section.tint)
                 if expanded.contains(section.accountKey) {

@@ -91,6 +91,9 @@ final class AppState {
     var codexServiceStatus: ServiceStatus?
     var claudeServiceStatus: ServiceStatus?
     var grokServiceStatus: ServiceStatus?
+    /// Google(Gemini / Antigravity)和 Cursor(Grok Bot)的官方状态。
+    var googleServiceStatus: ServiceStatus?
+    var cursorServiceStatus: ServiceStatus?
 
     let usageService = UsageService()
     private let scheduler = Scheduler()
@@ -215,7 +218,7 @@ final class AppState {
         logQuotaSummary()
     }
 
-    /// 拉取 OpenAI / Anthropic statuspage 与 xAI 状态 RSS。失败保留旧快照,不清空。
+    /// 拉取 OpenAI / Anthropic / Cursor statuspage、xAI 状态 RSS 与 Google incidents。失败保留旧快照,不清空。
     /// 三个请求并发,任意一个失败不影响其他。
     func refreshServiceStatus() async {
         async let codex = Self.fetchServiceStatus(url: ServiceStatusClient.openAIStatusURL,
@@ -223,12 +226,28 @@ final class AppState {
         async let claude = Self.fetchServiceStatus(url: ServiceStatusClient.anthropicStatusURL,
                                                    components: ServiceStatusClient.anthropicComponents, tag: "anthropic")
         async let grok = Self.fetchXAIStatus()
+        async let cursor = Self.fetchServiceStatus(url: ServiceStatusClient.cursorStatusURL,
+                                                   components: ServiceStatusClient.cursorComponents, tag: "cursor")
+        async let google = Self.fetchGoogleStatus()
         let codexResult = await codex
         let claudeResult = await claude
         let grokResult = await grok
+        let cursorResult = await cursor
+        let googleResult = await google
         if let codexResult { codexServiceStatus = codexResult }
         if let claudeResult { claudeServiceStatus = claudeResult }
         if let grokResult { grokServiceStatus = grokResult }
+        if let cursorResult { cursorServiceStatus = cursorResult }
+        if let googleResult { googleServiceStatus = googleResult }
+    }
+
+    private static func fetchGoogleStatus() async -> ServiceStatus? {
+        do {
+            return try await ServiceStatusClient.fetchGoogle()
+        } catch {
+            print("[service-status] google fetch failed: \(error)")
+            return nil
+        }
     }
 
     private static func fetchXAIStatus() async -> ServiceStatus? {
@@ -788,12 +807,15 @@ final class AppState {
                 .map { OtherAccountQuota(id: $0.id, app: app,
                                          name: shortName(alias: $0.alias, email: $0.email, fallback: app == .claude ? "Claude" : "Grok"),
                                          snapshot: extraQuotas[$0.id]) }
-        case .gemini, .agy:
+        case .gemini:
+            // 其他 Google 账号的 Gemini 池也只算在 Antigravity 里。
+            return []
+        case .agy:
             return extraAccounts(for: .google)
                 .filter { $0.visibleInPopover && ((inMenuBar ? $0.showInMenuBar : $0.showInFloating) ?? false) }
-                .map { OtherAccountQuota(id: app == .gemini ? $0.id : $0.antigravityQuotaKey, app: app,
+                .map { OtherAccountQuota(id: $0.antigravityQuotaKey, app: app,
                                          name: shortName(alias: $0.alias, email: $0.email, fallback: "Google"),
-                                         snapshot: app == .gemini ? extraQuotas[$0.id] : antigravityQuota(for: $0)) }
+                                         snapshot: antigravityQuota(for: $0)) }
         case .grokBot:
             // Grok Bot 只能读本机 app 的登录。
             return []
@@ -812,7 +834,8 @@ final class AppState {
         case .claude: return claudeQuota
         case .grok: return grokQuota
         case .grokBot: return grokBotQuota
-        case .gemini: return geminiQuota
+        // Gemini.app 的额度未接通(geminiQuota 是 agy 的 Gemini 池，只用于 Antigravity)。
+        case .gemini: return GoogleQuotaClient.isGeminiAppConnected ? geminiQuota : nil
         // Antigravity 显示 agy 的两个池子(Gemini 池 + Claude·GPT 池)。
         case .agy: return QuotaPool.antigravity(gemini: geminiQuota, thirdParty: agyQuota)
         }
@@ -1089,6 +1112,9 @@ final class AppState {
         guard let folder = account.homeFolder else { throw QuotaError.missingToken }
         let result = try await GoogleQuotaClient.fetch(home: ExtraAccountStore.agyHome(folder: folder)).get()
         if let gemini = result.gemini { storeExtraQuota(id: account.id, snapshot: gemini) }
+        recordAgyQuotaHistory(gemini: result.gemini, thirdParty: result.agy,
+                              geminiKey: QuotaHistoryAccountKey.extra(id: account.id),
+                              thirdPartyKey: QuotaHistoryAccountKey.extra(id: account.antigravityQuotaKey), kind: .agyExtra)
         if let agy = result.agy {
             storeExtraQuota(id: account.antigravityQuotaKey, snapshot: agy)
             // 刷新状态统一记在账号 id 上。
@@ -1477,6 +1503,14 @@ final class AppState {
         )
     }
 
+    /// Antigravity 的两个池子各记一条(都算在 Antigravity 下)。
+    private func recordAgyQuotaHistory(gemini: QuotaSnapshot?, thirdParty: QuotaSnapshot?,
+                                       geminiKey: String, thirdPartyKey: String, kind: QuotaHistoryAccountKind) {
+        let now = Date()
+        if let gemini { recordQuotaHistory(accountKey: geminiKey, app: .agy, kind: kind, snapshot: gemini, sampledAt: now) }
+        if let thirdParty { recordQuotaHistory(accountKey: thirdPartyKey, app: .agy, kind: kind, snapshot: thirdParty, sampledAt: now) }
+    }
+
     private func recordImportedCodexQuotaHistory(id: String, snapshot: QuotaSnapshot, sampledAt: Date) {
         recordQuotaHistory(
             accountKey: QuotaHistoryAccountKey.codexImported(id: id),
@@ -1744,7 +1778,6 @@ final class AppState {
         defer { googleRefreshState.inFlight = false }
         switch await GoogleQuotaClient.fetch() {
         case .success(let result):
-            markActivityIfConsumed(.gemini, old: geminiQuota, new: result.gemini)
             markActivityIfConsumed(.agy, old: agyQuota, new: result.agy)
             // Antigravity 包含 Gemini 池：任一池下降都呼吸。
             markActivityIfConsumed(.agy, old: geminiQuota, new: result.gemini)
@@ -1759,6 +1792,9 @@ final class AppState {
                 quotaCache.agy = QuotaCacheRecord(snapshot: agy, source: .api, updatedAt: agy.fetchedAt)
             }
             saveQuotaCache()
+            recordAgyQuotaHistory(gemini: result.gemini, thirdParty: result.agy,
+                                  geminiKey: QuotaHistoryAccountKey.agyPrimary(pool: "gemini"),
+                                  thirdPartyKey: QuotaHistoryAccountKey.agyPrimary(pool: "3p"), kind: .agyPrimary)
             googleQuotaError = nil
             googleRefreshState.lastError = nil
             googleRefreshState.backoffUntil = nil

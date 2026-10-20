@@ -203,7 +203,7 @@ final class SettingsStore {
     var effectiveMenuBarShowCodex: Bool { showCodex && menuBarShowCodex }
     var effectiveMenuBarShowClaude: Bool { showClaude && menuBarShowClaude }
     var effectiveMenuBarShowGrokBot: Bool { showGrokBot && menuBarShowGrokBot }
-    var effectiveMenuBarShowGemini: Bool { showGemini && menuBarShowGemini }
+    var effectiveMenuBarShowGemini: Bool { showGemini && menuBarShowGemini && GoogleQuotaClient.isGeminiAppConnected }
     var effectiveMenuBarShowAgy: Bool { showAgy && menuBarShowAgy }
 
     /// 悬浮窗的行可见性同样需要叠加全局「显示该应用」开关
@@ -211,7 +211,7 @@ final class SettingsStore {
     var effectiveFloatingShowClaude: Bool { showClaude && floatingShowClaude }
     var effectiveFloatingShowGrok: Bool { showGrok && floatingShowGrok }
     var effectiveFloatingShowGrokBot: Bool { showGrokBot && floatingShowGrokBot }
-    var effectiveFloatingShowGemini: Bool { showGemini && floatingShowGemini }
+    var effectiveFloatingShowGemini: Bool { showGemini && floatingShowGemini && GoogleQuotaClient.isGeminiAppConnected }
     var effectiveFloatingShowAgy: Bool { showAgy && floatingShowAgy }
 
     /// 按服务取「启用 / 菜单栏 / 悬浮窗」开关(已叠加启用开关)。

@@ -86,12 +86,16 @@ struct QuotaOnlyServiceCard: View {
         default:
             QuotaCardView(
                 title: app.displayName,
-                subtitle: app == .gemini ? tr("Google · Pro and Flash · shared with Antigravity", "Google · Pro 和 Flash 共用 · 与 Antigravity 共用")
+                subtitle: app == .gemini ? tr("Google · Gemini app", "Google · Gemini app")
                                          : tr("Google · Gemini + Claude·GPT pools · from agy", "Google · Gemini 池 + Claude·GPT 池 · 数据来自 agy"),
                 tint: .googleAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
                 windows: QuotaCardView.standardWindows(appState.localQuota(for: app)),
                 inUse: true,
-                refreshState: appState.googleRefreshState, error: appState.googleQuotaError
+                refreshState: appState.googleRefreshState,
+                error: app == .gemini && !GoogleQuotaClient.isGeminiAppConnected
+                    ? tr("Not connected: the Gemini app's own quota has no readable source (agy's Gemini pool is shown under Antigravity).",
+                         "未接通:Gemini app 自己的额度没有可读来源(agy 的 Gemini 池显示在 Antigravity 里)。")
+                    : appState.googleQuotaError
             )
         }
     }
@@ -120,22 +124,14 @@ struct OtherAccountQuotaCard: View {
                 error: appState.importedCodexError(for: imported)
             )
         case .extra(let extra) where extra.provider == .google:
-            // 一个 Google 账号两个池子：Gemini 和 Antigravity 各一张卡。
-            VStack(spacing: 0) {
-                QuotaCardView(
-                    title: "Gemini", subtitle: subtitle(email: extra.email, plan: nil, fallback: extra.displayName),
-                    tint: .googleAccent, logoName: "gemini", fallback: "G",
-                    windows: QuotaCardView.standardWindows(appState.extraQuotas[extra.id]),
-                    refreshState: appState.extraRefreshStates[extra.id] ?? QuotaRefreshState(),
-                    error: appState.extraErrors[extra.id]
-                )
-                Divider()
-                QuotaCardView(
-                    title: "Antigravity", subtitle: tr("Gemini + Claude·GPT pools · from agy", "Gemini 池 + Claude·GPT 池 · 数据来自 agy"),
-                    tint: .googleAccent, logoName: "agy", fallback: "A",
-                    windows: QuotaCardView.standardWindows(appState.antigravityQuota(for: extra))
-                )
-            }
+            // 一个 Google 账号的 agy 两个池子(Gemini 池 + Claude·GPT 池)都在 Antigravity 卡里。
+            QuotaCardView(
+                title: "Antigravity", subtitle: subtitle(email: extra.email, plan: nil, fallback: extra.displayName),
+                tint: .googleAccent, logoName: "agy", fallback: "A",
+                windows: QuotaCardView.standardWindows(appState.antigravityQuota(for: extra)),
+                refreshState: appState.extraRefreshStates[extra.id] ?? QuotaRefreshState(),
+                error: appState.extraErrors[extra.id]
+            )
         case .extra(let extra):
             let isClaude = extra.provider == .claude
             let snapshot = appState.extraQuotas[extra.id]

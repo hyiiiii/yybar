@@ -7,6 +7,10 @@ enum QuotaHistoryAccountKind: String, Sendable, Codable {
     case claudeExtra
     case grokPrimary
     case grokExtra
+    /// 2026-10-20:Grok Bot、Antigravity(agy 两个池子各一条)。
+    case grokBotPrimary
+    case agyPrimary
+    case agyExtra
 }
 
 /// 记录哪个额度窗口。周窗口的记录用 `QuotaHistoryAccountKey.weekly(_:)` 派生的 key 存，
@@ -75,6 +79,15 @@ enum QuotaHistoryAccountKey {
 
     nonisolated static func grokPrimary() -> String {
         "grok:primary"
+    }
+
+    nonisolated static func grokBotPrimary() -> String {
+        "grokbot:primary"
+    }
+
+    /// 本机 agy 的两个池子:pool 为 "gemini" 或 "3p"(Claude·GPT)。
+    nonisolated static func agyPrimary(pool: String) -> String {
+        "agy:\(pool)"
     }
 
     /// 额外 Claude / Grok 账号,id 为 ExtraAccount.id(已带 provider 前缀)。

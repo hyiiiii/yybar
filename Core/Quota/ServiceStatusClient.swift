@@ -13,6 +13,14 @@ import SwiftUI
 // xAI 不是 Statuspage.io:status.x.ai 页面和 JSON 接口被 Cloudflare 拦截，
 // 只有 RSS(https://status.x.ai/feed.xml)可直接读取，见 `fetchXAI()`。
 //
+// Cursor(Grok Bot)是 Statuspage.io:https://status.cursor.com/api/v2/summary.json,组件「Grok Bot」。
+//
+// Google 没有 Statuspage.io,用两份公开的 incidents.json(同一格式):
+// - Workspace https://www.google.com/appsstatus/dashboard/incidents.json   产品「Gemini」(Gemini app)
+// - Cloud     https://status.cloud.google.com/incidents.json               产品「Vertex Gemini API」
+// 只看受影响产品名含 "Gemini"、且没有结束时间(end 为空)的事件:SERVICE_OUTAGE → major,
+// SERVICE_DISRUPTION → minor,其余(SERVICE_INFORMATION)→ none。见 `fetchGoogle()`。
+//
 // 见 docs/技术实现.md "服务状态" 一节。
 
 enum ServiceStatusIndicator: String, Sendable, Codable {
@@ -65,6 +73,65 @@ enum ServiceStatusClient {
     static let anthropicComponents = ["Claude Code", "Claude API"]
 
     static let xAIStatusFeedURL = URL(string: "https://status.x.ai/feed.xml")!
+
+    static let cursorStatusURL = URL(string: "https://status.cursor.com/api/v2/summary.json")!
+    /// Grok Bot 依赖的 Cursor 组件。
+    static let cursorComponents = ["Grok Bot"]
+
+    static let googleIncidentFeeds = [
+        URL(string: "https://www.google.com/appsstatus/dashboard/incidents.json")!,
+        URL(string: "https://status.cloud.google.com/incidents.json")!
+    ]
+
+    /// 拉取 Google 两份 incidents.json,取 Gemini 相关的未结束事件里最严重的。两份都失败才抛错。
+    static func fetchGoogle() async throws -> ServiceStatus {
+        var feeds: [Data] = []
+        var lastError: Error?
+        for url in googleIncidentFeeds {
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 10
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                feeds.append(data)
+            } catch {
+                lastError = error
+            }
+        }
+        if feeds.isEmpty { throw lastError ?? URLError(.cannotParseResponse) }
+        return try parseGoogleIncidents(feeds)
+    }
+
+    static func parseGoogleIncidents(_ feeds: [Data], now: Date = Date()) throws -> ServiceStatus {
+        let rank: [ServiceStatusIndicator: Int] = [.none: 0, .maintenance: 1, .minor: 2, .major: 3, .critical: 4]
+        var worst: ServiceStatusIndicator = .none
+        var title: String?
+        var parsed = 0
+        for data in feeds {
+            guard let incidents = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+            parsed += 1
+            for incident in incidents {
+                let products = (incident["affected_products"] as? [[String: Any]] ?? []).compactMap { $0["title"] as? String }
+                guard products.contains(where: { $0.localizedCaseInsensitiveContains("Gemini") }) else { continue }
+                if let end = incident["end"] as? String, !end.isEmpty { continue }
+                let indicator: ServiceStatusIndicator
+                switch incident["status_impact"] as? String {
+                case "SERVICE_OUTAGE": indicator = .major
+                case "SERVICE_DISRUPTION": indicator = .minor
+                default: indicator = .none
+                }
+                if (rank[indicator] ?? 0) > (rank[worst] ?? 0) {
+                    worst = indicator
+                    title = incident["external_desc"] as? String
+                }
+            }
+        }
+        if parsed == 0 { throw URLError(.cannotParseResponse) }
+        return ServiceStatus(indicator: worst, description: title ?? tr("All systems normal", "服务正常"),
+                             updatedAt: nil, fetchedAt: now)
+    }
 
     /// 只看 Grok CLI 依赖的组件;grok.com 网页、语音等故障不影响 CLI。
     private static let xAIRelevantComponents = ["Grok (Build)", "Global (api.x.ai)"]

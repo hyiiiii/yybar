@@ -286,7 +286,7 @@ enum MenuBarBadgeImage {
         NSColor.clear.setFill()
         NSRect(origin: .zero, size: size).fill()
         for index in breathingItems {
-            drawIcon(items[index], x: iconX[index], tint: breatheColor(items[index].app, dark: dark))
+            drawIcon(items[index], x: iconX[index], tint: breatheColor(items[index].app, dark: dark), rainbow: true)
         }
         overlay.unlockFocus()
         return Badge(image: image, breathOverlay: overlay)
@@ -302,6 +302,7 @@ enum MenuBarBadgeImage {
         case .codex: return dark ? rgb(72, 72, 74) : rgb(174, 174, 178)      // 石墨灰
         case .claude: return dark ? rgb(232, 134, 95) : rgb(217, 119, 87)    // 桃橙
         case .grok, .grokBot: return dark ? rgb(29, 29, 31) : rgb(161, 161, 166)       // 黑(浅色栏上淡出)
+        // agy 实际画彩虹色 logo(见 drawIcon),这里的蓝色只在找不到彩色版时用。
         case .gemini, .agy: return dark ? rgb(106, 158, 240) : rgb(74, 134, 232)      // Google 蓝
         }
     }
@@ -367,8 +368,14 @@ enum MenuBarBadgeImage {
         return image
     }
 
-    private static func drawIcon(_ item: BadgeItem, x: CGFloat, tint: NSColor? = nil) {
+    /// rainbow:呼吸层里 Antigravity 画彩虹色版 logo。
+    private static func drawIcon(_ item: BadgeItem, x: CGFloat, tint: NSColor? = nil, rainbow: Bool = false) {
         let rect = NSRect(x: x, y: floor((height - iconSize) / 2), width: iconSize, height: iconSize)
+        // Antigravity 呼吸时用 App 里的彩虹色版 logo,不染单一识别色。
+        if rainbow, item.app == .agy, let color = MenuBarLogo.rawImage(named: "agy-color") {
+            color.draw(in: rect)
+            return
+        }
         if let img = MenuBarLogo.rawImage(named: item.logo) {
             if let tint {
                 tinted(img, color: tint).draw(in: rect)

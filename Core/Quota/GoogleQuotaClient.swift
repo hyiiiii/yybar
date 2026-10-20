@@ -21,6 +21,11 @@ import Darwin
 //              {"id":"gemini-5h","window":"5h",…}]},{"name":"Claude and GPT models","buckets":[{"id":"3p-weekly",…},{"id":"3p-5h",…}]}]}}}
 
 enum GoogleQuotaClient {
+    /// Gemini.app 自己的额度(聊天里的 Gemini 4 Argon 等)和 agy 的两个池子不是同一份:agy /usage 只有
+    /// 「Gemini Models(Flash、Pro)」和「Claude and GPT models」两组。Gemini.app 本地只有设置库、登录信息加密，
+    /// 没有可读的额度来源，所以 Gemini 格子「未接通」;agy 的 Gemini 池只显示在 Antigravity 里(2026-10-20)。
+    nonisolated static let isGeminiAppConnected = false
+
     nonisolated struct Result: Sendable {
         var gemini: QuotaSnapshot?
         var agy: QuotaSnapshot?
