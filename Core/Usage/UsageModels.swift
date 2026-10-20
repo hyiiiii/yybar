@@ -1,7 +1,7 @@
 import Foundation
 
 /// 声明顺序即菜单栏 / 悬浮窗 / 统计页的排列顺序:Codex → Claude → Grok → Grok Bot → Gemini → agy。
-/// Grok Bot / Gemini / agy 目前没有本地用量日志(只有额度),用量统计里它们恒为 0。
+/// Grok Bot 没有本地用量日志(只有额度),用量统计里恒为 0;Gemini / agy 的用量来自 agy 会话库(`AgyConversationScanner`)。
 enum UsageApp: String, Sendable, Codable, Hashable, CaseIterable {
     case codex
     case claude

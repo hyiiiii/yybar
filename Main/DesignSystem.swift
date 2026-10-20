@@ -236,10 +236,11 @@ struct ServiceTile: View {
 
     /// Codex 的 tile 还原 OpenAI 官方品牌图标:白底黑 logo + 极细边框。
     /// 其余地方(文字色、环形、图表)的 `Color.codexAccent` 仍是石墨灰,不受影响。
-    private var isOpenAIBrand: Bool { logoName == "codex" }
+    /// Grok Bot(黑色圆球 + 镂空眼睛)同样白底黑 logo:黑底会吃掉圆球。
+    private var isOpenAIBrand: Bool { logoName == "codex" || logoName == "grokBot" }
 
     /// Grok 的 tile 固定黑底:深色模式下 `grokAccent` 是近白，直接拿来当底色会吃掉白色 logo。
-    private var isGrokBrand: Bool { logoName == "grok" || logoName == "grokBot" }
+    private var isGrokBrand: Bool { logoName == "grok" }
 
     /// 有彩色版 logo 的服务(Antigravity):白底 + 原色 logo,和 OpenAI 的做法一样。
     private var colorLogo: NSImage? { LogoCache.colorImage(named: logoName) }

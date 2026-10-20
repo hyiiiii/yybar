@@ -92,7 +92,7 @@ final class UsageService {
         }.value
         // 扫描进度丢了(缓存目录被清理、结构版本变了)但汇总还在：不能在旧汇总上增量叠加(会重复计数),改为全量重建。
         var rebuild = requested
-        if rebuild == nil, prev.claude.isEmpty, prev.codex.isEmpty, prev.grok.isEmpty, !localAggregator.snapshot().isEmpty {
+        if rebuild == nil, prev.claude.isEmpty, prev.codex.isEmpty, prev.grok.isEmpty, prev.agy.isEmpty, !localAggregator.snapshot().isEmpty {
             rebuild = Reprice.none
         }
 
@@ -121,7 +121,12 @@ final class UsageService {
             GrokJSONLScanner.scan(previous: prev.grok)
         }.value
 
+        async let agyTask = Task.detached(priority: .utility) {
+            AgyConversationScanner.scan(previous: prev.agy)
+        }.value
+
         let grok = await grokTask
+        let agy = await agyTask
         let claude = await claudeTask
         let codex = await codexTask
         let overlapping = await overlapTask
@@ -142,11 +147,13 @@ final class UsageService {
             fresh.ingest(claude.entries)
             fresh.ingest(codex.entries)
             fresh.ingest(grok.entries)
+            fresh.ingest(agy.entries)
             localAggregator.load(from: Self.mergePreservingHistory(old: localAggregator.snapshot(), fresh: fresh.snapshot(), reprice: rebuild))
         } else {
             localAggregator.ingest(claude.entries)
             localAggregator.ingest(codex.entries)
             localAggregator.ingest(grok.entries)
+            localAggregator.ingest(agy.entries)
         }
 
         // 持久化
@@ -156,6 +163,7 @@ final class UsageService {
             claude: claude.newState,
             codex: codex.newState,
             grok: grok.newState,
+            agy: agy.newState,
             claudeSeenMessageIds: claude.newSeenIds
         )
         let rollup = UsageRollupPayload(
@@ -182,7 +190,7 @@ final class UsageService {
         publishTotals()
 
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(started))
-        print("[UsageScan 用量扫描] claude files=\(claude.filesScanned) lines=\(claude.linesParsed) new=\(claude.entries.count); codex files=\(codex.filesScanned) lines=\(codex.linesParsed) new=\(codex.entries.count); grok files=\(grok.filesScanned) lines=\(grok.linesParsed) new=\(grok.entries.count); elapsed=\(elapsed)")
+        print("[UsageScan 用量扫描] claude files=\(claude.filesScanned) lines=\(claude.linesParsed) new=\(claude.entries.count); codex files=\(codex.filesScanned) lines=\(codex.linesParsed) new=\(codex.entries.count); grok files=\(grok.filesScanned) lines=\(grok.linesParsed) new=\(grok.entries.count); agy dbs=\(agy.filesScanned) calls=\(agy.linesParsed) new=\(agy.entries.count); elapsed=\(elapsed)")
     }
 
     /// 全量重建时合并新旧数据。CLI 或清理工具会删掉旧日志，那部分用量只剩在旧汇总里，重扫找不回来:

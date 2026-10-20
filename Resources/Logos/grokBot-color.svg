@@ -1,5 +1,0 @@
-<svg width="100" height="100" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-<!-- 占位图形彩色版(灰色圆团 + 黑色眼睛),用于 tile 和统计页。 -->
-<circle cx="10" cy="10" r="7.8" fill="#C7C7CC"/>
-<path fill="#1D1D1F" d="M11.60 5.70a1.55 2.8 0 1 0 0 5.6a1.55 2.8 0 1 0 0 -5.6zM15.20 5.20a1.55 2.8 0 1 0 0 5.6a1.55 2.8 0 1 0 0 -5.6z"/>
-</svg>
