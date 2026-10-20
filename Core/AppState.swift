@@ -1879,6 +1879,9 @@ final class AppState {
                 // 钥匙串口令可能变了(重装 / 重新登录),下次重新读。
                 grokBotKey = nil
                 markGrokBotFailure("没能从 Grok Bot app 的登录里解出 token:\(diagnostics.summary)")
+                // 界面只放得下一行;完整诊断(只有路径和数量，不含任何值)写到数据目录方便排查。
+                let url = QuotaCache.cacheFileURL().deletingLastPathComponent().appendingPathComponent("grokbot-diagnostics.txt")
+                try? Data((diagnostics.details + "\n").utf8).write(to: url, options: .atomic)
             case .keychainDenied(let message):
                 grokBotKey = nil
                 markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝或取消(\(message))")

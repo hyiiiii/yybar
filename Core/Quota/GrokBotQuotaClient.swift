@@ -113,6 +113,10 @@ struct GrokBotTokenDiagnostics: Equatable, Sendable {
     var blobPaths: [String]
     /// 用钥匙串口令解开的加密块数量。
     var decryptedCount: Int
+    /// 解开后的明文里有哪些键路径，每条后面注明值的样子(JWT / 含 JWT / 长串 / 短串)，最多列 12 个。不含值本身。
+    var innerPaths: [String] = []
+    /// 明文里含 JWT 的值有几个。
+    var jwtCount: Int = 0
 
     /// 给界面看的一句话。
     var summary: String {
@@ -124,6 +128,16 @@ struct GrokBotTokenDiagnostics: Equatable, Sendable {
             return "钥匙串口令解不开登录文件里的 \(blobCount) 个加密块\(paths)"
         }
         return "解开了 \(decryptedCount)/\(blobCount) 个加密块，但里面没有 access token\(paths)"
+    }
+
+    /// 写进诊断文件的完整版(多行)。同样不含任何值。
+    var details: String {
+        var lines = [summary, "文件格式：\(fileKind)", "加密块：\(blobCount) 个，解开 \(decryptedCount) 个"]
+        lines.append("加密块路径：" + (blobPaths.isEmpty ? "无" : blobPaths.joined(separator: "、")))
+        lines.append("明文里的 JWT:\(jwtCount) 个")
+        lines.append("明文键路径(值的样子):")
+        lines += innerPaths.isEmpty ? ["  无"] : innerPaths.map { "  " + $0 }
+        return lines.joined(separator: "\n")
     }
 
     /// 路径里像账号(含 @)或很长的段落打码，避免把邮箱、id 带进界面。
@@ -207,8 +221,15 @@ enum GrokBotAuth {
                 let masked = GrokBotTokenDiagnostics.maskedPath(item.path)
                 if !paths.contains(masked) { paths.append(masked) }
             }
+            var inner: [String] = []
+            for item in strings {
+                let kind = isJWT(item.value) ? "JWT" : embeddedJWT(item.value) != nil ? "含 JWT" : (item.value.count >= 20 ? "长串" : "短串")
+                let line = GrokBotTokenDiagnostics.maskedPath(item.path) + "(\(kind))"
+                if !inner.contains(line) { inner.append(line) }
+            }
             return .failure(.noToken(GrokBotTokenDiagnostics(
-                fileKind: fileKind, blobCount: blobs.count, blobPaths: Array(paths.prefix(6)), decryptedCount: decrypted)))
+                fileKind: fileKind, blobCount: blobs.count, blobPaths: Array(paths.prefix(6)), decryptedCount: decrypted,
+                innerPaths: Array(inner.prefix(12)), jwtCount: strings.filter { embeddedJWT($0.value) != nil }.count)))
         }
         if let exp = expiry(of: token), exp <= now { return .failure(.expired) }
         return .success(token)
@@ -278,17 +299,41 @@ enum GrokBotAuth {
         }
     }
 
-    nonisolated private static func collectStrings(_ value: Any, path: String, into strings: inout [(path: String, value: String)]) {
+    /// 明文里的值本身也可能是序列化过的 JSON(或它的 base64),逐层展开(最多 4 层)。
+    nonisolated private static func collectStrings(_ value: Any, path: String, depth: Int = 0,
+                                                   into strings: inout [(path: String, value: String)]) {
         switch value {
         case let string as String:
-            strings.append((path, string))
+            if depth < 4, let nested = nestedJSON(string) {
+                collectStrings(nested, path: path, depth: depth + 1, into: &strings)
+            } else {
+                strings.append((path, string))
+            }
         case let dict as [String: Any]:
-            for (key, child) in dict { collectStrings(child, path: path + "/" + key, into: &strings) }
+            for (key, child) in dict { collectStrings(child, path: path + "/" + key, depth: depth, into: &strings) }
         case let array as [Any]:
-            for (index, child) in array.enumerated() { collectStrings(child, path: path + "/\(index)", into: &strings) }
+            for (index, child) in array.enumerated() { collectStrings(child, path: path + "/\(index)", depth: depth, into: &strings) }
         default:
             break
         }
+    }
+
+    nonisolated private static func nestedJSON(_ string: String) -> Any? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        var candidates: [Data] = []
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") || trimmed.hasPrefix("\"") {
+            candidates.append(Data(trimmed.utf8))
+        } else if trimmed.count >= 8, !isJWT(trimmed), let decoded = Data(base64Encoded: trimmed),
+                  let first = decoded.first, first == UInt8(ascii: "{") || first == UInt8(ascii: "[") {
+            candidates.append(decoded)
+        }
+        for data in candidates {
+            if let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+               object is [String: Any] || object is [Any] || object is String {
+                return object
+            }
+        }
+        return nil
     }
 
     /// 挑登录串。Grok Bot 用 Cursor 账号,登录串常是复合形式(`账号::一串 JWT`,`::` 可能被转义成

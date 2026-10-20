@@ -173,5 +173,22 @@ struct GoogleQuotaRegression {
         }
         precondition(d5.decryptedCount == 1 && d5.blobPaths == ["/accounts/<账号>/profile"])
         precondition(d5.summary.contains("解开了 1/1") && !d5.summary.contains(secret) && !d5.summary.contains("example.com"))
+        precondition(d5.innerPaths == ["/accounts/<账号>/profile/name(长串)"] && d5.jwtCount == 0)
+        precondition(!d5.details.contains(secret) && !d5.details.contains("example.com"))
+
+        // 6. 明文里的值本身是序列化过的 JSON(字符串套字符串，或 base64):逐层展开后照常取 token。
+        let accountsJSON = "{\"cursor-accounts\":[{\"cursor-access-token\":\"" + access + "\"}]}"
+        let stringified = String(data: try JSONSerialization.data(withJSONObject: ["state": accountsJSON]), encoding: .utf8)!
+        let file6 = "{\"secrets\":\"" + encrypt(stringified, key: key).base64EncodedString() + "\"}"
+        guard case .success(let t6) = GrokBotAuth.extractToken(fileData: Data(file6.utf8), key: key, now: now) else {
+            preconditionFailure("expected token from stringified JSON")
+        }
+        precondition(t6 == access)
+        let base64Inner = "{\"blob\":\"" + Data(accountsJSON.utf8).base64EncodedString() + "\"}"
+        let file6b = "{\"secrets\":\"" + encrypt(base64Inner, key: key).base64EncodedString() + "\"}"
+        guard case .success(let t6b) = GrokBotAuth.extractToken(fileData: Data(file6b.utf8), key: key, now: now) else {
+            preconditionFailure("expected token from base64 JSON")
+        }
+        precondition(t6b == access)
     }
 }
