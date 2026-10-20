@@ -793,11 +793,16 @@ final class AppState {
                 .filter { $0.visibleInPopover && ((inMenuBar ? $0.showInMenuBar : $0.showInFloating) ?? false) }
                 .map { OtherAccountQuota(id: app == .gemini ? $0.id : $0.antigravityQuotaKey, app: app,
                                          name: shortName(alias: $0.alias, email: $0.email, fallback: "Google"),
-                                         snapshot: extraQuotas[app == .gemini ? $0.id : $0.antigravityQuotaKey]) }
+                                         snapshot: app == .gemini ? extraQuotas[$0.id] : antigravityQuota(for: $0)) }
         case .grokBot:
             // Grok Bot 只能读本机 app 的登录。
             return []
         }
+    }
+
+    /// 其他 Google 账号的 Antigravity 额度(两个池子合在一起)。
+    func antigravityQuota(for account: ExtraAccount) -> QuotaSnapshot? {
+        QuotaPool.antigravity(gemini: extraQuotas[account.id], thirdParty: extraQuotas[account.antigravityQuotaKey])
     }
 
     /// 本机账号的额度快照(按服务)。
@@ -808,7 +813,8 @@ final class AppState {
         case .grok: return grokQuota
         case .grokBot: return grokBotQuota
         case .gemini: return geminiQuota
-        case .agy: return agyQuota
+        // Antigravity 显示 agy 的两个池子(Gemini 池 + Claude·GPT 池)。
+        case .agy: return QuotaPool.antigravity(gemini: geminiQuota, thirdParty: agyQuota)
         }
     }
 
@@ -1740,6 +1746,8 @@ final class AppState {
         case .success(let result):
             markActivityIfConsumed(.gemini, old: geminiQuota, new: result.gemini)
             markActivityIfConsumed(.agy, old: agyQuota, new: result.agy)
+            // Antigravity 包含 Gemini 池：任一池下降都呼吸。
+            markActivityIfConsumed(.agy, old: geminiQuota, new: result.gemini)
             googleEmail = GoogleQuotaClient.signedInEmail(home: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini"))
             googlePlan = result.plan
             if let gemini = result.gemini {

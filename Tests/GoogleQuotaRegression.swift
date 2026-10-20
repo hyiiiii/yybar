@@ -25,6 +25,13 @@ struct GoogleQuotaRegression {
         // 没有 remaining_fraction 的档位视为未知，不当成用完。
         precondition(agy.fiveHour == nil)
 
+        // Antigravity 格子 = agy 两个池子：逐池列出，单个数字取剩余最少的池。
+        let combined = QuotaPool.antigravity(gemini: gemini, thirdParty: agy)!
+        precondition(combined.app == .agy && combined.pools?.map(\.label) == ["Gemini", "Claude·GPT"])
+        precondition(abs(combined.fiveHour!.remainingPercent - 72) < 0.001)   // 只有 Gemini 池有 5H
+        precondition(abs(combined.weekly!.remainingPercent - 88) < 0.001)     // 88 < 100
+        precondition(QuotaPool.antigravity(gemini: nil, thirdParty: nil) == nil)
+
         // 失败状态:限流按 429 处理(走退避),其他为解码错误。
         do {
             _ = try GoogleQuotaClient.parse(data: Data(#"{"status":"ERROR","error":"429 RESOURCE_EXHAUSTED"}"#.utf8))

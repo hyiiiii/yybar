@@ -64,6 +64,31 @@ struct QuotaSnapshot: Sendable, Equatable, Codable {
     /// Server-defined primary period for services with billing cycles other than 5h.
     var primary: QuotaWindow? = nil
     var primaryLabel: String? = nil
+    /// 一个格子包含多个额度池时(Antigravity = agy 的 Gemini 池 + Claude·GPT 池)逐池列出;
+    /// 此时 fiveHour / weekly 是各池里剩余最少的那个，供菜单栏 / 悬浮窗等只有一个数字的地方用。
+    var pools: [QuotaPool]? = nil
+}
+
+struct QuotaPool: Sendable, Equatable, Codable {
+    /// 行首短标签，如 "Gemini"、"Claude·GPT"。
+    var label: String
+    var fiveHour: QuotaWindow?
+    var weekly: QuotaWindow?
+
+    /// Antigravity 的展示快照:agy 两个池子合在一起(按工具归属，2026-10-20)。两个池都没有时返回 nil。
+    static func antigravity(gemini: QuotaSnapshot?, thirdParty: QuotaSnapshot?) -> QuotaSnapshot? {
+        guard gemini != nil || thirdParty != nil else { return nil }
+        let pools = [
+            QuotaPool(label: "Gemini", fiveHour: gemini?.fiveHour, weekly: gemini?.weekly),
+            QuotaPool(label: "Claude·GPT", fiveHour: thirdParty?.fiveHour, weekly: thirdParty?.weekly)
+        ]
+        func tightest(_ windows: [QuotaWindow?]) -> QuotaWindow? {
+            windows.compactMap { $0 }.max { $0.usedPercent < $1.usedPercent }
+        }
+        let fetched = [gemini?.fetchedAt, thirdParty?.fetchedAt].compactMap { $0 }.max() ?? Date()
+        return QuotaSnapshot(app: .agy, fiveHour: tightest(pools.map(\.fiveHour)), weekly: tightest(pools.map(\.weekly)),
+                             weeklyOpus: nil, weeklySonnet: nil, planType: nil, fetchedAt: fetched, pools: pools)
+    }
 }
 
 enum QuotaError: Error, CustomStringConvertible {

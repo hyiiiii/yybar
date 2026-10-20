@@ -86,8 +86,8 @@ struct QuotaOnlyServiceCard: View {
         default:
             QuotaCardView(
                 title: app.displayName,
-                subtitle: app == .gemini ? tr("Google · Pro and Flash share this quota", "Google · Pro 和 Flash 共用")
-                                         : tr("Google · Claude and GPT models", "Google · Claude + GPT 模型共用"),
+                subtitle: app == .gemini ? tr("Google · Pro and Flash · shared with Antigravity", "Google · Pro 和 Flash 共用 · 与 Antigravity 共用")
+                                         : tr("Google · Gemini + Claude·GPT pools · from agy", "Google · Gemini 池 + Claude·GPT 池 · 数据来自 agy"),
                 tint: .googleAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
                 windows: QuotaCardView.standardWindows(appState.localQuota(for: app)),
                 inUse: true,
@@ -131,9 +131,9 @@ struct OtherAccountQuotaCard: View {
                 )
                 Divider()
                 QuotaCardView(
-                    title: "Antigravity", subtitle: tr("Claude and GPT models", "Claude · GPT 模型共用"),
+                    title: "Antigravity", subtitle: tr("Gemini + Claude·GPT pools · from agy", "Gemini 池 + Claude·GPT 池 · 数据来自 agy"),
                     tint: .googleAccent, logoName: "agy", fallback: "A",
-                    windows: QuotaCardView.standardWindows(appState.extraQuotas[extra.antigravityQuotaKey])
+                    windows: QuotaCardView.standardWindows(appState.antigravityQuota(for: extra))
                 )
             }
         case .extra(let extra):
@@ -200,6 +200,13 @@ struct QuotaCardView: View {
     /// Codex / Claude:5H 与 WK 并列。标签按窗口实际长度取(如 Codex 免费账号只有一个 30 天窗口，显示「每月」);
     /// 有窗口有数据时，没有数据的那块不显示，剩下的占满一行。
     static func standardWindows(_ snapshot: QuotaSnapshot?) -> [Window] {
+        if let pools = snapshot?.pools {
+            // 多个池子(Antigravity):每池 5H / WK 两行，行首带池名。
+            return pools.flatMap { pool in [
+                Window(id: pool.label + "-5h", label: "\(pool.label) \(tr("5h", "5 小时"))", window: pool.fiveHour),
+                Window(id: pool.label + "-wk", label: "\(pool.label) \(tr("weekly", "每周"))", window: pool.weekly)
+            ] }
+        }
         let all = [
             Window(id: "5h", label: label(snapshot?.fiveHour, fallback: tr("5-hour", "5 小时")), window: snapshot?.fiveHour),
             Window(id: "wk", label: label(snapshot?.weekly, fallback: tr("Weekly", "每周")), window: snapshot?.weekly)

@@ -1013,6 +1013,9 @@ struct StatsView: View {
             }
             return [(label, snapshot?.primary ?? snapshot?.weekly)]
         }
+        if let pools = snapshot?.pools {
+            return pools.flatMap { [("\($0.label) 5H", $0.fiveHour), ("\($0.label) WK", $0.weekly)] }
+        }
         return [("5H", snapshot?.fiveHour), ("WK", snapshot?.weekly)]
     }
 
@@ -1023,8 +1026,8 @@ struct StatsView: View {
         case .grokBot:
             return GrokBotQuotaClient.isConnected ? appState.grokBotQuota?.planType
                 : tr("Not connected yet (Grok Bot app sign-in)", "未接通(需读取 Grok Bot app 的登录)")
-        case .gemini: return tr("Pro and Flash share this quota", "Pro 和 Flash 共用")
-        case .agy: return tr("Claude and GPT models share this quota", "Claude · GPT 模型共用")
+        case .gemini: return tr("Shared with Antigravity (same Google quota)", "与 Antigravity 共用(同一份 Google 额度)")
+        case .agy: return tr("From agy", "数据来自 agy")
         }
     }
 
@@ -2037,7 +2040,8 @@ private struct QuotaTile: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !unavailable {
                     ForEach(lanes, id: \.label) { lane in
-                        LimitBarRow(label: lane.label, window: lane.window, tint: app.accent, labelWidth: 40)
+                        LimitBarRow(label: lane.label, window: lane.window, tint: app.accent,
+                                    labelWidth: lanes.count > 2 ? 100 : 40)
                     }
                 }
                 if let note {
