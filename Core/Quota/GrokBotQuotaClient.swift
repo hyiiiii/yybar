@@ -87,10 +87,43 @@ enum GrokBotAuthError: Error {
     case notSignedIn
     /// 钥匙串读取被拒绝或取消。
     case keychainDenied(String)
-    /// 文件里找不到能解开的 token(格式变了，或钥匙串口令不对)。
-    case noToken
+    /// 文件里找不到能解开的 token(格式变了，或钥匙串口令不对)。附带只含路径和数量的诊断。
+    case noToken(GrokBotTokenDiagnostics)
     /// token 已过期(Grok Bot app 打开时会自己续期)。
     case expired
+}
+
+/// 解不出 token 时的诊断：只有数量和键路径(账号样子的段落打码),不含任何密文、明文、token 或口令。
+struct GrokBotTokenDiagnostics: Equatable, Sendable {
+    /// 文件整体是什么："JSON"、"v10 密文" 或 "无法识别"。
+    var fileKind: String
+    /// 找到的加密块数量和所在键路径(最多列 6 个)。
+    var blobCount: Int
+    var blobPaths: [String]
+    /// 用钥匙串口令解开的加密块数量。
+    var decryptedCount: Int
+
+    /// 给界面看的一句话。
+    var summary: String {
+        let paths = blobPaths.isEmpty ? "" : ",路径 " + blobPaths.joined(separator: "、") + (blobCount > blobPaths.count ? " 等" : "")
+        if blobCount == 0 {
+            return "登录文件里没找到加密块(文件格式：\(fileKind))"
+        }
+        if decryptedCount == 0 {
+            return "钥匙串口令解不开登录文件里的 \(blobCount) 个加密块\(paths)"
+        }
+        return "解开了 \(decryptedCount)/\(blobCount) 个加密块，但里面没有 access token\(paths)"
+    }
+
+    /// 路径里像账号(含 @)或很长的段落打码，避免把邮箱、id 带进界面。
+    nonisolated static func maskedPath(_ path: String) -> String {
+        guard !path.isEmpty else { return "/" }
+        return path.split(separator: "/", omittingEmptySubsequences: false).map { part -> String in
+            if part.contains("@") { return "<账号>" }
+            if part.count > 32 { return String(part.prefix(12)) + "…" }
+            return String(part)
+        }.joined(separator: "/")
+    }
 }
 
 enum GrokBotAuth {
@@ -132,23 +165,40 @@ enum GrokBotAuth {
 
     nonisolated static func extractToken(fileData: Data, key: Data, now: Date = Date()) -> Result<String, GrokBotAuthError> {
         var blobs: [(path: String, blob: Data)] = []
+        let fileKind: String
         if fileData.starts(with: versionPrefix) {
+            fileKind = "v10 密文"
             blobs.append(("", fileData))
         } else if let root = try? JSONSerialization.jsonObject(with: fileData, options: [.fragmentsAllowed]) {
+            fileKind = "JSON"
             collectBlobs(root, path: "", into: &blobs)
+        } else {
+            fileKind = "无法识别"
         }
         var strings: [(path: String, value: String)] = []
+        var decrypted = 0
         for item in blobs {
+            // 口令不对时偶尔也能过 PKCS7 填充检查，解出乱码;能按 UTF-8 读出来才算解开。
             guard let plain = decrypt(item.blob, key: key),
-                  let text = String(data: plain, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !text.isEmpty else { continue }
+                  let decoded = String(data: plain, encoding: .utf8) else { continue }
+            decrypted += 1
+            let text = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
             if let inner = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]) {
                 collectStrings(inner, path: item.path, into: &strings)
             } else {
                 strings.append((item.path, text))
             }
         }
-        guard let token = pickAccessToken(strings) else { return .failure(.noToken) }
+        guard let token = pickAccessToken(strings) else {
+            var paths: [String] = []
+            for item in blobs {
+                let masked = GrokBotTokenDiagnostics.maskedPath(item.path)
+                if !paths.contains(masked) { paths.append(masked) }
+            }
+            return .failure(.noToken(GrokBotTokenDiagnostics(
+                fileKind: fileKind, blobCount: blobs.count, blobPaths: Array(paths.prefix(6)), decryptedCount: decrypted)))
+        }
         if let exp = expiry(of: token), exp <= now { return .failure(.expired) }
         return .success(token)
     }

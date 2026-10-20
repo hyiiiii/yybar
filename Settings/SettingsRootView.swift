@@ -12,6 +12,10 @@ struct SettingsRootView: View {
     /// 待确认删除的本机账号。
     @State private var localDeleteTarget: AccountProvider?
     @State private var quotaOnlyDeleteTarget: UsageApp?
+    /// hook 安装 / 卸载结果(已挂上的 CLI、失败原因)。
+    @State private var hookStatus: String?
+    @State private var hookError: String?
+    @State private var hookWorking = false
 
     var body: some View {
         @Bindable var settings = SettingsStore.shared
@@ -343,7 +347,85 @@ struct SettingsRootView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
             }
+            Divider()
+            PrefsRow(
+                label: "Drive breathing with CLI hooks",
+                chinese: "用 hook 驱动呼吸",
+                desc: "Adds yybar's own hooks to Codex, Claude Code, Grok and agy so the icon reacts the moment a prompt, tool call, approval or reply happens. Your existing hooks are left alone; turning this off removes only yybar's.",
+                chineseDesc: "给 Codex、Claude Code、Grok、agy 挂上 yybar 自己的 hook:提问、调用工具、请求审批、回答结束时图标立刻响应。不动你已有的 hook,关掉只删 yybar 的"
+            ) {
+                HStack(spacing: 6) {
+                    if hookWorking { ProgressView().controlSize(.small) }
+                    Toggle("", isOn: Binding(
+                        get: { settings.activityHooksEnabled },
+                        set: { setActivityHooks($0, settings: settings) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(hookWorking)
+                }
+            }
+            if let hookStatus {
+                Text(hookStatus)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
+            if let hookError {
+                Text(hookError)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
         }
+        .onAppear { refreshHookStatus(settings: settings) }
+    }
+
+    private func setActivityHooks(_ enabled: Bool, settings: SettingsStore) {
+        hookWorking = true
+        hookError = nil
+        Task {
+            let report = await Task.detached {
+                enabled ? ActivityHooks.install() : ActivityHooks.uninstall()
+            }.value
+            UsageActivityMonitor.shared.reloadHookStates()
+            if enabled, report.changed.isEmpty {
+                // 一个都没装上：开关退回关闭。
+                settings.activityHooksEnabled = false
+            } else {
+                settings.activityHooksEnabled = enabled
+            }
+            if !report.failed.isEmpty {
+                hookError = report.failed.map { "\($0.app.displayName):\($0.message)" }.joined(separator: "\n")
+            } else if enabled, report.changed.isEmpty {
+                hookError = tr("No supported CLI found on this Mac.", "本机没有找到支持的 CLI")
+            }
+            refreshHookStatus(settings: settings)
+            hookWorking = false
+        }
+    }
+
+    private func refreshHookStatus(settings: SettingsStore) {
+        let installed = ActivityHooks.installedApps()
+        guard settings.activityHooksEnabled || !installed.isEmpty else {
+            hookStatus = nil
+            return
+        }
+        if installed.isEmpty {
+            hookStatus = tr("No hooks installed.", "还没有挂上任何 hook")
+            return
+        }
+        let names = installed.map(\.displayName).joined(separator: "、")
+        var text = tr("Installed for: ", "已挂上：") + names
+        if installed.contains(.codex) {
+            text += tr(". Codex runs new hooks only after you trust them in its /hooks.",
+                       "。Codex 要在它的 /hooks 里信任新 hook 后才会执行")
+        }
+        hookStatus = text
     }
 
     /// 原「弹出窗口」分组：弹出窗口已取消，这两项现在作用于统计页。

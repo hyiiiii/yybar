@@ -117,6 +117,8 @@ final class SettingsStore {
     var menuBarBreatheWhenActive: Bool { didSet { defaults.set(menuBarBreatheWhenActive, forKey: Keys.menuBarBreatheWhenActive) } }
     /// CLI 等待审批(工具调用尚无结果)时，菜单栏图标保持识别色不变
     var menuBarHoldColorWhileWaiting: Bool { didSet { defaults.set(menuBarHoldColorWhileWaiting, forKey: Keys.menuBarHoldColorWhileWaiting) } }
+    /// 用 CLI 的 hook 驱动呼吸(见 `ActivityHooks`)。只记用户的选择;真正的安装 / 卸载由设置页调用。
+    var activityHooksEnabled: Bool { didSet { defaults.set(activityHooksEnabled, forKey: Keys.activityHooksEnabled) } }
 
     // 悬浮窗（占位，M8 接）
     var floatingEnabled: Bool { didSet { defaults.set(floatingEnabled, forKey: Keys.floatingEnabled) } }
@@ -172,6 +174,7 @@ final class SettingsStore {
         menuBarWindow = MenuBarWindowChoice(rawValue: mbWindowRaw) ?? .fiveHour
         menuBarBreatheWhenActive = defaults.object(forKey: Keys.menuBarBreatheWhenActive) as? Bool ?? true
         menuBarHoldColorWhileWaiting = defaults.object(forKey: Keys.menuBarHoldColorWhileWaiting) as? Bool ?? true
+        activityHooksEnabled = defaults.object(forKey: Keys.activityHooksEnabled) as? Bool ?? false
         // 悬浮窗
         floatingEnabled = defaults.object(forKey: Keys.floatingEnabled) as? Bool ?? false
         floatingShowCodex = defaults.object(forKey: Keys.floatingShowCodex) as? Bool ?? true
@@ -328,6 +331,7 @@ final class SettingsStore {
         static let menuBarWindow = "yybar.settings.menuBarWindow"
         static let menuBarBreatheWhenActive = "yybar.settings.menuBarBreatheWhenActive"
         static let menuBarHoldColorWhileWaiting = "yybar.settings.menuBarHoldColorWhileWaiting"
+        static let activityHooksEnabled = "yybar.settings.activityHooksEnabled"
         static let floatingEnabled = "yybar.settings.floatingEnabled"
         static let floatingShowCodex = "yybar.settings.floatingShowCodex"
         static let floatingShowClaude = "yybar.settings.floatingShowClaude"

@@ -141,11 +141,28 @@ struct GoogleQuotaRegression {
             preconditionFailure("expected expired")
         }
         let wrongKey = GrokBotAuth.deriveKey(password: "other")!
-        guard case .failure(.noToken) = GrokBotAuth.extractToken(fileData: Data(file1.utf8), key: wrongKey, now: now) else {
+        guard case .failure(.noToken(let d1)) = GrokBotAuth.extractToken(fileData: Data(file1.utf8), key: wrongKey, now: now) else {
             preconditionFailure("expected noToken with wrong key")
         }
-        guard case .failure(.noToken) = GrokBotAuth.extractToken(fileData: Data(#"{"x":"plain"}"#.utf8), key: key, now: now) else {
+        precondition(d1 == GrokBotTokenDiagnostics(fileKind: "JSON", blobCount: 1, blobPaths: ["/sand.auth"], decryptedCount: 0))
+        precondition(d1.summary.contains("钥匙串口令解不开") && !d1.summary.contains(access))
+        guard case .failure(.noToken(let d2)) = GrokBotAuth.extractToken(fileData: Data(#"{"x":"plain"}"#.utf8), key: key, now: now) else {
             preconditionFailure("expected noToken without blobs")
         }
+        precondition(d2.blobCount == 0 && d2.fileKind == "JSON" && d2.summary.contains("没找到加密块"))
+        guard case .failure(.noToken(let d3)) = GrokBotAuth.extractToken(fileData: Data("garbage".utf8), key: key, now: now) else {
+            preconditionFailure("expected noToken for unknown file")
+        }
+        precondition(d3.fileKind == "无法识别")
+
+        // 5. 解得开但没有 token:报解开数量和路径;像账号的键名打码，诊断里不出现明文。
+        let secret = "not-a-token-but-secret-value"
+        let file5 = "{\"accounts\":{\"me@example.com\":{\"profile\":\"" + encrypt("{\"name\":\"" + secret + "\"}", key: key).base64EncodedString()
+            + "\"}}}"
+        guard case .failure(.noToken(let d5)) = GrokBotAuth.extractToken(fileData: Data(file5.utf8), key: key, now: now) else {
+            preconditionFailure("expected noToken when decrypted text has no token")
+        }
+        precondition(d5.decryptedCount == 1 && d5.blobPaths == ["/accounts/<账号>/profile"])
+        precondition(d5.summary.contains("解开了 1/1") && !d5.summary.contains(secret) && !d5.summary.contains("example.com"))
     }
 }

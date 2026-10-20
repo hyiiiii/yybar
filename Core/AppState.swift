@@ -1857,9 +1857,11 @@ final class AppState {
             case .failure(.notSignedIn):
                 markGrokBotFailure("Grok Bot 未登录，请打开 Grok Bot app 登录")
                 return
-            case .failure:
+            case .failure(let error):
                 grokBotKeychainDenied = true
-                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝。点刷新会再询问，选「始终允许」后不再弹出")
+                var reason = ""
+                if case .keychainDenied(let message) = error { reason = "(\(message))" }
+                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝或取消\(reason)。点刷新会再询问，选「始终允许」后不再弹出")
                 return
             }
         }
@@ -1873,10 +1875,13 @@ final class AppState {
                 markGrokBotFailure("Grok Bot 未登录，请打开 Grok Bot app 登录")
             case .expired:
                 markGrokBotFailure("Grok Bot 登录已过期，打开 Grok Bot app 让它续期后再刷新")
-            case .noToken, .keychainDenied:
+            case .noToken(let diagnostics):
                 // 钥匙串口令可能变了(重装 / 重新登录),下次重新读。
                 grokBotKey = nil
-                markGrokBotFailure("没能从 Grok Bot app 的登录里解出 token")
+                markGrokBotFailure("没能从 Grok Bot app 的登录里解出 token:\(diagnostics.summary)")
+            case .keychainDenied(let message):
+                grokBotKey = nil
+                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝或取消(\(message))")
             }
             return
         }
