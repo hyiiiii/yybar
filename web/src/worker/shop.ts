@@ -9,7 +9,7 @@ const shopRef = (userId: number, kind: CosmeticKind, id: string) => `shop:${user
 /** 余额够才写这条扣款流水：余额判断和扣款是同一条 SQL */
 const CHARGE = `INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref)
   SELECT ?1, -?2, 'shop', ?3
-  WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 10000 FROM daily_usage WHERE user_id = ?1)
+  WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 1000000 FROM daily_usage WHERE user_id = ?1)
       + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) >= ?2`;
 
 async function ownedOf(db: D1Database, userId: number): Promise<Set<string>> {

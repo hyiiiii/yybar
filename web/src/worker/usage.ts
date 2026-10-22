@@ -42,7 +42,7 @@ function tokenCount(v: unknown, field: string, where: string): number {
  * 校验上传内容。格式：
  * { days: [{ day: "2026-10-17", entries: [{ app, model, inputTokens, outputTokens,
  *   cacheReadTokens, cacheCreationTokens, costUSD: "1.23" }] }] }
- * 每个出现的 day 视为该日的完整快照：服务端先删后写，重复上传结果不变。
+ * 每个 day 是那一天的完整汇总；每一天只收第一次（见 saveUpload），App 只传今天以前、已经过完的天。
  */
 export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUpload {
   if (!body || typeof body !== "object" || !Array.isArray((body as { days?: unknown }).days)) {
@@ -51,7 +51,8 @@ export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUp
   const days = (body as { days: unknown[] }).days;
   if (days.length > LIMITS.daysPerRequest) throw new UploadError(`一次最多上传 ${LIMITS.daysPerRequest} 天`);
 
-  const latest = addDays(today, 1); // 允许比 UTC 快一天的时区
+  // 只收已经过完的天：App 传的是用户本地的昨天及以前，任何时区的「本地昨天」都不晚于 UTC 今天
+  const latest = today;
   const seen = new Set<string>();
   const rows: UsageRow[] = [];
 
@@ -110,22 +111,41 @@ export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUp
   return { days: [...seen], rows };
 }
 
-export async function saveUpload(db: D1Database, userId: number, upload: ParsedUpload): Promise<void> {
-  if (upload.days.length === 0) return;
+/** 这个用户已经上传过的日期（升序）。 */
+export async function uploadedDays(db: D1Database, userId: number, from = "0000-00-00", to = "9999-99-99"): Promise<string[]> {
+  const { results } = await db
+    .prepare("SELECT day FROM usage_uploads WHERE user_id = ? AND day BETWEEN ? AND ? ORDER BY day")
+    .bind(userId, from, to)
+    .all<{ day: string }>();
+  return results.map((r) => r.day);
+}
+
+/**
+ * 每一天只收第一次：已经上传过的日期（usage_uploads 里有记录）整天跳过，不改也不加，
+ * 所以同一天传几次、从几台 Mac 传，筹码都只算一次。返回这次收下的和跳过的日期。
+ * 写用量和打标记在同一个事务里：用量只在「这一天还没标记」时写入，写完再标记，并发的两次上传只有先到的那次生效。
+ */
+export async function saveUpload(db: D1Database, userId: number, upload: ParsedUpload): Promise<{ accepted: string[]; skipped: string[] }> {
+  if (upload.days.length === 0) return { accepted: [], skipped: [] };
+  const sorted = [...upload.days].sort();
+  const done = new Set(await uploadedDays(db, userId, sorted[0], sorted[sorted.length - 1]));
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens,
+       cache_read_tokens, cache_creation_tokens, cost_micro)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+     WHERE NOT EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2)`,
+  );
+  const mark = db.prepare("INSERT OR IGNORE INTO usage_uploads (user_id, day) VALUES (?, ?)");
   const stmts: D1PreparedStatement[] = [];
   for (const day of upload.days) {
-    stmts.push(db.prepare("DELETE FROM daily_usage WHERE user_id = ? AND day = ?").bind(userId, day));
-  }
-  const insert = db.prepare(
-    `INSERT INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens,
-       cache_read_tokens, cache_creation_tokens, cost_micro)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  for (const r of upload.rows) {
-    stmts.push(
-      insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, r.costMicro),
-    );
+    if (done.has(day)) continue;
+    for (const r of upload.rows) {
+      if (r.day !== day) continue;
+      stmts.push(insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, r.costMicro));
+    }
+    stmts.push(mark.bind(userId, day));
   }
   // batch 在一个事务里执行，失败会整体回滚
-  await db.batch(stmts);
+  if (stmts.length) await db.batch(stmts);
+  return { accepted: upload.days.filter((d) => !done.has(d)), skipped: upload.days.filter((d) => done.has(d)) };
 }

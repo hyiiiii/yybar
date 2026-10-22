@@ -32,8 +32,8 @@ export function parseCostMicro(value: unknown): number | null {
   return micro;
 }
 
-/** 1 美元 = 100 积分。 */
-export const MICRO_PER_POINT = 10_000;
+/** 花费 $1 = 1 筹码（2026-10-22 起；之前是 $1 = 100）。SQL 里余额也按这个除：cost_micro / 1000000。 */
+export const MICRO_PER_POINT = 1_000_000;
 
 export function pointsFromMicro(micro: number): number {
   return Math.floor(micro / MICRO_PER_POINT);
