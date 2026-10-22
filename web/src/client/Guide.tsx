@@ -91,7 +91,7 @@ export function Guide({ onClose }: { onClose: () => void }) {
       ),
     },
     {
-      say: t("轮到你时有 10 秒，能做这几件事：", "On your turn you have 10 seconds to:"),
+      say: t("轮到你时有 15 秒，能做这几件事：", "On your turn you have 15 seconds to:"),
       body: (
         <ul className="guide-actions">
           <li><b>{t("弃牌", "Fold")}</b>{t("：不玩这手了，已经下的筹码留在底池。", " — give up the hand; chips already in stay in the pot.")}</li>

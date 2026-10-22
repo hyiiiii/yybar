@@ -138,7 +138,7 @@ export const MIN_BUY_IN_BB = 40;
 export const MAX_BUY_IN_BB = 200;
 /** 开桌可选的盲注 */
 export const BLIND_LEVELS: [number, number][] = [[1, 2], [2, 5], [5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
-export const TURN_MS = 10_000;
+export const TURN_MS = 15_000;
 /** 桌面事件保留多久 */
 const EVENT_MS = 8_000;
 /** 两次表情至少隔多久 */
@@ -152,7 +152,7 @@ const AWAY_TURN_MS = 5_000;
 const AWAY_KICK_MS = 60_000;
 const START_DELAY_MS = 1_500;
 /** 都全下之后，一条街一条街按这个节奏发，不一下子发完 */
-export const RUNOUT_STEP_MS = 1_800;
+export const RUNOUT_STEP_MS = 2_400;
 const SHOWDOWN_PAUSE_MS = 6_000;
 const FOLD_WIN_PAUSE_MS = 3_000;
 

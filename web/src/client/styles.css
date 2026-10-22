@@ -281,14 +281,15 @@ main { min-height: 60vh; }
 .seat-tossed .card:nth-child(1) { rotate: -6deg; }
 .seat-tossed .card:nth-child(2) { rotate: 5deg; }
 @media (prefers-reduced-motion: no-preference) {
-  .seat-tossed .card { animation: toss .8s cubic-bezier(.2, .8, .3, 1) both; }
+  .seat-tossed .card { animation: toss 1.05s cubic-bezier(.2, .8, .3, 1) both; }
   .pos-0 .seat-tossed, .pos-1 .seat-tossed { --toss-from: 0 -60px; }
   .pos-3 .seat-tossed, .pos-4 .seat-tossed { --toss-from: 0 60px; }
   .pos-2 .seat-tossed { --toss-from: 90px 0; }
   .pos-5 .seat-tossed { --toss-from: -90px 0; }
   @keyframes toss { from { translate: var(--toss-from, 0 40px); transform: rotateY(180deg) scale(.9); opacity: .4; } 60% { transform: rotateY(0) scale(1.05); } }
   /* 翻开别人的牌（摊牌）、发到自己的牌：翻过来 */
-  .seat-cards .card:not(.card-back) { animation: flip .7s cubic-bezier(.2, .9, .3, 1.1); }
+  .seat-cards .card:not(.card-back) { animation: flip 1s cubic-bezier(.2, .9, .3, 1.1) both; }
+  .seat-cards .card-btn + .card-btn .card:not(.card-back), .seat-cards .card + .card:not(.card-back) { animation-delay: .12s; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .seat-cards-showable .card-btn:not(:disabled) .card { animation: show-hint 1.6s ease-in-out infinite; }
@@ -309,7 +310,7 @@ main { min-height: 60vh; }
   .pos-2 .seat-bet { --bet-from: 16px 0; }
   .pos-5 .seat-bet { --bet-from: -16px 0; }
   @keyframes bet-in { from { translate: var(--bet-from, 0 0); opacity: 0; scale: .7; } }
-  .seat-cards-muck { animation: muck .75s ease-in both; }
+  .seat-cards-muck { animation: muck .95s ease-in both; }
   .pos-0 .seat-cards-muck, .pos-1 .seat-cards-muck { --muck-to: 0 40px; }
   .pos-3 .seat-cards-muck, .pos-4 .seat-cards-muck { --muck-to: 0 -40px; }
   .pos-2 .seat-cards-muck { --muck-to: -40px 0; }
@@ -390,7 +391,10 @@ main { min-height: 60vh; }
   .hop-a .dealer-sprite { animation: hop-a .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
   .hop-b .dealer-sprite { animation: hop-b .45s ease-out, bob 2.4s ease-in-out .45s infinite; }
   .bubble { animation: pop .4s ease-out; }
-  .board-cards .card:not(.card-back) { animation: flip .65s cubic-bezier(.2, .9, .3, 1.1); }
+  /* 公共牌翻开慢一点；翻牌的三张一张接一张翻 */
+  .board-cards .card:not(.card-back) { animation: flip 1s cubic-bezier(.2, .9, .3, 1.1) both; }
+  .board-cards .card:nth-child(2):not(.card-back) { animation-delay: .18s; }
+  .board-cards .card:nth-child(3):not(.card-back) { animation-delay: .36s; }
   @keyframes bob { 50% { transform: translateY(-3px); } }
   @keyframes step { 50% { transform: translateY(-0.4px); } }
   @keyframes wave { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-1px); } 90% { transform: translateY(0.4px); } }
