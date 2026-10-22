@@ -71,7 +71,12 @@ describe("table flow", () => {
     expect(room.act(uid(other), "check", undefined, 10_002)).toBeNull();
     expect(room.s.street).toBe("flop");
     expect(room.s.toAct).toBe(other);
+    // 换街时动作清掉，但上一条街的（包括最后一个人的过牌）放在 prev 里给网页多留一会儿
+    const seen = room.view(null, 10_002).seats;
+    expect(seen[other]).toMatchObject({ last: null, prev: "过牌" });
+    expect(seen[btn]).toMatchObject({ last: null, prev: "跟注" });
     expect(room.act(uid(other), "raise", 20, 10_003)).toBeNull();
+    expect(room.view(null, 10_003).seats[other]).toMatchObject({ last: "下注 $20", prev: null });
     expect(room.act(uid(btn), "raise", 25, 10_004)).toMatch(/加注要在/);
     expect(room.act(uid(btn), "raise", 60, 10_004)).toBeNull();
     expect(room.act(uid(other), "call", undefined, 10_005)).toBeNull();

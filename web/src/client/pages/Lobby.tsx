@@ -449,7 +449,7 @@ export function LobbyPage() {
 
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
-  /** 每个座位上一次的动作：进入下一条街服务端会清掉，这里再多留 NOTE_LINGER_MS，最后一个人的跟注、过牌才看得到 */
+  /** 每个座位上一条街的动作留到什么时候：服务端换街时把动作挪到 prev，这里从第一次看到起再留 NOTE_LINGER_MS */
   const lastNotes = useRef<{ key: string; notes: ({ text: string; until: number } | undefined)[] }>({ key: "", notes: [] });
   const [noteTick, setNoteTick] = useState(0);
   const seats: Seat[] = useMemo(() => {
@@ -479,10 +479,12 @@ export function LobbyPage() {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
+      // 上一条街的动作（服务端换街时挪到 prev）：第一次看到起再留 NOTE_LINGER_MS
       const kept = lastNotes.current.notes;
-      if (x.last) kept[i] = { text: x.last, until: 0 };
-      else if (kept[i] && !kept[i]!.until) kept[i]!.until = Date.now() + NOTE_LINGER_MS;
-      const lingering = !x.last && kept[i] && Date.now() < kept[i]!.until ? kept[i]!.text : null;
+      const prevKey = !x.last && x.prev ? `${view.street}:${x.prev}` : null;
+      if (!prevKey) kept[i] = undefined;
+      else if (kept[i]?.text !== prevKey) kept[i] = { text: prevKey, until: Date.now() + NOTE_LINGER_MS };
+      const lingering = prevKey && Date.now() < kept[i]!.until ? x.prev : null;
       // 赢家的牌型也写在头顶；只赢到边池的注明「边池」，不然几个人同时 WIN 看着像算错了
       if (showdown && x.hand && !x.folded) seatNote = x.won > 0 && x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang);
       else if (x.leaving) seatNote = t("离桌", "Leaving");

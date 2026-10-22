@@ -62,6 +62,8 @@ interface RoomSeat extends Player {
   /** 这一手翻牌前的统计：主动入池、翻前加注、面对一次加注（有机会 3-bet）、3-bet */
   pf?: { vpip: boolean; pfr: boolean; tbOpp: boolean; tb: boolean };
   last: string | null;
+  /** 上一条街最后的动作：进入下一条街时 last 清掉、挪到这里，网页在头顶再留一会儿（不然最后一个行动的人的动作根本看不到） */
+  prev?: string | null;
   won: number;
   hand: string | null;
   /** 断线时刻；在线为 null */
@@ -571,6 +573,7 @@ export class TableRoom {
         away: x.away !== null,
         leaving: x.leaving,
         last: x.last,
+        prev: x.last ? null : (x.prev ?? null),
         won: x.won,
         hand: x.hand,
       };
@@ -737,7 +740,7 @@ export class TableRoom {
       }
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
-        hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, won: 0, hand: null,
+        hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, prev: null, won: 0, hand: null,
       });
       if (rebuy) x.last = `带入 ${chips(x.stack)}`;
     });
@@ -905,7 +908,11 @@ export class TableRoom {
       x.bet = 0;
       x.acted = false;
       x.mayRaise = true;
-      if (x.inHand && !x.folded && !x.allIn) x.last = null;
+      x.prev = null;
+      if (x.inHand && !x.folded && !x.allIn) {
+        x.prev = x.last;
+        x.last = null;
+      }
     }
     this.s.currentBet = 0;
     this.s.minRaise = this.s.config.bb;

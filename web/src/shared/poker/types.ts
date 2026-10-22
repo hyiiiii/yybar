@@ -40,6 +40,8 @@ export interface SeatView {
   leaving: boolean;
   /** 刚才的动作，例如「跟注」「加注到 300」 */
   last: string | null;
+  /** 上一条街最后的动作（这条街还没行动时才有），网页在头顶再留一会儿 */
+  prev: string | null;
   /** 亮给大家的牌：第 1 位第一张，第 2 位第二张；摊牌是 3 */
   showMask: number;
   /** 这手只赢到边池（没赢主池） */
