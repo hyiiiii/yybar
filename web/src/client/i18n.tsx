@@ -1,5 +1,5 @@
 // 中英切换：左上角 yybar 旁边的按钮。界面文字用 t(中文, English) 就地写两份；
-// 服务端发来的中文（动作、牌型、报错、机器人名字）在这里翻成英文。
+// 服务端发来的中文（动作、牌型、报错）在这里翻成英文。
 import { useCallback, useSyncExternalStore } from "react";
 import type { Text } from "../shared/cosmetics";
 
@@ -66,12 +66,6 @@ const EXACT: Record<string, string> = {
   四条: "Four of a kind",
   同花顺: "Straight flush",
   皇家同花顺: "Royal flush",
-  // 机器人
-  "bot-紧凶": "bot-Nit",
-  "bot-松鱼": "bot-Fish",
-  "bot-跟注站": "bot-Station",
-  "bot-诈唬王": "bot-Bluffer",
-  "bot-老实人": "bot-Honest",
   // 报错
   没有这个座位: "No such seat",
   你已经在这张桌上了: "You're already at this table",
@@ -129,5 +123,5 @@ export function tr(text: string, lang: Lang): string {
   return text;
 }
 
-/** 名字：机器人的中文名翻一下，真人原样 */
+/** 名字：机器人按编号叫（bot-001），和真人一样原样显示；中文名的机器人再翻一下 */
 export const nameOf = (login: string, lang: Lang) => (login.startsWith("bot-") ? tr(login, lang) : login);

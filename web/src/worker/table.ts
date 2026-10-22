@@ -39,6 +39,8 @@ export class PokerTable extends DurableObject<Env> {
     const stale = this.room && this.room.s.config.since !== config.since && this.room.vacant();
     if (!this.room || stale) this.room = TableRoom.create(config);
     else Object.assign(this.room.s.config, { sb: config.sb, bb: config.bb, bots: config.bots, temporary: config.temporary, since: config.since });
+    // 机器人桌没人看时停着：有人进来先把错过的手补打上
+    this.room.resume(Date.now());
 
     const { 0: client, 1: server } = new WebSocketPair();
     const att: Attachment = user ?? { userId: 0, login: "", avatarUrl: null };
@@ -91,6 +93,7 @@ export class PokerTable extends DurableObject<Env> {
 
   async alarm() {
     if (!this.room) return this.ctx.storage.deleteAlarm();
+    this.room.resume(Date.now());
     this.room.tick(Date.now());
     await this.commit();
   }
@@ -162,12 +165,13 @@ export class PokerTable extends DurableObject<Env> {
     }
     room.checkEmpty(Date.now());
     if (room.closable(Date.now()) && (await this.close())) return;
+    // 机器人桌上只剩机器人、也没人在看：先停手，有人连上来时把错过的手一下补打完（room.resume）。
+    // 看的人眼里它一直在打，但没人看的时候不用每一两秒醒一次（按请求和写入行数计费，免费额度撑不住全天跑）
+    const idle = room.s.config.bots && room.vacant() && !this.ctx.getWebSockets().some((w) => w !== gone);
+    if (idle) room.pause(Date.now());
     await this.ctx.storage.put("room", room.s);
     // 收桌没成功（删桌失败）时隔一会儿再试，不要马上又醒
-    let wake = room.closable(Date.now()) ? Date.now() + CASHOUT_RETRY_MS : room.nextWake();
-    // 机器人桌上只剩机器人、也没人在看：先停手，有人连上来再接着打。看的人眼里它一直在打，
-    // 但没人看的时候不用每一两秒醒一次（Durable Object 按请求和在线时长计费）
-    if (room.s.config.bots && room.vacant() && !this.ctx.getWebSockets().some((w) => w !== gone)) wake = null;
+    const wake = idle ? null : room.closable(Date.now()) ? Date.now() + CASHOUT_RETRY_MS : room.nextWake();
     const retry = room.s.cashouts.length ? Date.now() + CASHOUT_RETRY_MS : null;
     const at = [wake, retry].filter((x): x is number => x !== null);
     // 闹钟排在整毫秒、而且一定在现在之后：在闹钟里再排一个和这次同一时刻（或更早）的闹钟，

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
 import { longestStreak } from "../src/shared/achievements";
-import { BOT_BUY_IN_BB, BOT_CASH_OUT_BB, buildPots, EMPTY_TABLE_MS, HOLD_MS, RUNOUT_STEP_MS, TABLE_BOTS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
+import { BOT_BUY_IN_BB, BOT_CASH_OUT_BB, buildPots, CATCH_UP_HANDS, EMPTY_TABLE_MS, HOLD_MS, RUNOUT_STEP_MS, TABLE_BOTS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
   const r = { T: 10, J: 11, Q: 12, K: 13, A: 14 }[s[0]] ?? Number(s[0]);
@@ -449,6 +449,48 @@ describe("table flow", () => {
     const back = room.s.seats[2]!;
     expect(back.login).toBe(TABLE_BOTS[1]);
     expect(back.stack + back.committed).toBe(100);
+  });
+
+  it("a bot that had to sit elsewhere moves back to its own seat once it frees up", () => {
+    const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    // 2 号座位当时被人占着，bot-002 坐到了 1 号，挨着 bot-001
+    room.s.seats[1] = room.s.seats[2];
+    room.s.seats[2] = null;
+    room.tick(room.s.nextHandAt!);
+    expect(room.s.seats.map((x) => x?.login ?? null)).toEqual([TABLE_BOTS[0], null, TABLE_BOTS[1], null, TABLE_BOTS[2], null]);
+  });
+
+  it("bot table catches up on the hands it missed while nobody was watching", () => {
+    const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    room.tick(room.s.nextHandAt!);
+    const apart = () => room.s.seats.every((x, i) => !x?.bot || !room.s.seats[(i + 1) % 6]?.bot);
+    // 停了一小时：一手一手真打到现在，接着从现在往下打
+    let now = 2000;
+    room.pause(now);
+    room.pause(now + 5000); // 重复停手不改起点
+    now += 60 * 60_000;
+    room.resume(now);
+    expect(room.s.pausedAt).toBeNull();
+    expect(room.s.handNo).toBeGreaterThan(150);
+    expect(room.nextWake()!).toBeGreaterThan(now);
+    expect(apart()).toBe(true);
+    // 停了一整天：真打 CATCH_UP_HANDS 手，其余只加手数，计时挪到现在之后
+    const before = room.s.handNo;
+    room.pause(now);
+    now += 24 * 3600_000;
+    room.resume(now);
+    expect(room.s.handNo - before).toBeGreaterThan(CATCH_UP_HANDS + 4000);
+    expect(room.nextWake()!).toBeGreaterThan(now);
+    expect(room.nextWake()! - now).toBeLessThan(10_000);
+    expect(room.s.seats.every((x) => !x || x.stack >= 0)).toBe(true);
+    // 补完接着正常打
+    const h = room.s.handNo;
+    for (let n = 0; n < 200 && room.s.handNo < h + 3; n++) room.tick((now = room.nextWake()!));
+    expect(room.s.handNo).toBe(h + 3);
+    // 没停过的桌 resume 什么都不做
+    const fresh = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    fresh.resume(10_000);
+    expect(fresh.s.handNo).toBe(0);
   });
 
   it("sends bots away when a bot table becomes a regular one", () => {

@@ -509,8 +509,8 @@ export function LobbyPage() {
         win: showdown && x.won > 0
           ? { amount: x.won, hand: x.hand && (x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang)) }
           : undefined,
-        // 摊牌亮出来的牌留在手里翻开；赢了没摊牌主动亮的丢到桌面上
-        tossed: x.hand ? 0 : x.showMask,
+        // 摊牌、都全下后翻开的牌留在手里；只有赢了没摊牌、自己选择亮的才丢到桌面上
+        tossed: showdown && !x.hand ? x.showMask : 0,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
         note: seatNote,
       };

@@ -1,12 +1,11 @@
 // 预览版的牌桌：没有服务端，直接在浏览器里跑 src/shared/poker 的牌局，其他座位是机器人。
-import { TableRoom } from "../shared/poker/room";
+import { TABLE_BOTS, TableRoom } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { TableInfo } from "./tables";
 import { demoBadges, demoEmotes, demoLook, demoSpend } from "./demo";
 
 const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
 const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
-const BOTS = ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"];
 
 /** 预览里的筹码余额，和示例个人页一致 */
 let balance = 160_581;
@@ -63,7 +62,7 @@ export function openLocalTable(
   let t = rooms.get(info.no);
   if (!t) {
     // 机器人桌和线上一样跑；预览里自己开的桌没有别人会来，放三个机器人陪打，你走了桌就收掉；其他桌坐着几个假装的真人
-    const names = info.temporary ? BOTS.slice(0, 3) : PEOPLE.slice(0, Math.min(info.seated, 5));
+    const names = info.temporary ? TABLE_BOTS : PEOPLE.slice(0, Math.min(info.seated, 5));
     const room = TableRoom.create({
       no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: !!info.bots, fixedBots: info.bots ? undefined : names, temporary: info.temporary,
     });

@@ -119,6 +119,8 @@ export interface RoomState {
   holds?: (Hold | null)[];
   /** 机器人桌上赢够离桌的机器人：打完第几手之后再回来 */
   botBreaks?: Record<string, number>;
+  /** 机器人桌没人看、停手的时刻；有人回来时从这里补打 */
+  pausedAt?: number | null;
   /** 这一手翻牌前已经有几次加注（大盲不算） */
   pfRaises?: number;
   /** 打完的手的统计，宿主写进 poker_stats 后调用 ackStats */
@@ -154,13 +156,17 @@ export const RUNOUT_STEP_MS = 1_800;
 const SHOWDOWN_PAUSE_MS = 6_000;
 const FOLD_WIN_PAUSE_MS = 3_000;
 
-/** 机器人桌上的三个机器人，坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
-export const TABLE_BOTS = ["bot-紧凶", "bot-松鱼", "bot-诈唬王"];
+/** 机器人桌上的三个机器人，按编号叫；坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
+export const TABLE_BOTS = ["bot-001", "bot-002", "bot-003"];
 export const BOT_SEATS = [0, 2, 4];
 /** 机器人桌的机器人带 50 个大盲（1/2 的桌就是 $100）；输光了再带 50 个，
  *  赢到 100 个大盲（$200）以上就离桌，歇一手再带 50 个回来 */
 export const BOT_BUY_IN_BB = 50;
 export const BOT_CASH_OUT_BB = 100;
+/** 补打时最多真打几手（几十毫秒）；停得再久，多出来的只把手数往前加，筹码早就打乱了 */
+export const CATCH_UP_HANDS = 500;
+/** 机器人桌一手大约多久，算停手期间错过了几手 */
+const BOT_HAND_MS = 16_000;
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -254,6 +260,39 @@ export class TableRoom {
   /** 桌上没有真人、没人在占座、也没有没结算的筹码（机器人可以还坐着）。 */
   vacant(): boolean {
     return !(this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0 || this.holds().some(Boolean));
+  }
+
+  /** 机器人桌没人看：停手，记下停在什么时候。宿主之后不再排闹钟。 */
+  pause(now: number) {
+    this.s.pausedAt ??= now;
+  }
+
+  /**
+   * 有人回来（连上来或闹钟响了）：把停手这段时间补打上，看起来就像一直在打。
+   * 按原来的节奏一手一手真打，最多 CATCH_UP_HANDS 手；停得更久的，剩下的时间只把手数往前加，
+   * 再把各种计时挪到现在，从这里接着打。
+   */
+  resume(now: number) {
+    const from = this.s.pausedAt;
+    if (from === undefined || from === null) return;
+    this.s.pausedAt = null;
+    const start = this.s.handNo;
+    let t = from;
+    // 一手大约十次 tick；guard 防着哪里漏清计时器时在这里空转
+    for (let guard = 0; guard < CATCH_UP_HANDS * 40 && this.s.handNo - start < CATCH_UP_HANDS; guard++) {
+      const next = this.nextWake();
+      if (next === null || next > now) return;
+      t = Math.max(t, next);
+      this.tick(t);
+    }
+    if ((this.nextWake() ?? Infinity) > now) return;
+    const shift = now - t;
+    this.s.handNo += Math.floor(shift / BOT_HAND_MS);
+    for (const k of ["deadline", "turnStart", "nextHandAt", "runoutAt"] as const) {
+      const v = this.s[k];
+      if (typeof v === "number") this.s[k] = v + shift;
+    }
+    this.s.events = [];
   }
 
   /** 宿主每次存档前调用：记下空桌的起点。 */
@@ -633,6 +672,17 @@ export class TableRoom {
     const { config } = this.s;
     const names = config.fixedBots ?? (config.bots ? TABLE_BOTS : []);
     this.s.seats.forEach((x, i) => x?.bot && !names.includes(x.login) && (this.s.seats[i] = null));
+    // 机器人桌上被挤到别处（自己的座位当时有人占）的机器人，自己的座位空出来就坐回去，三个机器人又隔开了
+    if (!config.fixedBots) {
+      names.forEach((name, k) => {
+        const at = this.s.seats.findIndex((x) => x?.bot && x.login === name);
+        const home = BOT_SEATS[k];
+        if (at >= 0 && at !== home && !this.s.seats[home] && !this.holds()[home]) {
+          this.s.seats[home] = this.s.seats[at];
+          this.s.seats[at] = null;
+        }
+      });
+    }
     const breaks = (this.s.botBreaks ??= {});
     // 歇着的机器人一般等一手再回来；剩下的人不够开局时马上回来，桌子不会停住
     const short = this.eligible().length < 2;
