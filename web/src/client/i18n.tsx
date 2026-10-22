@@ -112,6 +112,7 @@ const EXACT: Record<string, string> = {
 const PATTERNS: [RegExp, string][] = [
   [/^下注 (.+)$/, "Bet $1"],
   [/^加注到 (.+)$/, "Raise to $1"],
+  [/^带入 (.+)$/, "Buy-in $1"],
   [/^筹码不够：这张桌最少要带 (.+) 入座$/, "Not enough chips: this table needs at least $1"],
   [/^带入要在 (.+) 到 (.+) 之间$/, "Buy-in must be between $1 and $2"],
   [/^加注要在 (.+) 到 (.+) 之间$/, "Raise must be between $1 and $2"],

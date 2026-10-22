@@ -12,12 +12,14 @@ export interface RoomConfig {
   no: number;
   sb: number;
   bb: number;
-  /** 机器人练习桌：有真人坐下时自动补机器人陪打 */
+  /** 机器人桌：三个机器人隔一个座位坐着一直打，有没有真人都一样（见 TABLE_BOTS） */
   bots: boolean;
   /** 预览版用：固定这几个机器人一直坐着打，不管有没有真人 */
   fixedBots?: string[];
   /** 玩家开的桌：没有真人坐着一段时间后收掉 */
   temporary?: boolean;
+  /** 这张桌在大厅里开出来的时刻（D1 的 created_at）。桌号被重新用上时，靠它认出存档是上一张桌留下的 */
+  since?: string;
 }
 
 export interface Player {
@@ -115,6 +117,8 @@ export interface RoomState {
   emptySince?: number | null;
   /** 每个座位的占座；旧存档没有这个字段 */
   holds?: (Hold | null)[];
+  /** 机器人桌上赢够离桌的机器人：打完第几手之后再回来 */
+  botBreaks?: Record<string, number>;
   /** 这一手翻牌前已经有几次加注（大盲不算） */
   pfRaises?: number;
   /** 打完的手的统计，宿主写进 poker_stats 后调用 ackStats */
@@ -131,7 +135,7 @@ export const BUY_IN_BB = 100;
 export const MIN_BUY_IN_BB = 40;
 export const MAX_BUY_IN_BB = 200;
 /** 开桌可选的盲注 */
-export const BLIND_LEVELS: [number, number][] = [[5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
+export const BLIND_LEVELS: [number, number][] = [[1, 2], [2, 5], [5, 10], [10, 20], [25, 50], [50, 100], [100, 200], [200, 400]];
 export const TURN_MS = 10_000;
 /** 桌面事件保留多久 */
 const EVENT_MS = 8_000;
@@ -150,7 +154,13 @@ export const RUNOUT_STEP_MS = 1_800;
 const SHOWDOWN_PAUSE_MS = 6_000;
 const FOLD_WIN_PAUSE_MS = 3_000;
 
-const BOT_NAMES = ["bot-紧凶", "bot-松鱼", "bot-跟注站", "bot-诈唬王", "bot-老实人"];
+/** 机器人桌上的三个机器人，坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
+export const TABLE_BOTS = ["bot-紧凶", "bot-松鱼", "bot-诈唬王"];
+export const BOT_SEATS = [0, 2, 4];
+/** 机器人桌的机器人带 50 个大盲（1/2 的桌就是 $100）；输光了再带 50 个，
+ *  赢到 100 个大盲（$200）以上就离桌，歇一手再带 50 个回来 */
+export const BOT_BUY_IN_BB = 50;
+export const BOT_CASH_OUT_BB = 100;
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -177,7 +187,8 @@ export class TableRoom {
       say: null,
       cashouts: [],
     });
-    room.syncBots(0);
+    room.syncBots();
+    room.scheduleStart(0);
     return room;
   }
 
@@ -240,11 +251,15 @@ export class TableRoom {
     return this.s.emptySince ?? null;
   }
 
+  /** 桌上没有真人、没人在占座、也没有没结算的筹码（机器人可以还坐着）。 */
+  vacant(): boolean {
+    return !(this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0 || this.holds().some(Boolean));
+  }
+
   /** 宿主每次存档前调用：记下空桌的起点。 */
   checkEmpty(now: number) {
     if (!this.s.config.temporary) return;
-    const anyone = this.s.seats.some((x) => x && !x.bot) || this.s.cashouts.length > 0 || this.holds().some(Boolean);
-    if (anyone) this.s.emptySince = null;
+    if (!this.vacant()) this.s.emptySince = null;
     else this.s.emptySince ??= now;
   }
 
@@ -274,7 +289,7 @@ export class TableRoom {
     if (err) return err;
     this.s.seats[seat] = this.blankSeat(player, false, stack);
     this.release(player.userId);
-    this.syncBots(now);
+    this.syncBots();
     this.scheduleStart(now);
     return null;
   }
@@ -381,7 +396,8 @@ export class TableRoom {
     if (!this.inProgress || !seat.inHand) {
       if (this.s.street === "showdown" && seat.inHand) return null; // 摊牌展示完再走
       this.standUp(i);
-      this.syncBots(now);
+      this.syncBots();
+      this.scheduleStart(now);
       return null;
     }
     if (!seat.folded) this.foldOutOfTurn(i, now);
@@ -464,7 +480,8 @@ export class TableRoom {
       const kick = this.idleKickAt();
       if (kick !== null && now >= kick) {
         this.s.seats.forEach((x, i) => x && !x.bot && x.away !== null && now - x.away >= AWAY_KICK_MS && this.standUp(i));
-        this.syncBots(now);
+        this.syncBots();
+        this.scheduleStart(now);
         continue;
       }
       return;
@@ -537,7 +554,7 @@ export class TableRoom {
       you: youSeat,
       legal: youSeat === null ? null : this.legal(youSeat),
       say: this.s.say,
-      holds: this.holds().map((h) => h && { login: h.login, start: h.start, until: h.until, you: h.userId === userId }),
+      holds: this.holds().map((h) => h && { login: h.login, avatarUrl: h.avatarUrl, start: h.start, until: h.until, you: h.userId === userId }),
       events: (this.s.events ?? []).filter((e) => now - e.at < EVENT_MS),
       // 偷偷看：别人没亮的底牌（弃了的也算）；发发看：没翻出来的公共牌。都只给用的人
       peek: you >= 0 && this.s.seats[you]!.peeked && this.s.street === "showdown"
@@ -606,27 +623,39 @@ export class TableRoom {
     }
   }
 
-  /** 机器人桌：真人越少机器人越多（凑够 4 人），没有真人就都走。只在两手之间调整。 */
-  private syncBots(now: number) {
+  /**
+   * 机器人入座、离座，只在两手之间调整：机器人桌上 TABLE_BOTS 一直坐着打，有没有真人都一样；
+   * 预览版的 fixedBots 也一直坐着；别的桌没有机器人（桌子改成真人桌时，留下的机器人请走）。
+   * 补了人要不要排开局由调用的地方决定：两手之间的 cleanup 之后马上就开，不用再排。
+   */
+  private syncBots() {
     if (this.inProgress) return;
     const { config } = this.s;
-    const names = config.fixedBots ?? (config.bots ? BOT_NAMES : []);
-    if (!names.length) return;
-    const want = config.fixedBots ? names.length : this.humans() ? Math.max(0, 4 - this.humans()) : 0;
-    let bots = this.s.seats.filter((x) => x?.bot).length;
-    for (let i = SEATS - 1; i >= 0 && bots > want; i--) {
-      if (this.s.seats[i]?.bot) (this.s.seats[i] = null), bots--;
-    }
-    for (const name of names) {
-      if (bots >= want) break;
-      if (this.s.seats.some((x) => x?.login === name)) continue;
-      const free = this.s.seats.findIndex((x, i) => !x && !this.holds()[i]);
-      if (free < 0) break;
-      const id = -1 - names.indexOf(name);
-      this.s.seats[free] = this.blankSeat({ userId: id, login: name, avatarUrl: null }, true, BUY_IN_BB * config.bb);
-      bots++;
-    }
-    this.scheduleStart(now);
+    const names = config.fixedBots ?? (config.bots ? TABLE_BOTS : []);
+    this.s.seats.forEach((x, i) => x?.bot && !names.includes(x.login) && (this.s.seats[i] = null));
+    const breaks = (this.s.botBreaks ??= {});
+    // 歇着的机器人一般等一手再回来；剩下的人不够开局时马上回来，桌子不会停住
+    const short = this.eligible().length < 2;
+    names.forEach((name, k) => {
+      if (this.s.seats.some((x) => x?.bot && x.login === name)) return;
+      if (!short && (breaks[name] ?? 0) > this.s.handNo) return;
+      const seat = this.botSeat(k);
+      if (seat < 0) return;
+      delete breaks[name];
+      const buyIn = (config.fixedBots ? BUY_IN_BB : BOT_BUY_IN_BB) * config.bb;
+      const bot = (this.s.seats[seat] = this.blankSeat({ userId: -1 - k, login: name, avatarUrl: null }, true, buyIn));
+      if (!config.fixedBots && this.s.handNo > 0) bot.last = `带入 ${chips(buyIn)}`;
+    });
+  }
+
+  /** 第 k 个机器人坐哪：机器人桌上先坐自己的座位（BOT_SEATS），被真人占了就找一个两边都不是机器人的空位，再没有就随便一个空位。 */
+  private botSeat(k: number): number {
+    const free = (i: number) => !this.s.seats[i] && !this.holds()[i];
+    const all = [...Array(SEATS).keys()];
+    if (this.s.config.fixedBots) return all.find(free) ?? -1;
+    if (free(BOT_SEATS[k])) return BOT_SEATS[k];
+    const bot = (i: number) => !!this.s.seats[(i + SEATS) % SEATS]?.bot;
+    return all.find((i) => free(i) && !bot(i - 1) && !bot(i + 1)) ?? all.find(free) ?? -1;
   }
 
   /** 两手之间：结算离桌和输光的人，机器人补码。 */
@@ -641,13 +670,28 @@ export class TableRoom {
         this.holds()[i] = { userId: x.userId, login: x.login, avatarUrl: x.avatarUrl, start: now, until: now + HOLD_MS };
         return;
       }
-      if (x.bot && x.stack < MIN_BUY_IN_BB * this.s.config.bb) x.stack = BUY_IN_BB * this.s.config.bb;
+      let rebuy = false;
+      if (x.bot) {
+        const { bb, fixedBots } = this.s.config;
+        if (fixedBots) {
+          if (x.stack < MIN_BUY_IN_BB * bb) x.stack = BUY_IN_BB * bb;
+        } else if (x.stack > BOT_CASH_OUT_BB * bb) {
+          // 赢够了：离桌歇一手，再带 50 个大盲回来（syncBots）
+          this.standUp(i);
+          (this.s.botBreaks ??= {})[x.login] = this.s.handNo + 1;
+          return;
+        } else if (x.stack < bb) {
+          x.stack = BOT_BUY_IN_BB * bb;
+          rebuy = true;
+        }
+      }
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
         hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, won: 0, hand: null,
       });
+      if (rebuy) x.last = `带入 ${chips(x.stack)}`;
     });
-    this.syncBots(now);
+    this.syncBots();
   }
 
   /** 从 from 往后（顺时针）找第一个满足条件的座位，不含 from 自己。 */

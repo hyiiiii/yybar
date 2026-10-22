@@ -6,6 +6,7 @@ import { EmoteSprite } from "./Dealer";
 import { pick, useLang, useT } from "./i18n";
 import { findAchievement } from "../shared/achievements";
 import { loginHref, notifyMeChanged } from "./useMe";
+import { RobotIcon } from "./icons";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
 
@@ -74,8 +75,12 @@ export function PlayingCard({ card, back, face, extra = "" }: { card: CardSpec; 
 export interface Seat {
   /** 真实座位号：入座后桌子会转，按它保持同一个元素，座位才能滑到新位置 */
   id: number;
+  /** 有人的座位：这手的位置（BTN、SB…）或「等开局」，写在名牌上；空位：几号 */
   position: string;
   login?: string;
+  /** GitHub 头像，画在座位圆盘里 */
+  avatarUrl?: string | null;
+  bot?: boolean;
   /** 筹码，1 个筹码按 $1 显示 */
   stack?: number;
   bet?: number;
@@ -118,6 +123,22 @@ export interface Seat {
   labels?: { join: string; buying: string; you: string };
 }
 
+/** 座位圆盘里的头像：GitHub 头像，没有就用名字首字母；机器人画个机器人。 */
+function SeatFace({ login, avatarUrl, bot }: { login: string; avatarUrl?: string | null; bot?: boolean }) {
+  if (bot) {
+    return (
+      <span className="seat-face seat-face-bot" aria-hidden>
+        <RobotIcon />
+      </span>
+    );
+  }
+  return avatarUrl ? (
+    <img className="seat-face" src={avatarUrl} alt="" draggable={false} />
+  ) : (
+    <span className="seat-face seat-face-letter" aria-hidden>{login.slice(0, 1).toUpperCase()}</span>
+  );
+}
+
 /**
  * 跑道形牌桌：上下两条直边、左右半圆。6 个显示位顺时针排列，0 号在左上。
  * seats 按显示位给；center 放在桌面正中（发牌员、公共牌、底池），button 是庄家所在的显示位。
@@ -125,7 +146,6 @@ export interface Seat {
 export function FeltTable({
   seats,
   center,
-  corner,
   button = null,
   className = "",
   onEmptySeat,
@@ -133,8 +153,6 @@ export function FeltTable({
   seats: Seat[];
   className?: string;
   center: ReactNode;
-  /** 桌子右下角的控件（切桌、开桌） */
-  corner?: ReactNode;
   button?: number | null;
   onEmptySeat?: (index: number) => void;
 }) {
@@ -143,7 +161,6 @@ export function FeltTable({
   return (
     <div className={`felt-wrap ${className}`}>
       <div className="felt">{center}</div>
-      {corner && <div className="felt-corner">{corner}</div>}
       {button !== null && <span className={`dealer-chip dealer-at-${button}`} aria-label="庄家">D</span>}
       {order.map(({ s, d }) => (
         <div
@@ -154,9 +171,9 @@ export function FeltTable({
             <>
               {s.info && <div className="seat-info">{s.info}</div>}
               <div className={`seat-disc${s.onInfo ? " seat-disc-click" : ""}`} title={s.you ? "你" : s.login} onClick={s.onInfo}>
+                <SeatFace login={s.login} avatarUrl={s.avatarUrl} bot={s.bot} />
                 {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
                 {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
-                <span className="seat-pos">{s.position}</span>
               </div>
               {s.note && !s.win && <span key={s.note} className="seat-note">{s.note}</span>}
               {s.emote && (
@@ -211,6 +228,7 @@ export function FeltTable({
               ) : (
                 <div className="seat-plate">
                   <span className="plate-name">
+                    {s.position && !s.held && <b className="plate-pos">{s.position}</b>}
                     {s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}
                     <Badges ids={s.badges} />
                   </span>

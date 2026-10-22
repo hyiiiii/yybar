@@ -12,6 +12,7 @@ interface TableRow {
   bots: number;
   seated: number;
   created_by: number | null;
+  created_at: string;
 }
 
 /** 每人最多开几张桌 */
@@ -72,7 +73,10 @@ tableRoutes.get("/:no/ws", async (c) => {
   const user = await sessionUser(c);
 
   const headers = new Headers(c.req.raw.headers);
-  headers.set("x-table", JSON.stringify({ no: table.no, sb: table.sb, bb: table.bb, bots: !!table.bots, temporary: table.created_by !== null }));
+  headers.set(
+    "x-table",
+    JSON.stringify({ no: table.no, sb: table.sb, bb: table.bb, bots: !!table.bots, temporary: table.created_by !== null, since: table.created_at }),
+  );
   headers.set(
     "x-user",
     // 请求头只能放 ASCII，用户名转义一下

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bestScore, handName, type Card } from "../src/shared/poker/cards";
 import { longestStreak } from "../src/shared/achievements";
-import { buildPots, EMPTY_TABLE_MS, HOLD_MS, RUNOUT_STEP_MS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
+import { BOT_BUY_IN_BB, BOT_CASH_OUT_BB, buildPots, EMPTY_TABLE_MS, HOLD_MS, RUNOUT_STEP_MS, TABLE_BOTS, TableRoom, TURN_MS, type RoomState } from "../src/shared/poker/room";
 
 const c = (s: string): Card => {
   const r = { T: 10, J: 11, Q: 12, K: 13, A: 14 }[s[0]] ?? Number(s[0]);
@@ -306,7 +306,7 @@ describe("table flow", () => {
     expect(room.hold(p(1), 2, 0)).toBeNull();
     expect(room.hold(p(2), 2, 1)).toMatch(/正在买入/);
     expect(room.sit(p(2), 2, 1000, 1)).toMatch(/正在买入/);
-    expect(room.view(2, 1).holds[2]).toEqual({ login: "u1", start: 0, until: HOLD_MS, you: false });
+    expect(room.view(2, 1).holds[2]).toEqual({ login: "u1", avatarUrl: null, start: 0, until: HOLD_MS, you: false });
     expect(room.view(1, 1).holds[2]!.you).toBe(true);
     // 换个座位占：原来那个放开
     expect(room.hold(p(1), 4, 2)).toBeNull();
@@ -330,7 +330,7 @@ describe("table flow", () => {
     room.s.nextHandAt = 3000;
     room.tick(3000);
     expect(room.s.seats[0]).toBeNull();
-    expect(room.view(1, 3000).holds[0]).toEqual({ login: "u1", start: 3000, until: 3000 + HOLD_MS, you: true });
+    expect(room.view(1, 3000).holds[0]).toEqual({ login: "u1", avatarUrl: null, start: 3000, until: 3000 + HOLD_MS, you: true });
     expect(room.sit(p(3), 0, 1000, 3001)).toMatch(/正在买入/);
     expect(room.sit(p(1), 0, 800, 3002)).toBeNull();
     expect(room.s.seats[0]!.stack).toBe(800);
@@ -403,20 +403,58 @@ describe("table flow", () => {
     expect(room.view(null, 9000).events).toEqual([]);
   });
 
-  it("bots keep a practice table going and chips stay conserved", () => {
-    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: true });
+  it("keeps three bots playing at the bot table, never side by side", () => {
+    const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    // 没有真人也坐着三个机器人：0、2、4 号，各带 $100
+    expect(room.s.seats.map((x) => (x?.bot ? x.login : null))).toEqual([TABLE_BOTS[0], null, TABLE_BOTS[1], null, TABLE_BOTS[2], null]);
+    expect(room.s.seats.filter(Boolean).map((x) => x!.stack)).toEqual([100, 100, 100]);
     room.sit(p(1), 3, 1_000_000, 0);
     expect(room.seated()).toBe(4);
+    const apart = () => room.s.seats.every((x, i) => !x?.bot || !room.s.seats[(i + 1) % 6]?.bot);
     let now = 0;
-    for (let n = 0; n < 3000; n++) {
+    for (let n = 0; n < 4000 && room.s.handNo < 40; n++) {
       now += 500;
       // 真人总是跟注或过牌
       if (room.s.seats[room.s.toAct]?.userId === 1) room.act(1, "call", undefined, now);
       room.tick(now);
       expect(room.s.seats.every((x) => !x || x.stack >= 0)).toBe(true);
-      if (room.s.street === "idle" && room.s.handNo > 0) break;
+      expect(apart()).toBe(true);
     }
-    expect(room.s.handNo).toBeGreaterThan(10);
+    expect(room.s.handNo).toBe(40);
+    // 真人走了机器人照样打
+    room.leave(1, now);
+    const hands = room.s.handNo;
+    for (let n = 0; n < 400; n++) room.tick((now += 500));
+    expect(room.s.handNo).toBeGreaterThan(hands);
+    expect(room.vacant()).toBe(false); // 离桌的筹码还没写回账户
+    room.ackCashout(room.s.cashouts[0].ref);
+    expect(room.vacant()).toBe(true);
+  });
+
+  it("bot table: broke bots buy back in for $100, bots above $200 step away for a hand", () => {
+    const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    const [a, b] = [room.s.seats[0]!, room.s.seats[2]!];
+    a.stack = 1;
+    b.stack = BOT_CASH_OUT_BB * 2 + 60;
+    room.tick(room.s.nextHandAt!);
+    expect(room.s.handNo).toBe(1);
+    // 不够一个大盲算输光，补到 $100；赢到 $260 的离桌，这一手只有两个机器人打
+    expect(a.stack + a.committed).toBe(BOT_BUY_IN_BB * 2);
+    expect(room.s.seats[2]).toBeNull();
+    let now = room.s.nextHandAt ?? 2000;
+    for (let n = 0; n < 400 && room.s.handNo < 2; n++) room.tick((now += 500));
+    // 打完一手回到原来的座位，带 $100
+    const back = room.s.seats[2]!;
+    expect(back.login).toBe(TABLE_BOTS[1]);
+    expect(back.stack + back.committed).toBe(100);
+  });
+
+  it("sends bots away when a bot table becomes a regular one", () => {
+    const room = TableRoom.create({ no: 1001, sb: 1, bb: 2, bots: true });
+    room.s.config.bots = false;
+    room.tick(room.s.nextHandAt!);
+    expect(room.seated()).toBe(0);
+    expect(room.s.street).toBe("idle");
   });
 });
 

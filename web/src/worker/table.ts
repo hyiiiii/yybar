@@ -35,8 +35,10 @@ export class PokerTable extends DurableObject<Env> {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("需要 WebSocket", { status: 426 });
     const config = JSON.parse(req.headers.get("x-table")!) as RoomConfig;
     const user = JSON.parse(req.headers.get("x-user") ?? "null") as Player | null;
-    if (!this.room) this.room = TableRoom.create(config);
-    else Object.assign(this.room.s.config, { sb: config.sb, bb: config.bb, bots: config.bots, temporary: config.temporary });
+    // 桌号重新用上（大厅里删掉又开了同号的桌）时，旧存档里没人了就从头开一张新桌；还有人坐着就接着用，只换配置
+    const stale = this.room && this.room.s.config.since !== config.since && this.room.vacant();
+    if (!this.room || stale) this.room = TableRoom.create(config);
+    else Object.assign(this.room.s.config, { sb: config.sb, bb: config.bb, bots: config.bots, temporary: config.temporary, since: config.since });
 
     const { 0: client, 1: server } = new WebSocketPair();
     const att: Attachment = user ?? { userId: 0, login: "", avatarUrl: null };
@@ -95,10 +97,11 @@ export class PokerTable extends DurableObject<Env> {
 
   private async disconnected(ws: WebSocket) {
     const user = ws.deserializeAttachment() as Attachment;
+    // 没登录的旁观者走了不用存档：机器人桌最后一个人走了，下一次闹钟时发现没人看，机器人就停手
     if (!this.room || !user.userId) return;
     const still = this.ctx.getWebSockets().some((w) => w !== ws && (w.deserializeAttachment() as Attachment).userId === user.userId);
     if (!still) this.room.setAway(user.userId, true, Date.now());
-    await this.commit();
+    await this.commit(ws);
   }
 
   /** 用道具：先看现在能不能用，再扣库存，扣完再生效；等扣库存的时候局面变了用不了，就把那一个退回去。 */
@@ -143,8 +146,8 @@ export class PokerTable extends DurableObject<Env> {
     return null;
   }
 
-  /** 存档、写回待结算的筹码、排下一次闹钟，然后给每个连接推送各自视角的牌桌。 */
-  private async commit() {
+  /** 存档、写回待结算的筹码、排下一次闹钟，然后给每个连接推送各自视角的牌桌。gone 是正在断开的连接。 */
+  private async commit(gone?: WebSocket) {
     const room = this.room;
     if (!room) return;
     await this.flushCashouts();
@@ -161,7 +164,10 @@ export class PokerTable extends DurableObject<Env> {
     if (room.closable(Date.now()) && (await this.close())) return;
     await this.ctx.storage.put("room", room.s);
     // 收桌没成功（删桌失败）时隔一会儿再试，不要马上又醒
-    const wake = room.closable(Date.now()) ? Date.now() + CASHOUT_RETRY_MS : room.nextWake();
+    let wake = room.closable(Date.now()) ? Date.now() + CASHOUT_RETRY_MS : room.nextWake();
+    // 机器人桌上只剩机器人、也没人在看：先停手，有人连上来再接着打。看的人眼里它一直在打，
+    // 但没人看的时候不用每一两秒醒一次（Durable Object 按请求和在线时长计费）
+    if (room.s.config.bots && room.vacant() && !this.ctx.getWebSockets().some((w) => w !== gone)) wake = null;
     const retry = room.s.cashouts.length ? Date.now() + CASHOUT_RETRY_MS : null;
     const at = [wake, retry].filter((x): x is number => x !== null);
     if (at.length) await this.ctx.storage.setAlarm(Math.min(...at));

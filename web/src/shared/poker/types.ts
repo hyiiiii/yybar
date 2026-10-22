@@ -82,7 +82,7 @@ export interface TableView {
   /** 牌局播报，例如「nightowl 以两对赢下 1,200」 */
   say: string | null;
   /** 每个座位的占座（有人点了空位正在选带入） */
-  holds: ({ login: string; start: number; until: number; you: boolean } | null)[];
+  holds: ({ login: string; avatarUrl: string | null; start: number; until: number; you: boolean } | null)[];
   /** 最近几秒的桌面事件：谁用了道具、谁发了表情 */
   events: TableEvent[];
   /** 自己用偷偷看看到的别人的底牌（按座位），没用是 null */

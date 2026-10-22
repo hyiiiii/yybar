@@ -144,14 +144,26 @@ main { min-height: 60vh; }
 .link-danger { background: none; border: 0; color: var(--danger); cursor: pointer; font: inherit; }
 
 /* 招牌 */
-.lobby { display: flex; flex-direction: column; align-items: center; padding-block: 8px 24px; }
-.sign { position: relative; overflow: hidden; border-radius: 14px; width: min(300px, 80vw); margin-bottom: 18px; }
+/* 牌桌页尽量一屏放下：桌子的宽度跟着窗口高度走（420px 是顶栏、招牌、座位露出桌边的部分和下面操作区的高度），
+   切桌、开桌、出牌都不用往下滚；窗口实在太矮时，操作区贴在窗口底部 */
+.lobby {
+  --felt-w: min(860px, calc(100% - 96px), max(560px, calc((100dvh - 420px) * 2.55)));
+  display: flex; flex-direction: column; align-items: center; padding-block: 4px 0;
+}
+/* 招牌在中间，左边切桌、找桌，右边铃铛、音效、开桌 */
+.lobby-head { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-areas: "nav sign tools"; align-items: end; column-gap: 12px; }
+.lobby-head .sign { grid-area: sign; }
+.table-nav, .table-tools { display: flex; align-items: center; gap: 6px; }
+.table-nav { grid-area: nav; justify-self: start; }
+.table-tools { grid-area: tools; justify-self: end; }
+.dock { position: sticky; bottom: 0; z-index: 8; width: 100%; display: flex; flex-direction: column; align-items: center; padding-block: 8px 14px; background: var(--bg); }
+.sign { position: relative; overflow: hidden; border-radius: 14px; width: min(300px, 80vw, max(200px, 30dvh)); container-type: inline-size; }
 .sign-svg { display: block; width: 100%; height: auto; }
 .sign-bulbs { position: absolute; inset: 0; }
 .sign-board { fill: var(--sign); stroke: var(--rail-edge); stroke-width: 2; }
 .sign-text {
   position: absolute; left: 50%; top: 50%; white-space: nowrap;
-  font-family: "Pacifico", var(--serif); font-size: min(48px, 12.8vw); font-weight: 400; line-height: 1;
+  font-family: "Pacifico", var(--serif); font-size: 16cqw; font-weight: 400; line-height: 1;
   color: #ffe7c7; text-shadow: 0 0 2px #fff4e0, 0 0 10px rgb(255 170 110 / 0.85), 0 0 22px rgb(217 119 87 / 0.7), 0 2px 0 #9c4a2f;
   /* 偏移量按字的实际笔画量出来，让上下、左右留白各自相等 */
   transform: translate(-50%, -50%) translate(0.06em, -0.167em) skewX(-16deg) scaleX(1.2); letter-spacing: 0.02em;
@@ -166,7 +178,7 @@ main { min-height: 60vh; }
 
 
 /* 牌桌：跑道形（上下直边、左右半圆），只有一圈细边，座位是压在边线上的圆盘 */
-.felt-wrap { position: relative; width: min(860px, calc(100% - 96px)); aspect-ratio: 2.55 / 1; margin: 72px 0 150px; }
+.felt-wrap { position: relative; width: var(--felt-w, min(860px, calc(100% - 96px))); aspect-ratio: 2.55 / 1; margin: 52px 0 76px; }
 .felt {
   position: absolute; inset: 0; border-radius: 9999px;
   background: var(--table-top);
@@ -194,6 +206,14 @@ main { min-height: 60vh; }
   background: var(--panel); box-shadow: inset 0 0 0 3px var(--table-line), var(--shadow);
 }
 .seat-pos { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+/* 头像铺在圆盘里，外面留一圈边（轮到谁、是不是自己都画在这圈边上） */
+.seat-face { position: absolute; inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); border-radius: 50%; object-fit: cover; user-select: none; }
+.seat-face-letter { display: grid; place-items: center; font-size: 24px; font-weight: 600; color: var(--label-2); background: var(--fill-2); }
+.seat-face-bot { display: grid; place-items: center; color: var(--label-2); background: var(--fill); }
+.seat-face-bot .icon { width: 58%; height: 58%; stroke-width: 1.4; }
+.seat-held .seat-face { filter: grayscale(1); opacity: .45; }
+/* 名牌上名字前面的位置：BTN、SB、BB… */
+.plate-pos { margin-right: 4px; padding: 0 4px; border-radius: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: var(--label-2); background: var(--fill); }
 /* 名字和余额放在头像下面的小牌子上 */
 .seat-plate {
   position: absolute; left: 50%; top: calc(100% - 10px); transform: translateX(-50%); z-index: 1;
@@ -324,7 +344,6 @@ main { min-height: 60vh; }
   @keyframes slide-next { from { translate: 90px 0; opacity: 0; } }
   @keyframes slide-prev { from { translate: -90px 0; opacity: 0; } }
 }
-.felt-corner { position: absolute; right: 0; top: calc(100% + 84px); display: flex; align-items: center; gap: 6px; }
 /* 铃铛：别的桌轮到你时晃、亮小红点 */
 .icon-btn-bell { position: relative; }
 .icon-btn-bell svg.stroke { stroke-width: 1.3; stroke-linejoin: round; transform-origin: 50% 10%; }
@@ -338,6 +357,8 @@ main { min-height: 60vh; }
 
 .corner-label { min-width: 92px; text-align: center; font-size: 13px; color: var(--label); white-space: nowrap; }
 .corner-label small { margin-left: 6px; color: var(--label-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.corner-bot { display: inline-grid; vertical-align: -4px; }
+.corner-bot .icon { width: 18px; height: 18px; stroke-width: 1.7; }
 .icon-btn { width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: var(--panel); color: var(--label); box-shadow: var(--shadow), inset 0 0 0 1px var(--separator); }
 .icon-btn svg { width: 12px; height: 12px; fill: currentColor; stroke: currentColor; stroke-width: 0; }
 .icon-btn:hover { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
@@ -689,12 +710,16 @@ main { min-height: 60vh; }
 .empty { color: var(--label-2); }
 .error { color: var(--danger); }
 
+@media (max-width: 680px) {
+  .lobby-head { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "sign sign sign" "nav . tools"; row-gap: 12px; }
+  .lobby-head .sign { justify-self: center; }
+}
 @media (max-width: 880px) {
   .tables { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .split { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
-  .felt-wrap { width: calc(100% - 72px); aspect-ratio: 1 / 1.55; margin: 56px 0 140px; }
+  .felt-wrap { width: calc(100% - 72px); aspect-ratio: 1 / 1.55; margin: 56px 0 64px; }
   .pos-0 { left: 6%; top: 20%; }
   .pos-1 { left: 94%; top: 20%; }
   .pos-2 { left: 100%; top: 52%; }
@@ -702,6 +727,8 @@ main { min-height: 60vh; }
   .pos-4 { left: 18%; top: 92%; }
   .pos-5 { left: 0; top: 52%; }
   .seat-disc { width: 56px; height: 56px; }
+  .seat-face { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+  .seat-face-letter { font-size: 19px; }
   .seat-pos { font-size: 12px; }
   .seat-stack { font-size: 13px; }
   .seat:not(.seat-you) .seat-cards { display: none; }
@@ -723,7 +750,6 @@ main { min-height: 60vh; }
   .card-icon svg { width: 22px; height: 22px; }
   .card-back::before { inset: 4px; border-radius: 2px; }
   .card-back::after { inset: 6px; }
-  .felt-corner { right: 50%; transform: translateX(50%); top: calc(100% + 64px); }
   .board-cards { gap: 3px; }
   .tables { grid-template-columns: minmax(0, 1fr); }
   .stats { grid-template-columns: minmax(0, 1fr); }

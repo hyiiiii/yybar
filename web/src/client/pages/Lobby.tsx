@@ -4,7 +4,7 @@ import { api, fmtInt } from "../api";
 import { Badges, FeltTable, MarqueeSign, PlayingCard, StatLine, fmtMoney, type CardSpec, type Seat } from "../components";
 import type { PokerStats } from "../api";
 import { Dealer, EmoteSprite } from "../Dealer";
-import { EyeIcon, RunoutIcon, SmileIcon, SpeakerIcon, TimeIcon } from "../icons";
+import { EyeIcon, RobotIcon, RunoutIcon, SmileIcon, SpeakerIcon, TimeIcon } from "../icons";
 import { setMuted, sfx, useMuted } from "../sound";
 import { nameOf, pick, tr, useLang, useT, type Lang } from "../i18n";
 import type { Suit } from "../suits";
@@ -114,7 +114,7 @@ function greeting(name: string, lang: Lang) {
 const ROTATE_STEP_MS = 360;
 
 /**
- * 大厅就是一张牌桌：右下角切桌、开桌、铃铛，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
+ * 大厅就是一张牌桌：招牌左边切桌、右边铃铛和开桌，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
  * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。可以同时坐几张桌：坐着的其他桌在后台连着，
  * 轮到你行动时铃铛会响（手机上震动），点铃铛回到那张桌。
  */
@@ -461,6 +461,7 @@ export function LobbyPage() {
         id: i,
         position: seatNo(i),
         login: h.login,
+        avatarUrl: h.avatarUrl,
         name: nameOf(h.login, lang),
         labels,
         you: h.you,
@@ -483,6 +484,8 @@ export function LobbyPage() {
         id: i,
         position: pos[i] ?? (view.street === "idle" ? t("等开局", "Waiting") : t("下一手", "Next")),
         login: x.login,
+        avatarUrl: x.avatarUrl,
+        bot: x.bot,
         name: nameOf(x.login, lang),
         labels,
         you: i === you,
@@ -721,7 +724,64 @@ export function LobbyPage() {
 
   return (
     <div className="lobby">
-      <MarqueeSign text="yybar" />
+      {/* 招牌两边放牌桌的控件：左边切桌、找桌，右边铃铛、音效、开桌，都在桌子上方，不用往下滚 */}
+      <div className="lobby-head">
+        <div className="table-nav">
+          <button className="icon-btn" onClick={() => switchTable(-1)} aria-label={t("上一张桌", "Previous table")}>
+            <svg viewBox="0 0 12 12" aria-hidden><path d="M8.5 1.8v8.4L2.2 6z" /></svg>
+          </button>
+          {searching ? (
+            <form className="corner-search" onSubmit={(e) => { e.preventDefault(); findTable(); }}>
+              <input
+                autoFocus
+                inputMode="numeric"
+                placeholder={t("桌号", "Table #")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setSearching(false)}
+                aria-label={t("输入桌号", "Table number")}
+              />
+            </form>
+          ) : (
+            <span className="corner-label" title={table.bots ? t(`机器人桌 #${table.no}`, `Bot table #${table.no}`) : undefined}>
+              {table.bots ? <span className="corner-bot"><RobotIcon label={t("机器人桌", "Bot table")} /></span> : `#${table.no}`}
+              <small>{fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
+            </span>
+          )}
+          <button className="icon-btn" onClick={() => switchTable(1)} aria-label={t("下一张桌", "Next table")}>
+            <svg viewBox="0 0 12 12" aria-hidden><path d="M3.5 1.8v8.4L9.8 6z" /></svg>
+          </button>
+          <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label={t("按桌号找桌", "Find a table")} title={t("按桌号找桌", "Find a table")}>
+            <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
+          </button>
+        </div>
+        <MarqueeSign text="yybar" />
+        <div className="table-tools">
+          <button
+            key={ring}
+            className={`icon-btn icon-btn-bell${turnElsewhere.length ? " ringing" : ""}${ring ? " rang" : ""}`}
+            onClick={ringBell}
+            aria-label={turnElsewhere.length ? t(`轮到你了：#${turnElsewhere.join("、#")}`, `Your turn at #${turnElsewhere.join(", #")}`) : t("回到我坐着的桌", "Back to my table")}
+            title={turnElsewhere.length ? t(`#${turnElsewhere[0]} 轮到你了`, `Your turn at #${turnElsewhere[0]}`) : t("轮到你行动时会响，点一下回到你坐着的桌", "Rings on your turn; tap to go back to your table")}
+          >
+            <svg viewBox="0 0 12 12" aria-hidden className="stroke">
+              <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
+              <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
+            </svg>
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setMuted(!muted)}
+            aria-label={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
+            title={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
+          >
+            <SpeakerIcon muted={muted} />
+          </button>
+          <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label={t("开一张桌", "Open a table")} title={t("开一张桌", "Open a table")}>
+            <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
+          </button>
+        </div>
+      </div>
 
       <FeltTable
         key={table.id}
@@ -729,60 +789,6 @@ export function LobbyPage() {
         seats={seats}
         button={buttonAt}
         onEmptySeat={(i) => pickSeat(i)}
-        corner={
-          <>
-            <button className="icon-btn" onClick={() => switchTable(-1)} aria-label={t("上一张桌", "Previous table")}>
-              <svg viewBox="0 0 12 12" aria-hidden><path d="M8.5 1.8v8.4L2.2 6z" /></svg>
-            </button>
-            {searching ? (
-              <form className="corner-search" onSubmit={(e) => { e.preventDefault(); findTable(); }}>
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  placeholder={t("桌号", "Table #")}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Escape" && setSearching(false)}
-                  aria-label={t("输入桌号", "Table number")}
-                />
-              </form>
-            ) : (
-              <span className="corner-label">
-                #{table.no}
-                <small>{fmtMoney(table.blinds[0])}/{fmtMoney(table.blinds[1])}</small>
-              </span>
-            )}
-            <button className="icon-btn" onClick={() => switchTable(1)} aria-label={t("下一张桌", "Next table")}>
-              <svg viewBox="0 0 12 12" aria-hidden><path d="M3.5 1.8v8.4L9.8 6z" /></svg>
-            </button>
-            <button className="icon-btn" onClick={() => (searching ? findTable() : setSearching(true))} aria-label={t("按桌号找桌", "Find a table")} title={t("按桌号找桌", "Find a table")}>
-              <svg viewBox="0 0 12 12" aria-hidden className="stroke"><circle cx="5.2" cy="5.2" r="3.4" /><path d="M7.8 7.8 10.4 10.4" /></svg>
-            </button>
-            <button
-              key={ring}
-              className={`icon-btn icon-btn-bell${turnElsewhere.length ? " ringing" : ""}${ring ? " rang" : ""}`}
-              onClick={ringBell}
-              aria-label={turnElsewhere.length ? t(`轮到你了：#${turnElsewhere.join("、#")}`, `Your turn at #${turnElsewhere.join(", #")}`) : t("回到我坐着的桌", "Back to my table")}
-              title={turnElsewhere.length ? t(`#${turnElsewhere[0]} 轮到你了`, `Your turn at #${turnElsewhere[0]}`) : t("轮到你行动时会响，点一下回到你坐着的桌", "Rings on your turn; tap to go back to your table")}
-            >
-              <svg viewBox="0 0 12 12" aria-hidden className="stroke">
-                <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
-                <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
-              </svg>
-            </button>
-            <button
-              className="icon-btn"
-              onClick={() => setMuted(!muted)}
-              aria-label={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
-              title={muted ? t("打开音效", "Sound on") : t("关掉音效", "Mute")}
-            >
-              <SpeakerIcon muted={muted} />
-            </button>
-            <button className="icon-btn icon-btn-new" onClick={showOpenPanel} aria-label={t("开一张桌", "Open a table")} title={t("开一张桌", "Open a table")}>
-              <svg viewBox="0 0 12 12" aria-hidden><path d="M6 2v8M2 6h8" /></svg>
-            </button>
-          </>
-        }
         center={
           <div className="felt-center">
             <Dealer stage={stage} say={say} />
@@ -806,53 +812,56 @@ export function LobbyPage() {
         }
       />
 
-      <div className="actions">
-        {panelView ??
-          leaveView ??
-          (you !== null ? (
-            legal ? (
-              <>
-                {legal.canRaise && (
-                  <div className="raise">
-                    {presets.map((o) => (
-                      <button key={o.label} className={`btn btn-small btn-ghost${raiseTo === o.to ? " on" : ""}`} onClick={() => setRaiseTo(o.to)}>
-                        {o.label}
-                      </button>
-                    ))}
-                    <input
-                      type="range"
-                      aria-label={t("加注额", "Raise amount")}
-                      min={legal.minRaiseTo}
-                      max={legal.maxRaiseTo}
-                      step={view!.blinds[0]}
-                      value={raiseTo}
-                      onChange={(e) => setRaiseTo(snap(Number(e.target.value), legal.minRaiseTo, legal.maxRaiseTo, view!.blinds[0]))}
-                    />
-                  </div>
-                )}
-                <button className="btn btn-ghost" onClick={() => act("fold")}>{t("弃牌", "Fold")}</button>
-                <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
-                  {legal.canCheck ? t("过牌", "Check") : t(`跟注 ${fmtMoney(legal.toCall)}`, `Call ${fmtMoney(legal.toCall)}`)}
-                </button>
-                {legal.canRaise && <button className="btn" onClick={() => act("raise", raiseTo)}>{raiseLabel}</button>}
-                {leaveButton}
-              </>
-            ) : canShow ? (
-              <>
-                <button className="btn btn-ghost" onClick={() => conn.send({ t: "show", which: 2 })}>{t("两张都亮", "Show both")}</button>
-                {leaveButton}
-              </>
-            ) : (
-              <>
-                <button className="btn btn-ghost" disabled>{t("弃牌", "Fold")}</button>
-                <button className="btn btn-ghost" disabled>{t("过牌", "Check")}</button>
-                <button className="btn" disabled>{t("加注", "Raise")}</button>
-                {leaveButton}
-              </>
-            )
-          ) : null)}
+      {/* 操作区：窗口放得下时就在桌子下面；太矮放不下时贴在窗口底部，不用滚下去点 */}
+      <div className="dock">
+        <div className="actions">
+          {panelView ??
+            leaveView ??
+            (you !== null ? (
+              legal ? (
+                <>
+                  {legal.canRaise && (
+                    <div className="raise">
+                      {presets.map((o) => (
+                        <button key={o.label} className={`btn btn-small btn-ghost${raiseTo === o.to ? " on" : ""}`} onClick={() => setRaiseTo(o.to)}>
+                          {o.label}
+                        </button>
+                      ))}
+                      <input
+                        type="range"
+                        aria-label={t("加注额", "Raise amount")}
+                        min={legal.minRaiseTo}
+                        max={legal.maxRaiseTo}
+                        step={view!.blinds[0]}
+                        value={raiseTo}
+                        onChange={(e) => setRaiseTo(snap(Number(e.target.value), legal.minRaiseTo, legal.maxRaiseTo, view!.blinds[0]))}
+                      />
+                    </div>
+                  )}
+                  <button className="btn btn-ghost" onClick={() => act("fold")}>{t("弃牌", "Fold")}</button>
+                  <button className="btn btn-ghost" onClick={() => act(legal.canCheck ? "check" : "call")}>
+                    {legal.canCheck ? t("过牌", "Check") : t(`跟注 ${fmtMoney(legal.toCall)}`, `Call ${fmtMoney(legal.toCall)}`)}
+                  </button>
+                  {legal.canRaise && <button className="btn" onClick={() => act("raise", raiseTo)}>{raiseLabel}</button>}
+                  {leaveButton}
+                </>
+              ) : canShow ? (
+                <>
+                  <button className="btn btn-ghost" onClick={() => conn.send({ t: "show", which: 2 })}>{t("两张都亮", "Show both")}</button>
+                  {leaveButton}
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-ghost" disabled>{t("弃牌", "Fold")}</button>
+                  <button className="btn btn-ghost" disabled>{t("过牌", "Check")}</button>
+                  <button className="btn" disabled>{t("加注", "Raise")}</button>
+                  {leaveButton}
+                </>
+              )
+            ) : null)}
+        </div>
+        {(note ?? status) && <p className="note" role="status">{note ?? status}</p>}
       </div>
-      {(note ?? status) && <p className="note" role="status">{note ?? status}</p>}
     </div>
   );
 }

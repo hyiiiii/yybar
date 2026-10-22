@@ -62,10 +62,10 @@ export function openLocalTable(
 ) {
   let t = rooms.get(info.no);
   if (!t) {
-    // 预览里自己开的桌没有别人会来，放三个机器人陪打；你走了桌就收掉
-    const names = info.temporary ? BOTS.slice(0, 3) : (info.bots ? BOTS : PEOPLE).slice(0, Math.min(info.seated, 5));
+    // 机器人桌和线上一样跑；预览里自己开的桌没有别人会来，放三个机器人陪打，你走了桌就收掉；其他桌坐着几个假装的真人
+    const names = info.temporary ? BOTS.slice(0, 3) : PEOPLE.slice(0, Math.min(info.seated, 5));
     const room = TableRoom.create({
-      no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: false, fixedBots: names, temporary: info.temporary,
+      no: info.no, sb: info.blinds[0], bb: info.blinds[1], bots: !!info.bots, fixedBots: info.bots ? undefined : names, temporary: info.temporary,
     });
     t = { room, listeners: new Set() };
     rooms.set(info.no, t);

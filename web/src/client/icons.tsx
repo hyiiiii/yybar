@@ -123,3 +123,14 @@ export const SpeakerIcon = ({ muted }: { muted?: boolean }) => (
     {muted ? <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" /> : <path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 7a7 7 0 0 1 0 10" />}
   </Icon>
 );
+
+/** 机器人：机器人桌的桌号、机器人的头像 */
+export const RobotIcon = ({ label }: { label?: string }) => (
+  <Icon label={label}>
+    <rect x="4.5" y="8" width="15" height="11" rx="3.2" />
+    <path d="M12 8V5.2" />
+    <circle cx="12" cy="4.2" r="1.1" />
+    <path d="M9.3 12.4v1.4M14.7 12.4v1.4M10.2 16.2h3.6" />
+    <path d="M2.6 12.2v3M21.4 12.2v3" />
+  </Icon>
+);
