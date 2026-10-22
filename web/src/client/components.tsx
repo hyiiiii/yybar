@@ -102,6 +102,8 @@ export interface Seat {
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
+  /** 标签的 key：每次新动作都换一个，哪怕字一样（连着两条街都过牌）也重新弹一下 */
+  noteKey?: string;
   /** note 是赢家的牌型：标成金色 */
   noteWin?: boolean;
   /** 这个人的牌背、牌面（商场里换的），同桌的人都看得到 */
@@ -177,7 +179,7 @@ export function FeltTable({
                 {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
                 {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
               </div>
-              {s.note && <span key={s.note} className={`seat-note${s.noteWin ? " seat-note-win" : ""}`}>{s.note}</span>}
+              {s.note && <span key={s.noteKey ?? s.note} className={`seat-note${s.noteWin ? " seat-note-win" : ""}`}>{s.note}</span>}
               {s.emote && (
                 <span key={s.emote.key} className="seat-emote" aria-label={s.emote.id}>
                   <EmoteSprite id={s.emote.id} size={60} />

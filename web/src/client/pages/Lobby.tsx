@@ -450,7 +450,7 @@ export function LobbyPage() {
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
   /** 每个座位上一条街的动作留到什么时候：服务端换街时把动作挪到 prev，这里从第一次看到起再留 NOTE_LINGER_MS */
-  const lastNotes = useRef<{ key: string; notes: ({ text: string; until: number } | undefined)[] }>({ key: "", notes: [] });
+  const lastNotes = useRef<{ key: string; notes: ({ text: string; until: number } | undefined)[]; keys: ({ text: string; key: string } | undefined)[] }>({ key: "", notes: [], keys: [] });
   const [noteTick, setNoteTick] = useState(0);
   const seats: Seat[] = useMemo(() => {
     const labels = { join: t("入座", "Sit"), buying: t("买入中…", "Buying in…"), you: t("你", "You") };
@@ -459,7 +459,7 @@ export function LobbyPage() {
     if (!view) return list;
     if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
     const noteKey = `${table.no}-${view.handNo}`;
-    if (lastNotes.current.key !== noteKey) lastNotes.current = { key: noteKey, notes: [] };
+    if (lastNotes.current.key !== noteKey) lastNotes.current = { key: noteKey, notes: [], keys: [] };
     const pos = positions(view);
     const clock = Date.now() + conn.skew;
     view.holds.forEach((h, i) => {
@@ -525,6 +525,19 @@ export function LobbyPage() {
         tossed: showdown && !x.hand ? x.showMask : 0,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
         note: seatNote,
+        // 同一条街同一个人只会过一次牌；跟注两次时下注额不同，所以街 + 字 + 下注额就能分出每一次动作。
+        // 全下、弃牌之后标签一直挂着，换街不再弹
+        // 换街时同一个动作从 last 挪到 prev，沿用原来的 key，不再弹一次
+        noteKey: (() => {
+          if (!seatNote) return undefined;
+          const was = lastNotes.current.keys[i];
+          const key =
+            !x.last && x.prev && was?.text === seatNote ? was.key
+            : x.allIn || x.folded ? `${view.handNo}-${seatNote}`
+            : `${view.handNo}-${view.street}-${seatNote}-${x.bet}`;
+          lastNotes.current.keys[i] = { text: seatNote, key };
+          return key;
+        })(),
         noteWin: showdown && x.won > 0 && !!x.hand && !x.folded,
       };
     });
