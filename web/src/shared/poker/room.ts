@@ -64,6 +64,8 @@ interface RoomSeat extends Player {
   last: string | null;
   /** 上一条街最后的动作：进入下一条街时 last 清掉、挪到这里，网页在头顶再留一会儿（不然最后一个行动的人的动作根本看不到） */
   prev?: string | null;
+  /** 这一手行动了几次：网页拿它当头顶标签的 key，每次行动都重新弹一下（字一样也弹） */
+  acts?: number;
   won: number;
   hand: string | null;
   /** 断线时刻；在线为 null */
@@ -168,7 +170,7 @@ export const BOT_CASH_OUT_BB = 100;
 /** 补打时最多真打几手（几十毫秒）；停得再久，多出来的只把手数往前加，筹码早就打乱了 */
 export const CATCH_UP_HANDS = 500;
 /** 机器人桌一手大约多久，算停手期间错过了几手 */
-const BOT_HAND_MS = 28_000;
+const BOT_HAND_MS = 40_000;
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -574,6 +576,7 @@ export class TableRoom {
         leaving: x.leaving,
         last: x.last,
         prev: x.last ? null : (x.prev ?? null),
+        acts: x.acts ?? 0,
         won: x.won,
         hand: x.hand,
       };
@@ -740,7 +743,7 @@ export class TableRoom {
       }
       Object.assign(x, {
         inHand: false, folded: false, allIn: false, bet: 0, committed: 0, acted: false, mayRaise: true,
-        hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, prev: null, won: 0, hand: null,
+        hole: [], shown: false, showMask: 0, peeked: false, runout: null, pf: undefined, sideOnly: false, last: null, prev: null, acts: 0, won: 0, hand: null,
       });
       if (rebuy) x.last = `带入 ${chips(x.stack)}`;
     });
@@ -825,7 +828,7 @@ export class TableRoom {
     this.s.turnStart = now;
     seat.extended = false;
     // 取整毫秒：宿主按这个时刻排闹钟，带小数的话闹钟会在差零点几毫秒时响，什么都做不了
-    this.s.deadline = now + (seat.bot ? Math.round(1_500 + Math.random() * 2_000) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
+    this.s.deadline = now + (seat.bot ? Math.round(2_500 + Math.random() * 2_500) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 
   private apply(i: number, action: "fold" | "check" | "call" | "raise", amount: number | undefined, now: number): string | null {
@@ -886,6 +889,7 @@ export class TableRoom {
     }
     seat.acted = true;
     seat.mayRaise = false;
+    seat.acts = (seat.acts ?? 0) + 1;
     this.moveOn(i, now);
     return null;
   }
@@ -898,6 +902,7 @@ export class TableRoom {
     }
     seat.folded = true;
     seat.last = "弃牌";
+    seat.acts = (seat.acts ?? 0) + 1;
     if (this.live().length === 1) this.winByFold(now);
     else if (this.findNext(i) === -1) this.endStreet(now);
   }

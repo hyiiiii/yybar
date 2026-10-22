@@ -42,6 +42,8 @@ export interface SeatView {
   last: string | null;
   /** 上一条街最后的动作（这条街还没行动时才有），网页在头顶再留一会儿 */
   prev: string | null;
+  /** 这一手行动了几次，网页拿来判断头顶的动作是不是新的 */
+  acts: number;
   /** 亮给大家的牌：第 1 位第一张，第 2 位第二张；摊牌是 3 */
   showMask: number;
   /** 这手只赢到边池（没赢主池） */

@@ -112,8 +112,6 @@ function greeting(name: string, lang: Lang) {
 
 /** 入座后桌子转动时每走一格的时长，和 styles.css 里 .seat 的 transition 一致 */
 const ROTATE_STEP_MS = 360;
-/** 进入下一条街后，上一条街最后的动作在头顶再留多久 */
-const NOTE_LINGER_MS = 1_800;
 
 /**
  * 大厅就是一张牌桌：招牌左边切桌、右边铃铛和开桌，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
@@ -449,17 +447,12 @@ export function LobbyPage() {
 
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
-  /** 每个座位上一条街的动作留到什么时候：服务端换街时把动作挪到 prev，这里从第一次看到起再留 NOTE_LINGER_MS */
-  const lastNotes = useRef<{ key: string; notes: ({ text: string; until: number } | undefined)[]; keys: ({ text: string; key: string } | undefined)[] }>({ key: "", notes: [], keys: [] });
-  const [noteTick, setNoteTick] = useState(0);
   const seats: Seat[] = useMemo(() => {
     const labels = { join: t("入座", "Sit"), buying: t("买入中…", "Buying in…"), you: t("你", "You") };
     const seatNo = (i: number) => t(`${i + 1} 号`, `Seat ${i + 1}`);
     const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ id: fromDisplay(d), position: seatNo(fromDisplay(d)), labels }));
     if (!view) return list;
     if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
-    const noteKey = `${table.no}-${view.handNo}`;
-    if (lastNotes.current.key !== noteKey) lastNotes.current = { key: noteKey, notes: [], keys: [] };
     const pos = positions(view);
     const clock = Date.now() + conn.skew;
     view.holds.forEach((h, i) => {
@@ -479,18 +472,13 @@ export function LobbyPage() {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
-      // 上一条街的动作（服务端换街时挪到 prev）：第一次看到起再留 NOTE_LINGER_MS
-      const kept = lastNotes.current.notes;
-      const prevKey = !x.last && x.prev ? `${view.street}:${x.prev}` : null;
-      if (!prevKey) kept[i] = undefined;
-      else if (kept[i]?.text !== prevKey) kept[i] = { text: prevKey, until: Date.now() + NOTE_LINGER_MS };
-      const lingering = prevKey && Date.now() < kept[i]!.until ? x.prev : null;
       // 赢家的牌型也写在头顶；只赢到边池的注明「边池」，不然几个人同时 WIN 看着像算错了
       if (showdown && x.hand && !x.folded) seatNote = x.won > 0 && x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang);
       else if (x.leaving) seatNote = t("离桌", "Leaving");
       else if (x.away) seatNote = t("掉线", "Offline");
       else if (x.last) seatNote = tr(x.last, lang);
-      else if (lingering && !showdown) seatNote = tr(lingering, lang);
+      // 上一条街的动作（服务端换街时挪到 prev）一直留着，这条街再行动时换成新的
+      else if (x.prev && !showdown) seatNote = tr(x.prev, lang);
       const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
       if (cards && !x.folded) seen.current.cards[i] = cards;
       const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
@@ -527,29 +515,14 @@ export function LobbyPage() {
         note: seatNote,
         // 同一条街同一个人只会过一次牌；跟注两次时下注额不同，所以街 + 字 + 下注额就能分出每一次动作。
         // 全下、弃牌之后标签一直挂着，换街不再弹
-        // 换街时同一个动作从 last 挪到 prev，沿用原来的 key，不再弹一次
-        noteKey: (() => {
-          if (!seatNote) return undefined;
-          const was = lastNotes.current.keys[i];
-          const key =
-            !x.last && x.prev && was?.text === seatNote ? was.key
-            : x.allIn || x.folded ? `${view.handNo}-${seatNote}`
-            : `${view.handNo}-${view.street}-${seatNote}-${x.bet}`;
-          lastNotes.current.keys[i] = { text: seatNote, key };
-          return key;
-        })(),
+        // 服务端数着这一手行动了几次：次数变了就是新动作，标签重新弹一下（连着两条街过牌也弹）；
+        // 换街时动作挪到 prev、次数不变，就不会多弹。摊牌的牌型另算
+        noteKey: seatNote && (showdown ? `${view.handNo}-sd-${seatNote}` : `${view.handNo}-${x.acts}-${x.leaving || x.away ? seatNote : ""}`),
         noteWin: showdown && x.won > 0 && !!x.hand && !x.folded,
       };
     });
     return list;
-  }, [view, you, shownRot, conn.skew, lang, emotes, tools, info, noteTick]);
-  // 留着的动作到点了重画一次，把它收掉
-  useEffect(() => {
-    const due = lastNotes.current.notes.filter((n) => n && n.until > Date.now()).map((n) => n!.until);
-    if (!due.length) return;
-    const t = setTimeout(() => setNoteTick((n) => n + 1), Math.min(...due) - Date.now() + 20);
-    return () => clearTimeout(t);
-  }, [seats]);
+  }, [view, you, shownRot, conn.skew, lang, emotes, tools, info]);
 
   // 没翻出来的位置：用了发发看就摆上看到的牌（只有自己看得到）
   const runoutFrom = view?.board.length ?? 0;

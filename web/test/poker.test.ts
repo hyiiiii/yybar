@@ -73,10 +73,10 @@ describe("table flow", () => {
     expect(room.s.toAct).toBe(other);
     // 换街时动作清掉，但上一条街的（包括最后一个人的过牌）放在 prev 里给网页多留一会儿
     const seen = room.view(null, 10_002).seats;
-    expect(seen[other]).toMatchObject({ last: null, prev: "过牌" });
+    expect(seen[other]).toMatchObject({ last: null, prev: "过牌", acts: 1 });
     expect(seen[btn]).toMatchObject({ last: null, prev: "跟注" });
     expect(room.act(uid(other), "raise", 20, 10_003)).toBeNull();
-    expect(room.view(null, 10_003).seats[other]).toMatchObject({ last: "下注 $20", prev: null });
+    expect(room.view(null, 10_003).seats[other]).toMatchObject({ last: "下注 $20", prev: null, acts: 2 });
     expect(room.act(uid(btn), "raise", 25, 10_004)).toMatch(/加注要在/);
     expect(room.act(uid(btn), "raise", 60, 10_004)).toBeNull();
     expect(room.act(uid(other), "call", undefined, 10_005)).toBeNull();
@@ -476,7 +476,7 @@ describe("table flow", () => {
     now += 60 * 60_000;
     room.resume(now);
     expect(room.s.pausedAt).toBeNull();
-    expect(room.s.handNo).toBeGreaterThan(100);
+    expect(room.s.handNo).toBeGreaterThan(60);
     expect(room.nextWake()!).toBeGreaterThan(now);
     expect(apart()).toBe(true);
     // 停了一整天：真打 CATCH_UP_HANDS 手，其余只加手数，计时挪到现在之后
@@ -484,7 +484,7 @@ describe("table flow", () => {
     room.pause(now);
     now += 24 * 3600_000;
     room.resume(now);
-    expect(room.s.handNo - before).toBeGreaterThan(CATCH_UP_HANDS + 2000);
+    expect(room.s.handNo - before).toBeGreaterThan(CATCH_UP_HANDS + 1000);
     expect(room.nextWake()!).toBeGreaterThan(now);
     expect(room.nextWake()! - now).toBeLessThan(10_000);
     expect(room.s.seats.every((x) => !x || x.stack >= 0)).toBe(true);
