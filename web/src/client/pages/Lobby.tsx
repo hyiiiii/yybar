@@ -112,6 +112,8 @@ function greeting(name: string, lang: Lang) {
 
 /** 入座后桌子转动时每走一格的时长，和 styles.css 里 .seat 的 transition 一致 */
 const ROTATE_STEP_MS = 360;
+/** 进入下一条街后，上一条街最后的动作在头顶再留多久 */
+const NOTE_LINGER_MS = 1_800;
 
 /**
  * 大厅就是一张牌桌：招牌左边切桌、右边铃铛和开桌，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
@@ -447,12 +449,17 @@ export function LobbyPage() {
 
   // 刚弃掉的牌：记下这一手每个座位最后看到的牌，弃牌时播一下收走的动画
   const seen = useRef<{ hand: number; cards: (CardSpec[] | undefined)[] }>({ hand: -1, cards: [] });
+  /** 每个座位上一次的动作：进入下一条街服务端会清掉，这里再多留 NOTE_LINGER_MS，最后一个人的跟注、过牌才看得到 */
+  const lastNotes = useRef<{ key: string; notes: ({ text: string; until: number } | undefined)[] }>({ key: "", notes: [] });
+  const [noteTick, setNoteTick] = useState(0);
   const seats: Seat[] = useMemo(() => {
     const labels = { join: t("入座", "Sit"), buying: t("买入中…", "Buying in…"), you: t("你", "You") };
     const seatNo = (i: number) => t(`${i + 1} 号`, `Seat ${i + 1}`);
     const list: Seat[] = Array.from({ length: SEAT_COUNT }, (_, d) => ({ id: fromDisplay(d), position: seatNo(fromDisplay(d)), labels }));
     if (!view) return list;
     if (seen.current.hand !== view.handNo) seen.current = { hand: view.handNo, cards: [] };
+    const noteKey = `${table.no}-${view.handNo}`;
+    if (lastNotes.current.key !== noteKey) lastNotes.current = { key: noteKey, notes: [] };
     const pos = positions(view);
     const clock = Date.now() + conn.skew;
     view.holds.forEach((h, i) => {
@@ -472,10 +479,16 @@ export function LobbyPage() {
       if (!x) return;
       const showdown = view.street === "showdown";
       let seatNote: string | undefined;
-      if (showdown && x.hand && !x.folded) seatNote = tr(x.hand, lang);
+      const kept = lastNotes.current.notes;
+      if (x.last) kept[i] = { text: x.last, until: 0 };
+      else if (kept[i] && !kept[i]!.until) kept[i]!.until = Date.now() + NOTE_LINGER_MS;
+      const lingering = !x.last && kept[i] && Date.now() < kept[i]!.until ? kept[i]!.text : null;
+      // 赢家的牌型也写在头顶；只赢到边池的注明「边池」，不然几个人同时 WIN 看着像算错了
+      if (showdown && x.hand && !x.folded) seatNote = x.won > 0 && x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang);
       else if (x.leaving) seatNote = t("离桌", "Leaving");
       else if (x.away) seatNote = t("掉线", "Offline");
       else if (x.last) seatNote = tr(x.last, lang);
+      else if (lingering && !showdown) seatNote = tr(lingering, lang);
       const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
       if (cards && !x.folded) seen.current.cards[i] = cards;
       const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
@@ -505,18 +518,23 @@ export function LobbyPage() {
         mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
         // 用了加时卡 turnMs 会变长，key 带上它让圈按新时长重画
         timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}-${view.turnMs}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
-        // 只赢到边池的在牌型前面注明「边池」，不然几个人同时 WIN 看着像算错了
-        win: showdown && x.won > 0
-          ? { amount: x.won, hand: x.hand && (x.sidePot ? `${t("边池", "Side pot")} · ${tr(x.hand, lang)}` : tr(x.hand, lang)) }
-          : undefined,
+        win: showdown && x.won > 0 ? { amount: x.won } : undefined,
         // 摊牌、都全下后翻开的牌留在手里；只有赢了没摊牌、自己选择亮的才丢到桌面上
         tossed: showdown && !x.hand ? x.showMask : 0,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
         note: seatNote,
+        noteWin: showdown && x.won > 0 && !!x.hand && !x.folded,
       };
     });
     return list;
-  }, [view, you, shownRot, conn.skew, lang, emotes, tools, info]);
+  }, [view, you, shownRot, conn.skew, lang, emotes, tools, info, noteTick]);
+  // 留着的动作到点了重画一次，把它收掉
+  useEffect(() => {
+    const due = lastNotes.current.notes.filter((n) => n && n.until > Date.now()).map((n) => n!.until);
+    if (!due.length) return;
+    const t = setTimeout(() => setNoteTick((n) => n + 1), Math.min(...due) - Date.now() + 20);
+    return () => clearTimeout(t);
+  }, [seats]);
 
   // 没翻出来的位置：用了发发看就摆上看到的牌（只有自己看得到）
   const runoutFrom = view?.board.length ?? 0;

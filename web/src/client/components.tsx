@@ -95,13 +95,15 @@ export interface Seat {
   /** 有人点了这个空位（或在这桌输光了）正在买入：灰色头像 + 橙色倒计时，走过的部分变白 */
   held?: { key: string; total: number; elapsed: number };
   /** 这手赢了：赢了多少、什么牌（别人都弃了就没有牌型） */
-  win?: { amount: number; hand: string | null };
+  win?: { amount: number };
   /** 赢了没摊牌时丢到桌面上亮给大家的牌（第 1 位第一张，第 2 位第二张） */
   tossed?: number;
   /** 能亮牌时点自己的牌调用，k 是第几张 */
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
+  /** note 是赢家的牌型：标成金色 */
+  noteWin?: boolean;
   /** 这个人的牌背、牌面（商场里换的），同桌的人都看得到 */
   back?: string | null;
   face?: string | null;
@@ -175,7 +177,7 @@ export function FeltTable({
                 {s.timer && <TurnRing key={s.timer.key} total={s.timer.total} elapsed={s.timer.elapsed} />}
                 {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
               </div>
-              {s.note && !s.win && <span key={s.note} className="seat-note">{s.note}</span>}
+              {s.note && <span key={s.note} className={`seat-note${s.noteWin ? " seat-note-win" : ""}`}>{s.note}</span>}
               {s.emote && (
                 <span key={s.emote.key} className="seat-emote" aria-label={s.emote.id}>
                   <EmoteSprite id={s.emote.id} size={60} />
@@ -223,7 +225,7 @@ export function FeltTable({
                 <div className="seat-plate seat-plate-win" key="win">
                   <b className="win-mark">WIN</b>
                   <span className="win-amount">+{fmtMoney(s.win.amount)}</span>
-                  <small>{s.win.hand ?? (s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login))}</small>
+                  <small>{s.you ? (s.labels?.you ?? "你") : (s.name ?? s.login)}</small>
                 </div>
               ) : (
                 <div className="seat-plate">

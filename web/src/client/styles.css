@@ -229,6 +229,8 @@ main { min-height: 60vh; }
   font-size: 11px; font-weight: 600; line-height: 1.5; padding: 0 8px; border-radius: 999px; white-space: nowrap;
   background: var(--label); color: var(--bg);
 }
+/* 赢家的牌型：金色 */
+.seat-note-win { background: #e7b43c; color: #2a1d00; box-shadow: 0 0 14px rgb(240 190 60 / 0.55); }
 /* 有人点了空位正在选带入：灰色头像 + 橙色 10 秒倒计时 */
 .seat-held .seat-disc, .seat-you.seat-held .seat-disc { background: color-mix(in srgb, var(--label) 12%, var(--panel)); box-shadow: var(--shadow); }
 .seat-held .turn-ring circle { stroke-width: 8; }
