@@ -166,7 +166,7 @@ export const BOT_CASH_OUT_BB = 100;
 /** 补打时最多真打几手（几十毫秒）；停得再久，多出来的只把手数往前加，筹码早就打乱了 */
 export const CATCH_UP_HANDS = 500;
 /** 机器人桌一手大约多久，算停手期间错过了几手 */
-const BOT_HAND_MS = 16_000;
+const BOT_HAND_MS = 28_000;
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -822,7 +822,7 @@ export class TableRoom {
     this.s.turnStart = now;
     seat.extended = false;
     // 取整毫秒：宿主按这个时刻排闹钟，带小数的话闹钟会在差零点几毫秒时响，什么都做不了
-    this.s.deadline = now + (seat.bot ? Math.round(700 + Math.random() * 1100) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
+    this.s.deadline = now + (seat.bot ? Math.round(1_500 + Math.random() * 2_000) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 
   private apply(i: number, action: "fold" | "check" | "call" | "raise", amount: number | undefined, now: number): string | null {

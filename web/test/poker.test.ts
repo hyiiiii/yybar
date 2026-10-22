@@ -471,7 +471,7 @@ describe("table flow", () => {
     now += 60 * 60_000;
     room.resume(now);
     expect(room.s.pausedAt).toBeNull();
-    expect(room.s.handNo).toBeGreaterThan(150);
+    expect(room.s.handNo).toBeGreaterThan(100);
     expect(room.nextWake()!).toBeGreaterThan(now);
     expect(apart()).toBe(true);
     // 停了一整天：真打 CATCH_UP_HANDS 手，其余只加手数，计时挪到现在之后
@@ -479,7 +479,7 @@ describe("table flow", () => {
     room.pause(now);
     now += 24 * 3600_000;
     room.resume(now);
-    expect(room.s.handNo - before).toBeGreaterThan(CATCH_UP_HANDS + 4000);
+    expect(room.s.handNo - before).toBeGreaterThan(CATCH_UP_HANDS + 2000);
     expect(room.nextWake()!).toBeGreaterThan(now);
     expect(room.nextWake()! - now).toBeLessThan(10_000);
     expect(room.s.seats.every((x) => !x || x.stack >= 0)).toBe(true);
