@@ -410,11 +410,12 @@ export function LobbyPage() {
     </>
   );
 
-  // 点头像看这个人的统计（手数、胜率、VPIP、PFR、3B），再点一下或点别处收起；机器人不记统计，点了没反应
+  // 点头像看这个人的统计（手数、胜率、VPIP、PFR、3B），再点一下或点别处收起；机器人看它今天赢了或输了多少
   const [info, setInfo] = useState<{ seat: number; login: string; stats: PokerStats | null; error?: boolean } | null>(null);
   const showInfo = (seat: number, login: string) => {
     if (info?.seat === seat) return setInfo(null);
     setInfo({ seat, login, stats: null });
+    if (login.startsWith("bot-")) return;
     api<{ stats: PokerStats }>(`/api/stats/${encodeURIComponent(login)}`).then(
       (r) => setInfo((cur) => (cur?.seat === seat ? { ...cur, stats: r.stats } : cur)),
       () => setInfo((cur) => (cur?.seat === seat ? { ...cur, error: true } : cur)),
@@ -434,7 +435,14 @@ export function LobbyPage() {
         <b>{nameOf(info.login, lang)}</b>
         <Badges ids={infoSeat?.badges} />
       </div>
-      {info.stats ? (
+      {info.login.startsWith("bot-") && infoSeat ? (
+        <span className="bot-today">
+          {t("今天", "Today")}{" "}
+          <b className={(infoSeat.today ?? 0) > 0 ? "up" : (infoSeat.today ?? 0) < 0 ? "down" : ""}>
+            {(infoSeat.today ?? 0) > 0 ? "+" : (infoSeat.today ?? 0) < 0 ? "−" : ""}{fmtMoney(Math.abs(infoSeat.today ?? 0))}
+          </b>
+        </span>
+      ) : info.stats ? (
         <StatLine stats={info.stats} />
       ) : (
         <span className="muted small">{info.error ? t("没拿到统计", "Couldn't load stats") : t("加载中…", "Loading…")}</span>
@@ -497,7 +505,7 @@ export function LobbyPage() {
         back: x.back,
         face: x.face,
         badges: x.badges,
-        onInfo: x.login.startsWith("bot-") ? undefined : () => showInfo(i, x.login),
+        onInfo: () => showInfo(i, x.login),
         info: info?.seat === i ? infoCard : undefined,
         peeked: view.peek?.[i]?.map(toSpec),
         emote: emotes[i],

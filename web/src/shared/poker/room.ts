@@ -125,6 +125,8 @@ export interface RoomState {
   botBreaks?: Record<string, number>;
   /** 机器人桌没人看、停手的时刻；有人回来时从这里补打 */
   pausedAt?: number | null;
+  /** 机器人今天（UTC 日期，和全站的「今天」一致）每手输赢加起来是多少，按名字记 */
+  botDay?: { day: string; net: Record<string, number> };
   /** 这一手翻牌前已经有几次加注（大盲不算） */
   pfRaises?: number;
   /** 打完的手的统计，宿主写进 poker_stats 后调用 ackStats */
@@ -171,6 +173,9 @@ export const BOT_CASH_OUT_BB = 100;
 export const CATCH_UP_HANDS = 500;
 /** 机器人桌一手大约多久，算停手期间错过了几手 */
 const BOT_HAND_MS = 40_000;
+
+/** 时刻所在的日期（UTC），全站的「今天」都按这个算 */
+const dayOf = (now: number) => new Date(now).toISOString().slice(0, 10);
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -579,6 +584,7 @@ export class TableRoom {
         acts: x.acts ?? 0,
         won: x.won,
         hand: x.hand,
+        today: x.bot ? (this.s.botDay?.day === dayOf(now) ? (this.s.botDay.net[x.login] ?? 0) : 0) : null,
       };
     });
     const youSeat = you >= 0 && !this.s.seats[you]!.leaving ? you : null;
@@ -1015,6 +1021,12 @@ export class TableRoom {
       (this.s.stats ??= []).push({ userId: x.userId, won: x.won > 0, ...pf });
       if (x.won >= BIG_POT) (this.s.unlocks ??= []).push({ userId: x.userId, id: "big_pot" });
       if (x.shown && x.hand && (x.hand === "同花顺" || x.hand === "皇家同花顺")) (this.s.unlocks ??= []).push({ userId: x.userId, id: "straight_flush" });
+    }
+    // 机器人这一手的输赢（赢到的减去投进去的）记进今天的账；补打的手按补打时的时刻算哪天
+    const day = dayOf(now);
+    if (this.s.botDay?.day !== day) this.s.botDay = { day, net: {} };
+    for (const x of this.s.seats) {
+      if (x?.bot && x.inHand) this.s.botDay.net[x.login] = (this.s.botDay.net[x.login] ?? 0) + x.won - x.committed;
     }
     this.s.street = "showdown";
     this.s.toAct = -1;

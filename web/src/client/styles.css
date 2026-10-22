@@ -262,6 +262,10 @@ main { min-height: 60vh; }
 .turn-ring-bar { fill: none; stroke: var(--go); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100 100; animation: turn-ring linear both; }
 @keyframes turn-ring { 0% { stroke-dashoffset: 0; } 70% { stroke: var(--go); } 100% { stroke-dashoffset: 100; stroke: var(--danger); } }
 .seat-folded { opacity: 0.45; }
+/* 点开了小卡片的座位压在桌面和别的座位上面；弃了牌的座位照样变淡，卡片不跟着变淡、也不透出底下的牌 */
+.seat-info-open { z-index: 9; }
+.seat-folded.seat-info-open { opacity: 1; }
+.seat-folded.seat-info-open > :not(.seat-info) { opacity: 0.45; }
 .seat-cards { position: absolute; top: 50%; display: flex; transform: translateY(-50%); }
 .seat-cards .card + .card { margin-left: -16px; }
 .pos-0 .seat-cards, .pos-4 .seat-cards, .pos-2 .seat-cards { right: calc(100% + 6px); }
@@ -787,6 +791,11 @@ main { min-height: 60vh; }
 .seat-disc-click { cursor: pointer; }
 .seat-disc-click:hover { filter: brightness(0.97); }
 .seat-info { position: absolute; left: 50%; bottom: calc(100% + 16px); translate: -50% 0; z-index: 7; }
+/* 机器人头像的小卡片：今天赢了多少（绿）、输了多少（红） */
+.bot-today { font-size: 13px; color: var(--label-2); }
+.bot-today b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label); }
+.bot-today b.up { color: var(--go); }
+.bot-today b.down { color: var(--danger); }
 .pos-0 .seat-info, .pos-1 .seat-info { bottom: auto; top: calc(100% + 40px); }
 .info-card {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; white-space: nowrap;

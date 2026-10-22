@@ -171,7 +171,7 @@ export function FeltTable({
       {order.map(({ s, d }) => (
         <div
           key={s.id}
-          className={`seat pos-${d}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}${s.held ? " seat-held" : ""}${s.win ? " seat-win" : ""}`}
+          className={`seat pos-${d}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}${s.held ? " seat-held" : ""}${s.win ? " seat-win" : ""}${s.info ? " seat-info-open" : ""}`}
         >
           {s.login ? (
             <>
