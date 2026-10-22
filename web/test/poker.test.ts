@@ -419,6 +419,8 @@ describe("table flow", () => {
       room.tick(now);
       expect(room.s.seats.every((x) => !x || x.stack >= 0)).toBe(true);
       expect(apart()).toBe(true);
+      // 宿主按 nextWake 排闹钟，时刻要是整毫秒
+      expect(Number.isInteger(room.nextWake() ?? 0)).toBe(true);
     }
     expect(room.s.handNo).toBe(40);
     // 真人走了机器人照样打

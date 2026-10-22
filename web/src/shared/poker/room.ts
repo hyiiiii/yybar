@@ -771,7 +771,8 @@ export class TableRoom {
     const seat = this.s.seats[next]!;
     this.s.turnStart = now;
     seat.extended = false;
-    this.s.deadline = now + (seat.bot ? 700 + Math.random() * 1100 : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
+    // 取整毫秒：宿主按这个时刻排闹钟，带小数的话闹钟会在差零点几毫秒时响，什么都做不了
+    this.s.deadline = now + (seat.bot ? Math.round(700 + Math.random() * 1100) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 
   private apply(i: number, action: "fold" | "check" | "call" | "raise", amount: number | undefined, now: number): string | null {

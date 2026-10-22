@@ -170,7 +170,9 @@ export class PokerTable extends DurableObject<Env> {
     if (room.s.config.bots && room.vacant() && !this.ctx.getWebSockets().some((w) => w !== gone)) wake = null;
     const retry = room.s.cashouts.length ? Date.now() + CASHOUT_RETRY_MS : null;
     const at = [wake, retry].filter((x): x is number => x !== null);
-    if (at.length) await this.ctx.storage.setAlarm(Math.min(...at));
+    // 闹钟排在整毫秒、而且一定在现在之后：在闹钟里再排一个和这次同一时刻（或更早）的闹钟，
+    // 跑完会被当成已经响过删掉，牌桌就停住了，要等有人重连才接着打
+    if (at.length) await this.ctx.storage.setAlarm(Math.max(Math.ceil(Math.min(...at)), Date.now() + 1));
     else await this.ctx.storage.deleteAlarm();
 
     const now = Date.now();
