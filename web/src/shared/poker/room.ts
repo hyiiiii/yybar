@@ -160,8 +160,8 @@ export const RUNOUT_STEP_MS = 2_400;
 const SHOWDOWN_PAUSE_MS = 6_000;
 const FOLD_WIN_PAUSE_MS = 3_000;
 
-/** 机器人桌上的三个机器人，按编号叫；坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
-export const TABLE_BOTS = ["bot-001", "bot-002", "bot-003"];
+/** 机器人桌上的三个机器人（C、G、D）；坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
+export const TABLE_BOTS = ["bot-C", "bot-G", "bot-D"];
 export const BOT_SEATS = [0, 2, 4];
 /** 机器人桌的机器人带 50 个大盲（1/2 的桌就是 $100）；输光了再带 50 个，
  *  赢到 100 个大盲（$200）以上就离桌，歇一手再带 50 个回来 */

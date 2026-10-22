@@ -458,7 +458,7 @@ describe("table flow", () => {
 
   it("a bot that had to sit elsewhere moves back to its own seat once it frees up", () => {
     const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
-    // 2 号座位当时被人占着，bot-002 坐到了 1 号，挨着 bot-001
+    // 座位 2 当时被人占着，bot-G 坐到了座位 1，挨着 bot-C
     room.s.seats[1] = room.s.seats[2];
     room.s.seats[2] = null;
     room.tick(room.s.nextHandAt!);
