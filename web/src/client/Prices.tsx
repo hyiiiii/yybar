@@ -45,7 +45,7 @@ function PriceTable({ onClose }: { onClose: () => void }) {
         <button className="modal-close" onClick={onClose} aria-label={t("关闭", "Close")}>×</button>
         <h2>{t("模型价格", "Model prices")}</h2>
         <ul className="price-notes">
-          <li>{t("花费由服务器按下表的单价和上传的 token 数计算，App 里改的价格不算数。$1 = 1 筹码。", "Spend is priced by the server from these rates and the uploaded token counts — prices edited in the app don't count. $1 = 1 chip.")}</li>
+          <li>{t("花费由服务器按下表的单价和上传的 token 数计算，$1 = 1 筹码。", "Spend is priced by the server from these rates and the uploaded token counts — prices edited in the app don't count. $1 = 1 chip.")}</li>
           <li>{t("Grok 按 xAI 账单里的实际花费，但不超过下表的价格。", "Grok uses the actual xAI bill, capped at the rates below.")}</li>
           <li>{t("表里没有的模型、Grok Bot（只有合计 token）和 Gemini（只有回答次数）不计花费。", "Models not listed, Grok Bot (total tokens only) and Gemini (answer counts only) cost nothing.")}</li>
         </ul>
