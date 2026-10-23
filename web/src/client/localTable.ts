@@ -3,7 +3,7 @@ import { TABLE_BOTS, TableRoom } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { TableInfo } from "./tables";
 import { demoBadges, demoEmotes, demoLook, demoSpend } from "./demo";
-import { TOMATO_PRICE } from "../shared/cosmetics";
+import { THROW_PRICE } from "../shared/cosmetics";
 
 const YOU = { userId: 1, login: "hyiiiii", avatarUrl: null };
 const PEOPLE = ["nightowl", "token-burner", "vibe-coder", "mia", "lazy-dev"];
@@ -93,12 +93,13 @@ export function openLocalTable(
       err = local.room.canUseItem(YOU.userId, msg.item);
       if (!err) err = demoSpend(msg.item) ? local.room.useItem(YOU.userId, msg.item, now) : "这个道具用完了，去商场买一些";
     } else if (msg.t === "emote") err = local.room.emote(YOU.userId, msg.id, demoEmotes(), now);
-    else if (msg.t === "tomato") {
-      err = local.room.canTomato(YOU.userId, msg.seat, now);
-      if (!err && balance < TOMATO_PRICE[msg.n]) err = "筹码不够";
+    else if (msg.t === "throw") {
+      const price = THROW_PRICE[msg.item]?.[msg.n] ?? 0;
+      err = price ? local.room.canThrow(YOU.userId, msg.seat, now) : "看不懂的操作";
+      if (!err && balance < price) err = "筹码不够";
       if (!err) {
-        balance -= TOMATO_PRICE[msg.n];
-        err = local.room.tomato(YOU, msg.seat, msg.n, now);
+        balance -= price;
+        err = local.room.throwAt(YOU, msg.seat, msg.item, msg.n, now);
       }
     }
     else if (msg.t === "act") err = local.room.act(YOU.userId, msg.action, msg.amount, now);

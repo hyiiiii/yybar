@@ -17,8 +17,8 @@ export type ClientMsg =
   /** 用道具、发表情 */
   | { t: "item"; item: "timecard" | "peek" | "runout" }
   | { t: "emote"; id: string }
-  /** 往 seat 号座位扔番茄，n 个（1 或 5） */
-  | { t: "tomato"; seat: number; n: 1 | 5 }
+  /** 往 seat 号座位扔番茄（1 或 5 个）、送玫瑰花（1 支） */
+  | { t: "throw"; item: "tomato" | "rose"; seat: number; n: 1 | 5 }
   | { t: "act"; action: "fold" | "check" | "call" | "raise"; amount?: number }
   | { t: "ping" };
 
@@ -104,14 +104,14 @@ export interface TableView {
 export interface TableEvent {
   id: number;
   at: number;
-  kind: "item" | "emote" | "tomato";
-  /** 道具、表情：用的人的座位；番茄：被砸的座位 */
+  kind: "item" | "emote" | "throw";
+  /** 道具、表情：用的人的座位；番茄、玫瑰：被扔的座位 */
   seat: number;
-  /** 用的人（番茄：扔的人） */
+  /** 用的人（番茄、玫瑰：扔的人） */
   login: string;
-  /** 道具 id 或表情 id；番茄是个数 "1" / "5" */
+  /** 道具 id 或表情 id；番茄、玫瑰是「东西:个数」，例如 "tomato:5"、"rose:1" */
   what: string;
-  /** 番茄从哪个座位扔出来；旁观的人扔是 null（从桌边飞进来） */
+  /** 番茄、玫瑰从哪个座位扔出来；旁观的人扔是 null（从桌边飞进来） */
   from?: number | null;
 }
 

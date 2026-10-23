@@ -819,7 +819,8 @@ main { min-height: 60vh; }
 .gift .gift-lid { transform-box: fill-box; transform-origin: 0% 100%; transition: transform .5s cubic-bezier(.3, 1.6, .5, 1); }
 .gift-open .gift-lid { transform: translate(-1px, -3px) rotate(-28deg); }
 .gift-pop { position: absolute; left: 50%; top: 100%; translate: -50% 0; font-size: 12px; font-weight: 700; color: #c88a0e; white-space: nowrap; pointer-events: none; }
-.gift-pop small { display: block; font-size: 11px; font-weight: 600; color: var(--accent); text-align: center; }
+.gift-pop small { display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--accent); }
+.gift-pop small .icon { width: 14px; height: 14px; }
 @media (prefers-reduced-motion: no-preference) {
   .gift-waiting .gift { animation: gift-bounce 1.4s ease-in-out infinite; transform-origin: 50% 100%; }
   @keyframes gift-bounce { 0%, 55%, 100% { transform: none; } 15% { transform: translateY(-3px) scale(1.05, .95); } 30% { transform: translateY(0) scale(.96, 1.04); } 42% { transform: translateY(-1px) rotate(-6deg); } }
@@ -930,18 +931,33 @@ main { min-height: 60vh; }
   .sort-flip { width: 30px; }
 }
 
-/* 扔番茄：头像卡片上的两个按钮、飞过去的番茄、糊在头像上的一摊 */
-.tomato-row { display: flex; gap: 6px; margin-top: 8px; }
-.tomato-btn { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; padding-inline: 8px; }
-.tomato-btn b { font-size: 12px; }
-.tomato-btn .chip-count { font-size: 12px; margin-left: 2px; }
-.tomato-icon { display: inline-grid; width: 18px; height: 18px; }
-.tomato-icon svg, .tomato svg, .tomato-splat svg { width: 100%; height: 100%; display: block; }
-.tomato-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
-.tomato { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; filter: drop-shadow(0 3px 4px rgb(0 0 0 / .25)); }
-.tomato-splat { position: absolute; left: 0; top: 0; width: 66px; height: 66px; margin: -33px 0 0 -33px; opacity: .92; }
+/* 扔番茄、送玫瑰：头像卡片上的三个按钮、飞过去的番茄 / 玫瑰、糊在头像上的一摊、玫瑰冒出的小心心 */
+.throw-row { display: flex; gap: 6px; margin-top: 4px; }
+.info-card:has(.throw-row) { width: max-content; }
+.throw-btn { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; padding-inline: 7px; }
+.throw-btn b { font-size: 12px; }
+.throw-btn .chip-count { font-size: 12px; margin-left: 2px; }
+.throw-icon { display: inline-grid; width: 18px; height: 18px; }
+.throw-icon svg, .thrown svg, .tomato-splat svg, .rose-heart svg { width: 100%; height: 100%; display: block; }
+.throw-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.thrown { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; filter: drop-shadow(0 3px 4px rgb(0 0 0 / .25)); will-change: transform; }
+.thrown-rose { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+.tomato-splat { position: absolute; left: 0; top: 0; width: 66px; height: 66px; margin: -33px 0 0 -33px; will-change: transform, opacity; }
+.rose-heart { position: absolute; left: 0; top: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; will-change: transform, opacity; }
 
-/* 个人主页：近 30 天（按服务叠起来的细柱 + 日均虚线 + 悬停浮层） */
+/* 个人主页：服务筛选（带各家的标） */
+.svc-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.svc-filter button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; border-radius: 999px; border: 0.5px solid var(--separator); background: var(--panel); color: var(--label); font: inherit; font-size: 13px; cursor: pointer; transition: background-color .2s, border-color .2s; }
+.svc-filter button[aria-selected="true"] { background: var(--fill); border-color: color-mix(in srgb, var(--label) 30%, transparent); font-weight: 600; }
+.svc-logo { flex: none; fill: currentColor; vertical-align: -2px; }
+.svc-codex { color: var(--codex); }
+.svc-claude { color: var(--claude); }
+.svc-grok { color: var(--grok); }
+/* 每日用量（近 30 天：按服务叠起来的柱 + 日均虚线 + 悬停浮层） */
+.usage-title { display: flex; align-items: baseline; gap: 12px; }
+.usage-avg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.usage-avg i { width: 18px; border-top: 1.5px dashed var(--label-2); }
+.usage-legend { display: inline-flex; gap: 10px; align-items: center; }
 .usage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .usage-head h2 { margin: 0; }
 .usage-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -950,11 +966,10 @@ main { min-height: 60vh; }
 .daily-plot { position: relative; height: 150px; }
 .daily-grid { position: absolute; left: 0; right: 0; border-top: 0.5px solid var(--separator); }
 .daily-grid span { position: absolute; right: calc(100% + 8px); translate: 0 -50%; font-size: 10px; color: var(--label-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.daily-avg { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--label-3); z-index: 2; pointer-events: none; }
-.daily-avg span { position: absolute; right: 0; bottom: 2px; font-size: 10px; color: var(--label-2); font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 0 3px; border-radius: 3px; }
+.daily-avg { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--label-2); z-index: 2; pointer-events: none; }
 .daily-bars { position: absolute; inset: 0; display: flex; align-items: flex-end; }
 .daily-col { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
-.daily-stack { width: min(10px, 60%); display: flex; flex-direction: column-reverse; border-radius: 2px; overflow: hidden; transition: height .45s cubic-bezier(.3, .9, .3, 1), opacity .2s; min-height: 0; }
+.daily-stack { width: min(22px, 62%); display: flex; flex-direction: column-reverse; border-radius: 2px; overflow: hidden; transition: height .45s cubic-bezier(.3, .9, .3, 1), opacity .2s; min-height: 0; }
 .daily-stack i { display: block; min-height: 1px; }
 .daily-col.dim .daily-stack { opacity: .45; }
 .daily-tip { position: absolute; bottom: calc(100% + 4px); left: 50%; translate: -50% 0; z-index: 5; min-width: 150px; padding: 6px 8px; border-radius: 6px; background: var(--panel); box-shadow: 0 0 0 0.5px var(--separator), var(--shadow); font-size: 11px; display: grid; gap: 3px; pointer-events: none; }
@@ -1009,3 +1024,14 @@ main { min-height: 60vh; }
   .act-grid, .act-months { gap: 1.5px; }
   .act-col { gap: 1.5px; }
 }
+
+/* Token 活动只选了一个服务：用它的识别色分四档 */
+.act-tint-codex { --tint: var(--codex); }
+.act-tint-claude { --tint: var(--claude); }
+.act-tint-grok { --tint: var(--grok); }
+.act-tint .act-l1 { background: color-mix(in srgb, var(--tint) 22%, transparent); }
+.act-tint .act-l2 { background: color-mix(in srgb, var(--tint) 45%, transparent); }
+.act-tint .act-l3 { background: color-mix(in srgb, var(--tint) 72%, transparent); }
+.act-tint .act-l4 { background: var(--tint); }
+.act-tint .act-bar { background: color-mix(in srgb, var(--tint) 72%, transparent); }
+.act-tint .act-bar-hover { background: var(--tint); }

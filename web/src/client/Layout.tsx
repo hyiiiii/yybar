@@ -4,7 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { api, fmtInt } from "./api";
 import { Guide } from "./Guide";
 import { Avatar, LoginButton } from "./components";
-import { BarIcon, BookIcon, CartIcon, GiftIcon, PodiumIcon, TrophyIcon } from "./icons";
+import { BarIcon, BookIcon, CartIcon, EyeIcon, GiftIcon, PodiumIcon, RunoutIcon, TimeIcon, TrophyIcon } from "./icons";
 import { pick, setLang, useLang, useT } from "./i18n";
 import { findItem, type ItemId } from "../shared/cosmetics";
 import { loginHref, notifyMeChanged, useMe } from "./useMe";
@@ -13,6 +13,8 @@ const DEMO = !!import.meta.env.VITE_DEMO;
 
 /** 礼盒拆到一半要先登录：记下这个意图，登录回来自动拆 */
 const GIFT_INTENT = "yyb:open-gift";
+/** 礼盒送的道具用图标表示 */
+const ITEM_ICON: Record<ItemId, () => React.JSX.Element> = { timecard: TimeIcon, peek: EyeIcon, runout: RunoutIcon };
 
 /** 每日礼盒：没领就一直在跳，点一下直接领（盖子飞起、冒出 +$100），今天就停在拆开的样子 */
 function DailyGift() {
@@ -66,7 +68,14 @@ function DailyGift() {
       {popped !== null && popped.amount > 0 && (
         <span className="gift-pop" key={popped.amount}>
           +${popped.amount}
-          {popped.item && <small>+1 {pick(findItem(popped.item)!.name, lang)}</small>}
+          {popped.item && (
+            <small title={pick(findItem(popped.item)!.name, lang)}>
+              +1 {(() => {
+                const Icon = ITEM_ICON[popped.item];
+                return <Icon />;
+              })()}
+            </small>
+          )}
         </span>
       )}
     </button>

@@ -1,5 +1,5 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
-import type { ActivityPoint, MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
+import type { ActivityPoint, MeResponse, ModelRow, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
 import { localBalance, spendLocal } from "./localTable";
 import { ACHIEVEMENTS } from "../shared/achievements";
 import { COSMETICS, DEFAULT_BACK, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type CosmeticKind, type ItemId } from "../shared/cosmetics";
@@ -71,7 +71,26 @@ function series(seed: number): SeriesPoint[] {
   return out;
 }
 
-/** 预览用的 Token 活动：最近 378 天，越近用得越多，周末少一点，偶尔歇一天 */
+/** 预览用的模型明细：把每天每个服务的用量分给它的几个模型 */
+function demoModels(points: SeriesPoint[]): ModelRow[] {
+  const split: Record<string, [string, number][]> = {
+    claude: [["claude-opus-4.5", 0.75], ["claude-sonnet-4.5", 0.25]],
+    codex: [["gpt-5-codex", 1]],
+    grok: [["grok-4", 1]],
+  };
+  return points.flatMap((p) =>
+    split[p.app].map(([model, share]) => {
+      const tokens = p.tokens * share;
+      return {
+        day: p.day, app: p.app, model, cost_micro: Math.round(p.cost_micro * share),
+        input: Math.round(tokens * 0.04), output: Math.round(tokens * 0.03), cache_read: Math.round(tokens * 0.88),
+        cache_write: p.app === "claude" ? Math.round(tokens * 0.05) : 0,
+      };
+    }),
+  );
+}
+
+/** 预览用的 Token 活动：最近 378 天，越近用得越多，周末少一点，偶尔歇一天；按 Claude / Codex / Grok 大概六三一分 */
 function activity(seed: number, total: number): ActivityPoint[] {
   const out: ActivityPoint[] = [];
   const today = new Date();
@@ -81,7 +100,10 @@ function activity(seed: number, total: number): ActivityPoint[] {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
     if (i > 240 || rnd() < 0.18) continue;
     const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0.45 : 1;
-    out.push({ day: d.toISOString().slice(0, 10), tokens: Math.round((total / 160) * weekend * (0.2 + rnd() * 1.6) * (1.4 - i / 300)) });
+    const day = d.toISOString().slice(0, 10);
+    const tokens = Math.round((total / 160) * weekend * (0.2 + rnd() * 1.6) * (1.4 - i / 300));
+    out.push({ day, app: "claude", tokens: Math.round(tokens * 0.6) }, { day, app: "codex", tokens: Math.round(tokens * 0.3) });
+    if (rnd() < 0.4) out.push({ day, app: "grok", tokens: Math.round(tokens * 0.1) });
   }
   return out;
 }
@@ -100,21 +122,7 @@ function profile(login: string): Profile {
       cost_micro: cost,
     },
     series: series(p.login.length * 7),
-    models: (
-      [
-        ["claude", "claude-opus-4.5", 0.46, 0.52],
-        ["codex", "gpt-5-codex", 0.31, 0.27],
-        ["claude", "claude-sonnet-4.5", 0.15, 0.14],
-        ["grok", "grok-4", 0.08, 0.07],
-      ] as const
-    ).map(([app, model, share, spend]) => {
-      const tokens = Math.round(p.tokens * share);
-      return {
-        app, model, tokens, cost_micro: Math.round(cost * spend),
-        input: Math.round(tokens * 0.04), output: Math.round(tokens * 0.03), cache_read: Math.round(tokens * 0.88),
-        cache_write: app === "claude" ? tokens - Math.round(tokens * 0.04) - Math.round(tokens * 0.03) - Math.round(tokens * 0.88) : 0,
-      };
-    }),
+    models: demoModels(series(p.login.length * 7)),
     activity: activity(p.login.length * 13, p.tokens),
     points: { earned: Math.floor(p.cost * 100), balance: Math.floor(p.cost * 100) - 23_650 },
   };
@@ -234,7 +242,13 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
       emotes: demoEmotes(),
       // 余额跟着预览牌桌的带入、离桌变
       points: { ...p.points, balance: localBalance() },
-      tokens: [{ id: 1, label: "yybar App", created_at: "2026-10-17T08:00:00Z", last_used_at: "2026-10-17T16:05:00Z" }],
+      // 上传记录：近 30 天里有用量的日子，第二天早上传上来
+      uploads: [...new Set(p.series.map((x) => x.day))].sort().reverse().map((day) => {
+        const rows = p.series.filter((x) => x.day === day);
+        const next = new Date(`${day}T00:00:00Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        return { day, uploaded_at: `${next.toISOString().slice(0, 10)}T01:12:00Z`, tokens: rows.reduce((a, x) => a + x.tokens, 0), cost_micro: rows.reduce((a, x) => a + x.cost_micro, 0) };
+      }),
     } satisfies MeResponse;
   }
   if (url.pathname === "/api/me/tokens") return { token: "yyb_demo_仅预览不可用" };

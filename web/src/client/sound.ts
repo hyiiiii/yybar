@@ -134,6 +134,11 @@ export const sfx = {
     noise(0, 0.16, { freq: 900, q: 0.9, gain: 0.55, to: 260 });
     tone(220, 0, 0.12, { gain: 0.25, to: 90 });
   },
+  /** 玫瑰落到头像上：叮叮两声 */
+  rose() {
+    tone(1320, 0, 0.35, { type: "triangle", gain: 0.18 });
+    tone(1760, 0.09, 0.45, { type: "triangle", gain: 0.14 });
+  },
   /** 发表情、拆礼盒：啵一下 */
   pop() {
     tone(420, 0, 0.12, { gain: 0.35, to: 980 });

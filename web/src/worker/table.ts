@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import { TableRoom, type Player, type RoomConfig, type RoomState } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { Env } from "./types";
-import { DEFAULT_EMOTES, findItem, TOMATO_PRICE, type ItemId } from "../shared/cosmetics";
+import { DEFAULT_EMOTES, findItem, THROW_PRICE, type ItemId, type ThrowItem } from "../shared/cosmetics";
 import { spendItem } from "./shop";
 import { grantAchievement } from "./achievements";
 
@@ -77,7 +77,7 @@ export class PokerTable extends DurableObject<Env> {
     else if (msg.t === "show") err = room.show(user.userId, msg.which);
     else if (msg.t === "item") err = await this.useItem(user, msg.item);
     else if (msg.t === "emote") err = room.emote(user.userId, String(msg.id), user.emotes ?? DEFAULT_EMOTES, now);
-    else if (msg.t === "tomato") err = await this.tomato(user, msg.seat, msg.n);
+    else if (msg.t === "throw") err = await this.throwAt(user, msg.item, msg.seat, msg.n);
     else if (msg.t === "act") err = room.act(user.userId, msg.action, msg.amount, now);
     else return;
     if (err) fail(err);
@@ -122,24 +122,24 @@ export class PokerTable extends DurableObject<Env> {
     return err;
   }
 
-  /** 扔番茄：先看能不能扔，再从账户扣钱（余额判断和扣款同一条语句），扣成功才扔；这时候扔不了就退回。 */
-  private async tomato(user: Player, target: number, n: unknown): Promise<string | null> {
+  /** 扔番茄、送玫瑰：先看能不能扔，再从账户扣钱（余额判断和扣款同一条语句），扣成功才扔；这时候扔不了就退回。 */
+  private async throwAt(user: Player, item: unknown, target: number, n: unknown): Promise<string | null> {
     const room = this.room!;
-    if (n !== 1 && n !== 5) return "看不懂的操作";
-    const pre = room.canTomato(user.userId, target, Date.now());
+    const price = (item === "tomato" || item === "rose") && (n === 1 || n === 5) ? THROW_PRICE[item as ThrowItem][n] : undefined;
+    if (!price) return "看不懂的操作";
+    const pre = room.canThrow(user.userId, target, Date.now());
     if (pre) return pre;
-    const price = TOMATO_PRICE[n];
-    const ref = `t${room.s.config.no}:tomato:${user.userId}:${crypto.randomUUID()}`;
+    const ref = `t${room.s.config.no}:${item}:${user.userId}:${crypto.randomUUID()}`;
     const res = await this.env.DB.prepare(
       `INSERT INTO points_ledger (user_id, delta, reason, ref)
-       SELECT ?1, -?2, 'tomato', ?3
+       SELECT ?1, -?2, ?4, ?3
        WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 1000000 FROM daily_usage WHERE user_id = ?1)
            + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) >= ?2`,
     )
-      .bind(user.userId, price, ref)
+      .bind(user.userId, price, ref, item)
       .run();
     if (!res.meta.changes) return "筹码不够";
-    const err = room.tomato(user, target, n, Date.now());
+    const err = room.throwAt(user, target, item as ThrowItem, n as 1 | 5, Date.now());
     if (err) room.s.cashouts.push({ userId: user.userId, amount: price, ref: `${ref}:refund` });
     return err;
   }

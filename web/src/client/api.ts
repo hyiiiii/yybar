@@ -33,21 +33,22 @@ export interface SeriesPoint {
   cost_micro: number;
 }
 
+/** 模型明细的原始行：某一天某个模型的用量（最近 30 天） */
 export interface ModelRow {
+  day: string;
   app: App;
   model: string;
   input: number;
   output: number;
   cache_read: number;
   cache_write: number;
-  /** 合计（含缓存） */
-  tokens: number;
   cost_micro: number;
 }
 
-/** Token 活动：某一天的 token 合计（含缓存） */
+/** Token 活动：某一天某个服务的 token 合计（含缓存） */
 export interface ActivityPoint {
   day: string;
+  app: App;
   tokens: number;
 }
 
@@ -81,7 +82,8 @@ export interface MeResponse extends Partial<Omit<Profile, "user">> {
   emotes?: string[];
   /** 每日礼盒：今天领过没有、给多少 */
   daily?: { claimed: boolean; amount: number };
-  tokens?: { id: number; label: string; created_at: string; last_used_at: string | null }[];
+  /** 上传记录：最近收到的 30 天（每天只收第一次） */
+  uploads?: { day: string; uploaded_at: string; tokens: number; cost_micro: number }[];
 }
 
 /** 燃烧 token 榜的一行：token 数和最常用的模型 */

@@ -66,30 +66,28 @@ async function totalsOf(db: D1Database, userId: number) {
     .first();
 }
 
-/** 模型明细：每个模型的输入、输出、缓存读取、缓存写入、合计和花费（全部时间），按合计 token 排 */
+/** 模型明细：最近 30 天每天每个模型的输入、输出、缓存读取、缓存写入和花费；网页按今天 / 7 天 / 30 天、按服务自己加起来 */
 async function topModels(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
-      `SELECT app, model, SUM(input_tokens) AS input, SUM(output_tokens) AS output,
-         SUM(cache_read_tokens) AS cache_read, SUM(cache_creation_tokens) AS cache_write,
-         SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens,
-         SUM(cost_micro) AS cost_micro
-       FROM daily_usage WHERE user_id = ? GROUP BY app, model ORDER BY tokens DESC LIMIT 60`,
+      `SELECT day, app, model, input_tokens AS input, output_tokens AS output,
+         cache_read_tokens AS cache_read, cache_creation_tokens AS cache_write, cost_micro
+       FROM daily_usage WHERE user_id = ? AND day >= ? ORDER BY day`,
     )
-    .bind(userId)
+    .bind(userId, addDays(isoDay(new Date()), -30))
     .all();
   return results;
 }
 
-/** Token 活动：最近 53 周多一点（378 天）每天的 token 合计（含缓存），画热力图 */
+/** Token 活动：最近 53 周多一点（378 天）每天每个服务的 token 合计（含缓存），画热力图；网页按服务筛选 */
 async function activityOf(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
-      `SELECT day, SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens
-       FROM daily_usage WHERE user_id = ? AND day >= ? GROUP BY day ORDER BY day`,
+      `SELECT day, app, SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens
+       FROM daily_usage WHERE user_id = ? AND day >= ? GROUP BY day, app ORDER BY day`,
     )
     .bind(userId, addDays(isoDay(new Date()), -377))
-    .all<{ day: string; tokens: number }>();
+    .all<{ day: string; app: string; tokens: number }>();
   return results;
 }
 
@@ -217,14 +215,19 @@ app.get("/api/me", async (c) => {
   if (!user) return c.json({ user: null });
   // 先检查成就（第一次登录、连续天数…），新解锁的奖励要算进下面的余额
   await syncAchievements(c.env.DB, user.id);
-  const [totals, series, models, points, activity, tokens, items, emotes] = await Promise.all([
+  const [totals, series, models, points, activity, uploads, items, emotes] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
     activityOf(c.env.DB, user.id),
+    // 上传记录：最近收到的 30 天，每天什么时候传上来的、多少 token、多少花费
     c.env.DB.prepare(
-      "SELECT id, label, created_at, last_used_at FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY id DESC",
+      `SELECT u.day, u.uploaded_at,
+         COALESCE(SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens), 0) AS tokens,
+         COALESCE(SUM(d.cost_micro), 0) AS cost_micro
+       FROM usage_uploads u LEFT JOIN daily_usage d ON d.user_id = u.user_id AND d.day = u.day
+       WHERE u.user_id = ? GROUP BY u.day ORDER BY u.day DESC LIMIT 30`,
     )
       .bind(user.id)
       .all(),
@@ -246,7 +249,7 @@ app.get("/api/me", async (c) => {
     models,
     points,
     activity,
-    tokens: tokens.results,
+    uploads: uploads.results,
   });
 });
 

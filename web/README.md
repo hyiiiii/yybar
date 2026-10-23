@@ -49,7 +49,7 @@ npm test && npm run typecheck
 
 ## App 上传接口
 
-所有请求带 `Authorization: Bearer <上传令牌>`。令牌在网站「我的」页创建，或由 App 走连接流程获得。
+所有请求带 `Authorization: Bearer <上传令牌>`。令牌由 App 走连接流程获得（网站「我的」页不再列令牌，改成「上传记录」：最近收到的 30 天，每天的上传时间、token、花费和换得的筹码，`GET /api/me` 的 `uploads`）。
 
 **连接流程**：App 打开 `<网站>/connect?state=<随机串>`，用户登录并点「授权」后，浏览器跳到
 `yybar://connect?token=<令牌>&state=<原样返回>`，App 校验 state 后保存令牌。
@@ -87,11 +87,12 @@ npm test && npm run typecheck
 
 ## 个人主页
 
-- 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片，下面三块照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
-- 近 30 天：每天一根细柱，按 Codex / Claude Code / Grok 叠起来，虚线是日均，右上角在费用 / Tokens 之间切换，悬停看当天每个服务多少。
-- 模型明细：每个模型的输入、输出、缓存读取、缓存写入、合计、费用（全部时间），点表头排序，默认按合计；合计最多的模型后面一团蹦着的小火苗。Codex / Grok 不单独记缓存写入，显示「—」。
-- Token 活动：上面四格汇总（累计 Token 数、单日峰值、最长连续天数、当前连续天数），下面最近 53 周的格子，每列一周（周一开头）。每天 = 热力格，按这段时间有用量的日子的 25% / 50% / 75% 分位分四档暖色；每周 / 累计总量 = 每列从下往上按比例填。悬停有深色浮层。
-- `GET /api/me`、`GET /api/users/<login>` 的 `models` 带每个模型的 `input / output / cache_read / cache_write / tokens / cost_micro`，`activity` 是最近 378 天每天的 token 合计。
+- 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片，下面照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
+- 最上面一排服务筛选：全部 / Codex / Claude / Grok，按钮上是各家的标（和牌面花色同一套，染服务识别色）；下面三块都跟着筛选走。
+- Token 活动（放在最上面）：四格汇总（累计 Token 数、单日峰值、最长连续天数、当前连续天数），下面最近 53 周的格子，每列一周（周一开头）。每天 = 热力格，按这段时间有用量的日子的 25% / 50% / 75% 分位分四档，全部时用暖色，只选一个服务时用它的识别色；每周 / 累计总量 = 每列从下往上按比例填。悬停有深色浮层。
+- 每日用量：近 30 天每天一根柱，按服务叠起来，标题旁边是日均（图上一道虚线），右上角是服务的标和费用 / Tokens 切换，悬停看当天每个服务多少。
+- 模型明细：今天 / 7 天 / 30 天切换，每个模型的输入、输出、缓存读取、缓存写入、合计、费用，点表头排序，默认按合计；这段时间合计最多的模型后面一团蹦着的小火苗。Codex / Grok 不单独记缓存写入，显示「—」。
+- `GET /api/me`、`GET /api/users/<login>`：`models` 是最近 30 天每天每个模型一行（`day / app / model / input / output / cache_read / cache_write / cost_micro`），网页按时间段、服务自己加；`activity` 是最近 378 天每天每个服务的 token 合计。
 
 ## 商场
 
@@ -109,11 +110,11 @@ npm test && npm run typecheck
 - 买牌背、牌面、表情记在 `points_ledger`（`reason = 'shop'`，`ref = shop:<用户>:<种类>:<款式>`，同一款不会扣两次）；买道具的扣款和加库存在同一个事务里。正在用的款式在 `users.card_back` / `users.card_face`（迁移 `0004_cosmetics.sql`）。
 - 接口：`GET /api/shop`、`POST /api/shop/buy {"kind":"back|face|emote|item","id":…}`、`POST /api/shop/equip {…}`；`GET /api/me` 带 `look`、`items`、`emotes`。牌桌消息：`{"t":"item","item":"timecard|peek|runout"}`、`{"t":"emote","id":…}`。
 
-## 扔番茄
+## 扔番茄、送玫瑰
 
-- 牌桌上点别人的头像，卡片下面有两个按钮：扔一个番茄 $100、连扔五个 $500。登录了就能扔，坐着的人从自己座位扔，旁观的人从桌子下边扔；不能砸自己，同一个人两次至少隔 2 秒。
-- 番茄划一道弧线飞过去，砸在头像上糊成一摊，过两秒滑落消失（`src/client/Tomato.tsx`，Web Animations 直接播，不走 React 状态）。
-- 牌桌先检查能不能扔，再从账户扣钱（`points_ledger`，`reason = 'tomato'`，余额判断和扣款同一条语句），扣成功才扔；扔不了就退回。牌桌消息 `{"t":"tomato","seat":…,"n":1|5}`，全桌收到 `kind: "tomato"` 的事件（`from` 是扔的人的座位，旁观是 null）。
+- 牌桌上点别人的头像，卡片下面一排三个按钮：扔一个番茄 $100、连扔五个番茄 $500、送一支玫瑰 $100。登录了就能扔，坐着的人从自己座位扔，旁观的人从桌子下边扔；不能扔给自己，同一个人两次至少隔 2 秒。
+- 番茄划一道弧线飞过去，砸在头像上糊成一摊，过两秒滑落消失；玫瑰轻轻转着飞过去落在头像上，冒几颗小心心往上飘，然后淡掉（`src/client/Throw.tsx`，Web Animations 直接播，不走 React 状态；元素挂上页面前先写好起点位置，不会在左上角闪一下）。
+- 牌桌先检查能不能扔，再从账户扣钱（`points_ledger`，`reason = 'tomato' | 'rose'`，余额判断和扣款同一条语句），扣成功才扔；扔不了就退回。牌桌消息 `{"t":"throw","item":"tomato|rose","seat":…,"n":1|5}`（玫瑰只能 1），全桌收到 `kind: "throw"`、`what: "tomato:5"` 这样的事件（`from` 是扔的人的座位，旁观是 null）。
 
 ## 成就
 

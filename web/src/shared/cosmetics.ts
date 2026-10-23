@@ -66,8 +66,9 @@ export const ITEMS: Item[] = [
 
 export const DEFAULT_EMOTES = COSMETICS.filter((c) => c.kind === "emote" && c.price === 0).map((c) => c.id);
 
-/** 扔番茄：点别人头像，一个 $100，五连发 $500 */
-export const TOMATO_PRICE: Record<1 | 5, number> = { 1: 100, 5: 500 };
+/** 点别人头像能扔的东西：番茄一个 $100、五连发 $500；玫瑰花一支 $100 */
+export type ThrowItem = "tomato" | "rose";
+export const THROW_PRICE: Record<ThrowItem, Partial<Record<1 | 5, number>>> = { tomato: { 1: 100, 5: 500 }, rose: { 1: 100 } };
 
 /** 加时卡多给的时间 */
 export const TIME_CARD_MS = 10_000;

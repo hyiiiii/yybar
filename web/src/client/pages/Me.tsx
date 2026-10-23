@@ -1,15 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { api, type Profile } from "../api";
+import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
 import { Avatar, Badges, LoginButton } from "../components";
 import { notifyMeChanged, useMe } from "../useMe";
 import { ProfileView } from "./User";
 import { tr, useLang, useT } from "../i18n";
 
 export function MePage() {
-  const { me, error, reload } = useMe();
+  const { me, error } = useMe();
   const navigate = useNavigate();
-  const [newToken, setNewToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const lang = useLang();
@@ -39,13 +38,6 @@ export function MePage() {
     }
   };
 
-  const createToken = () =>
-    run(async () => {
-      const { token } = await api<{ token: string }>("/api/me/tokens", { method: "POST", json: { label: t("手动创建", "Created manually") } });
-      setNewToken(token);
-      reload();
-    });
-  const revoke = (id: number) => run(async () => { await api(`/api/me/tokens/${id}`, { method: "DELETE" }); reload(); });
   const toggleBoard = () =>
     run(async () => { await api("/api/me", { method: "PATCH", json: { showOnBoard: !me.user!.showOnBoard } }); notifyMeChanged(); });
   const logout = () => run(async () => { await api("/auth/logout", { method: "POST", json: {} }); notifyMeChanged(); navigate("/"); });
@@ -66,7 +58,7 @@ export function MePage() {
 
       {me.totals && me.totals.active_days === 0 && (
         <section className="card-box notice">
-          {t("还没有收到数据。在 yybar App 的设置里点「连接网站」，或者在下面创建一个上传令牌填进 App。", "No data yet. In the yybar app settings, click \"Connect website\", or create an upload token below and paste it into the app.")}
+          {t("还没有收到数据，在 yybar 的设置里连接网站上传。", "No data yet — connect the website in yybar's settings to upload.")}
         </section>
       )}
 
@@ -81,39 +73,46 @@ export function MePage() {
       </section>
 
       <section className="card-box">
-        <div className="card-head">
-          <h2>{t("上传令牌", "Upload tokens")}</h2>
-          <button className="btn btn-small" onClick={createToken} disabled={busy}>{t("新建令牌", "New token")}</button>
-        </div>
-        <p className="muted">{t("App 用它上传每日汇总（只有 token 数和花费，不含对话内容）。不用的可以随时撤销。", "The app uses it to upload daily totals (token counts and spend only, no conversations). Revoke any you don't use.")}</p>
-        {newToken && (
-          <div className="token-reveal">
-            <code>{newToken}</code>
-            <button className="btn btn-small" onClick={() => navigator.clipboard.writeText(newToken)}>{t("复制", "Copy")}</button>
-            <small>{t("只显示这一次，关掉页面就看不到了。", "Shown only once — it's gone when you leave this page.")}</small>
-          </div>
-        )}
+        <h2>{t("上传记录", "Uploads")}</h2>
+        <p className="muted">{t("yybar App 每天上传一次汇总（只有 token 数和花费，不含对话内容），每一天只收第一次。", "The yybar app uploads a daily summary (token counts and spend only, no conversations). Each day is accepted once.")}</p>
         {actionError && <p className="error">{actionError}</p>}
-        {me.tokens && me.tokens.length > 0 ? (
-          <table className="table">
-            <thead>
-              <tr><th>{t("名称", "Name")}</th><th>{t("创建", "Created")}</th><th>{t("最近使用", "Last used")}</th><th /></tr>
-            </thead>
-            <tbody>
-              {me.tokens.map((tk) => (
-                <tr key={tk.id}>
-                  <td>{tk.label}</td>
-                  <td>{tk.created_at.slice(0, 10)}</td>
-                  <td>{tk.last_used_at ? tk.last_used_at.slice(0, 16).replace("T", " ") : t("未使用", "Never")}</td>
-                  <td className="num"><button className="link-danger" onClick={() => revoke(tk.id)} disabled={busy}>{t("撤销", "Revoke")}</button></td>
+        {me.uploads && me.uploads.length > 0 ? (
+          <div className="table-scroll">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("日期", "Day")}</th>
+                  <th>{t("上传时间", "Uploaded")}</th>
+                  <th className="num">Token</th>
+                  <th className="num">{t("花费", "Spend")}</th>
+                  <th className="num">{t("换得筹码", "Chips")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {me.uploads.map((u) => (
+                  <tr key={u.day}>
+                    <td>{u.day}</td>
+                    <td className="muted">{localTime(u.uploaded_at)}</td>
+                    <td className="num">{fmtTokens(u.tokens)}</td>
+                    <td className="num">{fmtUSD(u.cost_micro)}</td>
+                    <td className="num"><span className="chip-count">{fmtInt(Math.floor(u.cost_micro / 1e6))}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <p className="empty">{t("还没有令牌。", "No tokens yet.")}</p>
+          <p className="empty">{t("还没有上传记录。", "No uploads yet.")}</p>
         )}
       </section>
     </>
   );
+}
+
+/** 上传时间按本地时区显示到分钟 */
+function localTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }

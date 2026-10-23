@@ -1,12 +1,19 @@
-// 个人主页的三块用量图，照着 yybar App 统计页做：
-// - 近 30 天：每天一根细柱，按服务叠起来，虚线是日均；可以在费用 / Tokens 之间切换，悬停看当天每个服务多少
-// - 模型明细：每个模型的输入、输出、缓存读取、缓存写入、合计、费用，点表头排序；用得最多的模型后面一团小火苗
-// - Token 活动：最近 53 周，每列一周（周一开头）；每天 = 热力格，每周 / 累计总量 = 每列从下往上填
+// 个人主页的用量统计，照着 yybar App 的统计页做。最上面一排服务筛选（全部 / Codex / Claude / Grok，带各家的标），
+// 下面三块都跟着筛选走：
+// - Token 活动：四格汇总 + 最近 53 周，每列一周（周一开头）；每天 = 热力格，每周 / 累计总量 = 每列从下往上填
+// - 每日用量：近 30 天每天一根柱，按服务叠起来，虚线是日均；可以在费用 / Tokens 之间切换，悬停看当天每个服务多少
+// - 模型明细：今天 / 7 天 / 30 天，每个模型的输入、输出、缓存读取、缓存写入、合计、费用，点表头排序；用得最多的后面一团小火苗
 import { useMemo, useState } from "react";
 import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type ActivityPoint, type App, type ModelRow, type SeriesPoint } from "./api";
 import { useLang, useT } from "./i18n";
+import { SUIT_GLYPH, type Suit } from "./suits";
 
 const APPS: App[] = ["codex", "claude", "grok"];
+const APP_SUIT: Record<App, Suit> = { codex: "gpt", claude: "claude", grok: "grok" };
+/** 筛选按钮上的短名 */
+const APP_SHORT: Record<App, string> = { codex: "Codex", claude: "Claude", grok: "Grok" };
+
+type Filter = "all" | App;
 
 /** YYYY-MM-DD 往前 / 往后挪几天（按日历日算，不受时区影响） */
 function shift(day: string, n: number): string {
@@ -21,23 +28,59 @@ function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** 坐标轴上的刻度：0 和三四个好看的数，最高一格不小于最大值 */
+/** 坐标轴上的刻度：0 和两三个好看的数，最高一格不小于最大值 */
 function niceTicks(max: number): number[] {
   if (max <= 0) return [0];
-  const raw = max / 3;
+  const raw = max / 2.5;
   const pow = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw) ?? raw;
-  // 最高一格要盖住最大值
   const out: number[] = [0];
   while (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
   return out;
 }
 
+/** 服务的标（和牌面花色同一套），染成服务识别色 */
+export function ServiceLogo({ app, size = 14 }: { app: App; size?: number }) {
+  const g = SUIT_GLYPH[APP_SUIT[app]];
+  return (
+    <svg className={`svc-logo svc-${app}`} viewBox={g.viewBox} width={size} height={size} aria-label={APP_LABEL[app]} role="img">
+      {g.paths.map((p, i) => (
+        <path key={i} d={p.d} fillRule={p.rule} />
+      ))}
+    </svg>
+  );
+}
+
+// ---------- 整块：筛选 + 三张图 ----------
+
+export function UsageStats({ series, models, activity }: { series: SeriesPoint[]; models: ModelRow[]; activity: ActivityPoint[] }) {
+  const t = useT();
+  const [filter, setFilter] = useState<Filter>("all");
+  const used = APPS.filter((a) => activity.some((p) => p.app === a) || series.some((p) => p.app === a));
+  const apps = filter === "all" ? used : [filter];
+  return (
+    <>
+      <div className="svc-filter" role="tablist" aria-label={t("按服务筛选", "Filter by service")}>
+        <button role="tab" aria-selected={filter === "all"} onClick={() => setFilter("all")}>{t("全部", "All")}</button>
+        {(used.length ? used : APPS).map((a) => (
+          <button key={a} role="tab" aria-selected={filter === a} onClick={() => setFilter(a)}>
+            <ServiceLogo app={a} />
+            {APP_SHORT[a]}
+          </button>
+        ))}
+      </div>
+      <TokenActivity activity={activity} apps={apps} />
+      <DailyUsage series={series} apps={apps.length ? apps : APPS} />
+      <ModelDetail models={models} apps={apps} />
+    </>
+  );
+}
+
+// ---------- 每日用量（近 30 天） ----------
+
 type Metric = "cost" | "tokens";
 
-// ---------- 近 30 天 ----------
-
-export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?: number }) {
+function DailyUsage({ series, apps, days = 30 }: { series: SeriesPoint[]; apps: App[]; days?: number }) {
   const t = useT();
   const lang = useLang();
   const [metric, setMetric] = useState<Metric>("cost");
@@ -50,8 +93,7 @@ export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?
     const p = byDay.get(d)?.[a];
     return p ? (metric === "cost" ? p.cost_micro : p.tokens) : 0;
   };
-  const totals = dayList.map((d) => APPS.reduce((s, a) => s + value(d, a), 0));
-  const used = APPS.filter((a) => dayList.some((d) => value(d, a) > 0));
+  const totals = dayList.map((d) => apps.reduce((s, a) => s + value(d, a), 0));
   const avg = totals.reduce((s, v) => s + v, 0) / days;
   const ticks = niceTicks(Math.max(...totals, 1));
   const top = ticks[ticks.length - 1] || 1;
@@ -63,13 +105,19 @@ export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?
   return (
     <section className="card-box usage-panel">
       <div className="usage-head">
-        <h2>{t("近 30 天", "Last 30 days")}</h2>
+        <div className="usage-title">
+          <h2>{t("每日用量", "Daily usage")}</h2>
+          {!empty && (
+            <span className="usage-avg">
+              <i />
+              {t("日均", "avg")} {fmt(avg)}
+            </span>
+          )}
+        </div>
         <div className="usage-tools">
-          <span className="legend">
-            {(used.length ? used : APPS).map((a) => (
-              <span key={a}>
-                <i className={`dot fill-${a}`} /> {APP_LABEL[a]}
-              </span>
+          <span className="usage-legend">
+            {apps.map((a) => (
+              <ServiceLogo key={a} app={a} />
             ))}
           </span>
           <div className="seg seg-small" role="tablist">
@@ -88,16 +136,12 @@ export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?
                 <span>{fmtAxis(v)}</span>
               </div>
             ))}
-            <div className="daily-avg" style={{ bottom: `${(avg / top) * 100}%` }}>
-              <span>
-                {t("日均", "avg")} {fmt(avg)}
-              </span>
-            </div>
+            <div className="daily-avg" style={{ bottom: `${(avg / top) * 100}%` }} />
             <div className="daily-bars">
               {dayList.map((d, i) => (
                 <div key={d} className={`daily-col${hover !== null && hover !== i ? " dim" : ""}`} onMouseEnter={() => setHover(i)}>
                   <div className="daily-stack" style={{ height: `${(totals[i] / top) * 100}%` }}>
-                    {APPS.map((a) => {
+                    {apps.map((a) => {
                       const v = value(d, a);
                       return v ? <i key={a} className={`fill-${a}`} style={{ flexGrow: v }} /> : null;
                     })}
@@ -105,9 +149,9 @@ export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?
                   {hover === i && (
                     <div className={`daily-tip${i > days * 0.7 ? " tip-left" : i < days * 0.3 ? " tip-right" : ""}`}>
                       <b>{lang === "zh" ? `${Number(d.slice(5, 7))}月${Number(d.slice(8))}日` : label(d)}</b>
-                      {(used.length ? used : APPS).map((a) => (
+                      {apps.map((a) => (
                         <span key={a}>
-                          <i className={`dot fill-${a}`} /> {APP_LABEL[a]}
+                          <ServiceLogo app={a} size={11} /> {APP_SHORT[a]}
                           <em>{fmt(value(d, a))}</em>
                         </span>
                       ))}
@@ -130,13 +174,42 @@ export function DailyUsage({ series, days = 30 }: { series: SeriesPoint[]; days?
 
 // ---------- 模型明细 ----------
 
+type Range = "today" | "7d" | "30d";
 type Col = "model" | "input" | "output" | "cache_read" | "cache_write" | "tokens" | "cost_micro";
+interface ModelTotal {
+  app: App;
+  model: string;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  tokens: number;
+  cost_micro: number;
+}
 
-export function ModelDetail({ models }: { models: ModelRow[] }) {
+function ModelDetail({ models, apps }: { models: ModelRow[]; apps: App[] }) {
   const t = useT();
+  const [range, setRange] = useState<Range>("30d");
   const [sort, setSort] = useState<{ col: Col; desc: boolean }>({ col: "tokens", desc: true });
-  const hottest = models.reduce<ModelRow | null>((best, m) => (!best || m.tokens > best.tokens ? m : best), null);
-  const rows = [...models].sort((a, b) => {
+  const today = localToday();
+  const since = range === "today" ? today : shift(today, range === "7d" ? -6 : -29);
+  // 按选的时间段、服务把每天的行加起来
+  const totals = new Map<string, ModelTotal>();
+  for (const r of models) {
+    if (r.day < since || r.day > today || !apps.includes(r.app)) continue;
+    const key = `${r.app}\u0000${r.model}`;
+    const m = totals.get(key) ?? { app: r.app, model: r.model, input: 0, output: 0, cache_read: 0, cache_write: 0, tokens: 0, cost_micro: 0 };
+    m.input += r.input;
+    m.output += r.output;
+    m.cache_read += r.cache_read;
+    m.cache_write += r.cache_write;
+    m.tokens += r.input + r.output + r.cache_read + r.cache_write;
+    m.cost_micro += r.cost_micro;
+    totals.set(key, m);
+  }
+  const list = [...totals.values()].filter((m) => m.tokens > 0 || m.cost_micro > 0);
+  const hottest = list.reduce<ModelTotal | null>((best, m) => (!best || m.tokens > best.tokens ? m : best), null);
+  const rows = list.sort((a, b) => {
     const d = sort.col === "model" ? a.model.localeCompare(b.model) : a[sort.col] - b[sort.col];
     return sort.desc ? -d : d;
   });
@@ -153,9 +226,24 @@ export function ModelDetail({ models }: { models: ModelRow[] }) {
 
   return (
     <section className="card-box">
-      <h2>{t("模型明细", "Models")}</h2>
-      {!models.length ? (
-        <p className="empty">{t("还没有数据。", "No data yet.")}</p>
+      <div className="usage-head">
+        <h2>{t("模型明细", "Models")}</h2>
+        <div className="seg seg-small" role="tablist" aria-label={t("时间段", "Period")}>
+          {(
+            [
+              ["today", t("今天", "Today")],
+              ["7d", t("7 天", "7 days")],
+              ["30d", t("30 天", "30 days")],
+            ] as const
+          ).map(([r, label]) => (
+            <button key={r} role="tab" aria-selected={range === r} onClick={() => setRange(r)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!rows.length ? (
+        <p className="empty">{t("这段时间没有用量", "No usage in this range")}</p>
       ) : (
         <div className="table-scroll">
           <table className="table model-table">
@@ -175,8 +263,8 @@ export function ModelDetail({ models }: { models: ModelRow[] }) {
               {rows.map((m) => (
                 <tr key={`${m.app}/${m.model}`}>
                   <td>
-                    <i className={`dot fill-${m.app}`} title={APP_LABEL[m.app]} /> {m.model}
-                    {m === hottest && <HotFlame title={t("用得最多", "Most used")} />}
+                    <ServiceLogo app={m.app} size={13} /> {m.model}
+                    {m === hottest && <HotFlame title={t("这段时间用得最多", "Most used in this range")} />}
                   </td>
                   <td className="num">{fmtTokens(m.input)}</td>
                   <td className="num">{fmtTokens(m.output)}</td>
@@ -222,15 +310,18 @@ function HotFlame({ title }: { title: string }) {
 const WEEKS = 53;
 type Mode = "daily" | "weekly" | "cumulative";
 
-export function TokenActivity({ activity }: { activity: ActivityPoint[] }) {
+function TokenActivity({ activity, apps }: { activity: ActivityPoint[]; apps: App[] }) {
   const t = useT();
   const lang = useLang();
   const [mode, setMode] = useState<Mode>("daily");
   const [hover, setHover] = useState<{ col: number; row: number } | null>(null);
-  const model = useMemo(() => buildActivity(activity), [activity]);
+  const key = apps.join(",");
+  const model = useMemo(() => buildActivity(activity.filter((p) => apps.includes(p.app))), [activity, key]);
   const { daily, starts, today, weekTotals, cumulative, thresholds, streaks, total, peak } = model;
   const values = mode === "weekly" ? weekTotals : cumulative;
   const maxValue = Math.max(...values, 1);
+  // 只选了一个服务时用它的识别色（四档深浅），全部时用和「今天」火苗同一套暖色
+  const tint = apps.length === 1 ? apps[0] : null;
 
   const level = (v: number) => (v <= 0 ? 0 : v <= thresholds[0] ? 1 : v <= thresholds[1] ? 2 : v <= thresholds[2] ? 3 : 4);
   const longDate = (d: string) => (lang === "zh" ? `${d.slice(0, 4)}年${Number(d.slice(5, 7))}月${Number(d.slice(8))}日` : new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }));
@@ -285,7 +376,7 @@ export function TokenActivity({ activity }: { activity: ActivityPoint[] }) {
         </div>
       </div>
       <div className="act-wrap">
-        <div className={`act-grid act-${mode}`} onMouseLeave={() => setHover(null)}>
+        <div className={`act-grid act-${mode}${tint ? ` act-tint act-tint-${tint}` : ""}`} onMouseLeave={() => setHover(null)}>
           {starts.map((s, col) => (
             <div key={s} className="act-col">
               {Array.from({ length: 7 }, (_, row) => (
@@ -318,17 +409,18 @@ export function TokenActivity({ activity }: { activity: ActivityPoint[] }) {
 }
 
 function buildActivity(activity: ActivityPoint[]) {
-  const daily = new Map(activity.map((p) => [p.day, p.tokens]));
+  const daily = new Map<string, number>();
+  for (const p of activity) daily.set(p.day, (daily.get(p.day) ?? 0) + p.tokens);
   const today = localToday();
   // 这周的周一，往前数 52 周
   const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
   const thisWeek = shift(today, -dow);
   const starts = Array.from({ length: WEEKS }, (_, i) => shift(thisWeek, (i - WEEKS + 1) * 7));
   const weekTotals = starts.map((s) => Array.from({ length: 7 }, (_, k) => daily.get(shift(s, k)) ?? 0).reduce((a, b) => a + b, 0));
-  let running = activity.filter((p) => p.day < starts[0]).reduce((a, p) => a + p.tokens, 0);
+  let running = [...daily].filter(([d]) => d < starts[0]).reduce((a, [, v]) => a + v, 0);
   const cumulative = weekTotals.map((w) => (running += w));
   // 每天的四档：这 53 周里有用量的日子按 25% / 50% / 75% 分位切开
-  const nonzero = activity.filter((p) => p.day >= starts[0] && p.tokens > 0).map((p) => p.tokens).sort((a, b) => a - b);
+  const nonzero = [...daily].filter(([d, v]) => d >= starts[0] && v > 0).map(([, v]) => v).sort((a, b) => a - b);
   const q = (f: number) => nonzero[Math.min(nonzero.length - 1, Math.floor(f * nonzero.length))] ?? 0;
   const thresholds = [q(0.25), q(0.5), q(0.75)];
   // 连续天数：有 token 的日子算「用了」；当前连续从今天往回数，今天还没用就从昨天开始

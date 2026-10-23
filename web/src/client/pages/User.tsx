@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
 import { Avatar, Badges, Stat } from "../components";
-import { DailyUsage, ModelDetail, TokenActivity } from "../UsageCharts";
+import { UsageStats } from "../UsageCharts";
 import { tr, useLang, useT } from "../i18n";
 
 export function ProfileView({ profile }: { profile: Profile }) {
@@ -16,9 +16,7 @@ export function ProfileView({ profile }: { profile: Profile }) {
         <Stat label={t("总 Token", "Total tokens")} value={fmtTokens(tokens)} hint={t(`输出 ${fmtTokens(totals.output_tokens)}`, `${fmtTokens(totals.output_tokens)} output`)} />
         <Stat label={t("筹码", "Chips")} value={fmtInt(points.balance)} hint={t(`累计换得 ${fmtInt(points.earned)}`, `${fmtInt(points.earned)} earned in total`)} />
       </div>
-      <DailyUsage series={profile.series} />
-      <ModelDetail models={profile.models} />
-      <TokenActivity activity={profile.activity ?? []} />
+      <UsageStats series={profile.series} models={profile.models ?? []} activity={profile.activity ?? []} />
     </>
   );
 }

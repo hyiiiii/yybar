@@ -140,8 +140,8 @@ export interface RoomState {
   /** 最近几秒的桌面事件（用了道具、发了表情），推给所有人 */
   events?: TableEvent[];
   eventSeq?: number;
-  /** 每个人上次扔番茄的时刻（按 userId），防刷屏 */
-  tomatoAt?: Record<number, number>;
+  /** 每个人上次扔番茄、送玫瑰的时刻（按 userId），防刷屏 */
+  throwAt?: Record<number, number>;
 }
 
 /** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
@@ -155,8 +155,8 @@ export const TURN_MS = 15_000;
 const EVENT_MS = 8_000;
 /** 两次表情至少隔多久 */
 const EMOTE_GAP_MS = 1_500;
-/** 同一个人两次扔番茄至少隔多久（五连发自己要飞一秒多） */
-const TOMATO_GAP_MS = 2_000;
+/** 同一个人两次扔番茄 / 送玫瑰至少隔多久（五连发自己要飞一秒多） */
+const THROW_GAP_MS = 2_000;
 /** 点了空位选带入时占座多久 */
 export const HOLD_MS = 10_000;
 /** 玩家开的桌没有真人超过这么久就收掉 */
@@ -428,22 +428,22 @@ export class TableRoom {
     return null;
   }
 
-  /** 扔番茄前检查：目标座位上有人、不能砸自己、别扔太快。扣钱由宿主在这之后、tomato() 之前做 */
-  canTomato(userId: number, target: number, now: number): string | null {
+  /** 扔番茄、送玫瑰前检查：目标座位上有人、不能扔给自己、别扔太快。扣钱由宿主在这之后、throwAt() 之前做 */
+  canThrow(userId: number, target: number, now: number): string | null {
     if (!Number.isInteger(target) || !this.s.seats[target]) return "那个座位上没有人";
-    if (this.s.seats[target]!.userId === userId) return "不能砸自己";
-    const last = this.s.tomatoAt?.[userId];
-    if (last && now - last < TOMATO_GAP_MS) return "慢一点";
+    if (this.s.seats[target]!.userId === userId) return "不能扔给自己";
+    const last = this.s.throwAt?.[userId];
+    if (last && now - last < THROW_GAP_MS) return "慢一点";
     return null;
   }
 
-  /** 扔番茄：在被砸的人那里播动画；from 是扔的人的座位（旁观就是 null） */
-  tomato(thrower: { userId: number; login: string }, target: number, n: 1 | 5, now: number): string | null {
-    const err = this.canTomato(thrower.userId, target, now);
+  /** 扔番茄、送玫瑰：在对方头像那里播动画；from 是扔的人的座位（旁观就是 null） */
+  throwAt(thrower: { userId: number; login: string }, target: number, item: "tomato" | "rose", n: 1 | 5, now: number): string | null {
+    const err = this.canThrow(thrower.userId, target, now);
     if (err) return err;
-    this.s.tomatoAt = { ...Object.fromEntries(Object.entries(this.s.tomatoAt ?? {}).filter(([, t]) => now - t < TOMATO_GAP_MS)), [thrower.userId]: now };
+    this.s.throwAt = { ...Object.fromEntries(Object.entries(this.s.throwAt ?? {}).filter(([, t]) => now - t < THROW_GAP_MS)), [thrower.userId]: now };
     const from = this.seatOf(thrower.userId);
-    this.event({ kind: "tomato", seat: target, login: thrower.login, what: String(n), from: from >= 0 ? from : null }, now);
+    this.event({ kind: "throw", seat: target, login: thrower.login, what: `${item}:${n}`, from: from >= 0 ? from : null }, now);
     return null;
   }
 

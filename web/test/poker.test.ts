@@ -369,18 +369,18 @@ describe("table flow", () => {
     expect(room.view(actor, 20_001).seats[room.seatOf(other)]!.showMask).toBe(0);
   });
 
-  it("throws tomatoes at someone else, not too often", () => {
+  it("throws tomatoes and roses at someone else, not too often", () => {
     const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
     room.sit(p(1), 0, 1000, 0);
     room.sit(p(2), 3, 1000, 0);
-    expect(room.tomato({ userId: 1, login: "u1" }, 0, 1, 100)).toMatch(/不能砸自己/);
-    expect(room.tomato({ userId: 1, login: "u1" }, 2, 1, 100)).toMatch(/没有人/);
-    expect(room.tomato({ userId: 1, login: "u1" }, 3, 5, 100)).toBeNull();
-    expect(room.tomato({ userId: 1, login: "u1" }, 3, 1, 600)).toMatch(/慢一点/);
+    expect(room.throwAt({ userId: 1, login: "u1" }, 0, "tomato", 1, 100)).toMatch(/不能扔给自己/);
+    expect(room.throwAt({ userId: 1, login: "u1" }, 2, "tomato", 1, 100)).toMatch(/没有人/);
+    expect(room.throwAt({ userId: 1, login: "u1" }, 3, "tomato", 5, 100)).toBeNull();
+    expect(room.throwAt({ userId: 1, login: "u1" }, 3, "rose", 1, 600)).toMatch(/慢一点/);
     // 旁观的人也能扔，从桌边飞进来
-    expect(room.tomato({ userId: 9, login: "u9" }, 3, 1, 700)).toBeNull();
-    const ev = room.view(null, 800).events.filter((e) => e.kind === "tomato");
-    expect(ev.map((e) => [e.login, e.seat, e.what, e.from])).toEqual([["u1", 3, "5", 0], ["u9", 3, "1", null]]);
+    expect(room.throwAt({ userId: 9, login: "u9" }, 3, "rose", 1, 700)).toBeNull();
+    const ev = room.view(null, 800).events.filter((e) => e.kind === "throw");
+    expect(ev.map((e) => [e.login, e.seat, e.what, e.from])).toEqual([["u1", 3, "tomato:5", 0], ["u9", 3, "rose:1", null]]);
   });
 
   it("applies items: time card once per turn, peek and run-out after the hand", () => {

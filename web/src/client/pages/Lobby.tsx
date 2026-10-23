@@ -13,8 +13,8 @@ import { useSeatWatch, useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
 import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
-import { DEFAULT_BACK, DEFAULT_EMOTES, DEFAULT_FACE, findCosmetic, findItem, ITEMS, TOMATO_PRICE, type ItemId } from "../../shared/cosmetics";
-import { TomatoIcon, TomatoLayer, type TomatoThrower } from "../Tomato";
+import { DEFAULT_BACK, DEFAULT_EMOTES, DEFAULT_FACE, findCosmetic, findItem, ITEMS, THROW_PRICE, type ItemId, type ThrowItem } from "../../shared/cosmetics";
+import { ThrowIcon, ThrowLayer, type Thrower } from "../Throw";
 import type { TableView } from "../../shared/poker/types";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -335,7 +335,7 @@ export function LobbyPage() {
   // 桌面事件：表情在那个人头上冒一下；偷偷看、发发看由发牌员告诉全桌；自己用了道具刷新库存
   const [emotes, setEmotes] = useState<Record<number, { id: string; key: number }>>({});
   const handled = useRef(new Set<string>());
-  const tomatoes = useRef<TomatoThrower>(null);
+  const throwLayer = useRef<Thrower>(null);
   useEffect(() => {
     if (!view) return;
     const clock = Date.now() + conn.skew;
@@ -344,8 +344,9 @@ export function LobbyPage() {
       if (handled.current.has(key)) continue;
       handled.current.add(key);
       if (clock - e.at > 3000) continue; // 刚连上时看到的旧事件不再播
-      if (e.kind === "tomato") {
-        tomatoes.current?.throw(e.from === null || e.from === undefined ? null : toDisplay(e.from), toDisplay(e.seat), Number(e.what) || 1);
+      if (e.kind === "throw") {
+        const [item, n] = e.what.split(":");
+        throwLayer.current?.throw(item === "rose" ? "rose" : "tomato", e.from === null || e.from === undefined ? null : toDisplay(e.from), toDisplay(e.seat), Number(n) || 1);
         if (e.login === me?.user?.login) notifyMeChanged();
       } else if (e.kind === "emote") {
         sfx.pop();
@@ -452,20 +453,27 @@ export function LobbyPage() {
       ) : (
         <span className="muted small">{info.error ? t("没拿到统计", "Couldn't load stats") : t("加载中…", "Loading…")}</span>
       )}
-      {/* 扔番茄：登录了、点的不是自己 */}
+      {/* 扔番茄、送玫瑰：登录了、点的不是自己 */}
       {signedIn && info.seat !== you && (
-        <div className="tomato-row">
-          {([1, 5] as const).map((n) => (
+        <div className="throw-row">
+          {(
+            [
+              ["tomato", 1, t("扔一个番茄", "Throw a tomato")],
+              ["tomato", 5, t("连扔五个番茄", "Throw five tomatoes")],
+              ["rose", 1, t("送一支玫瑰", "Send a rose")],
+            ] as [ThrowItem, 1 | 5, string][]
+          ).map(([item, n, label]) => (
             <button
-              key={n}
-              className="btn btn-small btn-ghost tomato-btn"
-              disabled={(me?.points?.balance ?? 0) < TOMATO_PRICE[n]}
-              onClick={() => conn.send({ t: "tomato", seat: info.seat, n })}
-              title={n === 1 ? t("扔一个番茄", "Throw a tomato") : t("连扔五个番茄", "Throw five tomatoes")}
+              key={`${item}${n}`}
+              className="btn btn-small btn-ghost throw-btn"
+              disabled={(me?.points?.balance ?? 0) < THROW_PRICE[item][n]!}
+              onClick={() => conn.send({ t: "throw", item, seat: info.seat, n })}
+              title={label}
+              aria-label={label}
             >
-              <TomatoIcon />
+              <ThrowIcon item={item} />
               {n > 1 && <b>×{n}</b>}
-              <span className="chip-count">{fmtInt(TOMATO_PRICE[n])}</span>
+              <span className="chip-count">{fmtInt(THROW_PRICE[item][n]!)}</span>
             </button>
           ))}
         </div>
@@ -827,7 +835,7 @@ export function LobbyPage() {
         seats={seats}
         button={buttonAt}
         onEmptySeat={(i) => pickSeat(i)}
-        overlay={<TomatoLayer ref={tomatoes} />}
+        overlay={<ThrowLayer ref={throwLayer} />}
         center={
           <div className="felt-center">
             <Dealer stage={stage} say={say} />
