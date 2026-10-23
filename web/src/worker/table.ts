@@ -5,7 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import { TableRoom, type Player, type RoomConfig, type RoomState } from "../shared/poker/room";
 import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { Env } from "./types";
-import { DEFAULT_EMOTES, findItem, type ItemId } from "../shared/cosmetics";
+import { DEFAULT_EMOTES, findItem, TOMATO_PRICE, type ItemId } from "../shared/cosmetics";
 import { spendItem } from "./shop";
 import { grantAchievement } from "./achievements";
 
@@ -77,6 +77,7 @@ export class PokerTable extends DurableObject<Env> {
     else if (msg.t === "show") err = room.show(user.userId, msg.which);
     else if (msg.t === "item") err = await this.useItem(user, msg.item);
     else if (msg.t === "emote") err = room.emote(user.userId, String(msg.id), user.emotes ?? DEFAULT_EMOTES, now);
+    else if (msg.t === "tomato") err = await this.tomato(user, msg.seat, msg.n);
     else if (msg.t === "act") err = room.act(user.userId, msg.action, msg.amount, now);
     else return;
     if (err) fail(err);
@@ -118,6 +119,28 @@ export class PokerTable extends DurableObject<Env> {
     if (err) {
       await this.env.DB.prepare("UPDATE user_items SET qty = qty + 1 WHERE user_id = ? AND item = ?").bind(user.userId, item).run();
     }
+    return err;
+  }
+
+  /** 扔番茄：先看能不能扔，再从账户扣钱（余额判断和扣款同一条语句），扣成功才扔；这时候扔不了就退回。 */
+  private async tomato(user: Player, target: number, n: unknown): Promise<string | null> {
+    const room = this.room!;
+    if (n !== 1 && n !== 5) return "看不懂的操作";
+    const pre = room.canTomato(user.userId, target, Date.now());
+    if (pre) return pre;
+    const price = TOMATO_PRICE[n];
+    const ref = `t${room.s.config.no}:tomato:${user.userId}:${crypto.randomUUID()}`;
+    const res = await this.env.DB.prepare(
+      `INSERT INTO points_ledger (user_id, delta, reason, ref)
+       SELECT ?1, -?2, 'tomato', ?3
+       WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 10000 FROM daily_usage WHERE user_id = ?1)
+           + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) >= ?2`,
+    )
+      .bind(user.userId, price, ref)
+      .run();
+    if (!res.meta.changes) return "筹码不够";
+    const err = room.tomato(user, target, n, Date.now());
+    if (err) room.s.cashouts.push({ userId: user.userId, amount: price, ref: `${ref}:refund` });
     return err;
   }
 
@@ -258,6 +281,16 @@ export class PokerTable extends DurableObject<Env> {
                  pfr = pfr + excluded.pfr, threebet_opp = threebet_opp + excluded.threebet_opp, threebet = threebet + excluded.threebet`,
             )
             .bind(s.userId, b(s.won), b(s.vpip), b(s.pfr), b(s.tbOpp), b(s.tb)),
+        ).concat(
+          // 每天的输赢，财富榜「今日输赢」用
+          stats.filter((s) => s.day).map((s) =>
+            db
+              .prepare(
+                `INSERT INTO poker_daily (user_id, day, net, hands) VALUES (?, ?, ?, 1)
+                 ON CONFLICT (user_id, day) DO UPDATE SET net = net + excluded.net, hands = hands + 1`,
+              )
+              .bind(s.userId, s.day, s.net ?? 0),
+          ),
         ),
       );
       room.ackStats(stats.length);

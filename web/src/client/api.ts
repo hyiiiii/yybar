@@ -85,6 +85,9 @@ export interface TokenRow extends PublicUser {
 export interface WealthRow extends PublicUser {
   rank: number;
   balance: number;
+  /** 今天（UTC）在牌桌上的输赢，和今天打了几手 */
+  today: number;
+  todayHands: number;
   stats: PokerStats;
 }
 

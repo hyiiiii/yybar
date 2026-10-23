@@ -1,5 +1,5 @@
-// 成就：达成后送一笔筹码（按 $ 显示），并解锁一个徽章，可以挑一个戴在名字后面。
-// 大部分按用量和流水算（打开网站时检查），「大赢家」「同花顺」由牌桌在一手结束时记下。
+// 成就：达成后送 $500 筹码，并解锁一个徽章，可以挑一个戴在名字后面。
+// 大部分按用量和流水算（打开网站时检查），「大赢家」「葫芦」「四条」「同花顺」由牌桌在一手结束时记下。
 
 import type { Text } from "./cosmetics";
 
@@ -15,6 +15,8 @@ export type AchievementId =
   | "tokens_1b"
   | "spend_1k"
   | "big_pot"
+  | "full_house"
+  | "quads"
   | "straight_flush";
 
 export interface Achievement {
@@ -30,18 +32,20 @@ export interface Achievement {
 }
 
 export const ACHIEVEMENTS: Achievement[] = [
-  { id: "first_login", name: { zh: "第一次登录！", en: "First Login!" }, how: { zh: "登录 yybar 网站。", en: "Sign in to the yybar website." }, reward: 1_000, badge: { label: "Hi", tier: "bronze" } },
+  { id: "first_login", name: { zh: "第一次登录！", en: "First Login!" }, how: { zh: "登录 yybar 网站。", en: "Sign in to the yybar website." }, reward: 500, badge: { label: "Hi", tier: "bronze" } },
   { id: "first_sit", name: { zh: "入座", en: "Take a Seat" }, how: { zh: "第一次在 Bar 里坐下。", en: "Sit at a table in the Bar for the first time." }, reward: 500, badge: { label: "♠", tier: "bronze" } },
   { id: "first_purchase", name: { zh: "剁手", en: "Retail Therapy" }, how: { zh: "在商场买第一件东西。", en: "Buy your first thing in the shop." }, reward: 500, badge: { label: "$", tier: "bronze" } },
-  { id: "streak_7", name: { zh: "连续 7 天 work", en: "7-Day Work Streak" }, how: { zh: "连续 7 天都有用量上传。", en: "Usage uploaded 7 days in a row." }, reward: 2_000, badge: { label: "7", tier: "silver" }, target: 7 },
-  { id: "streak_30", name: { zh: "连续 30 天 work", en: "30-Day Work Streak" }, how: { zh: "连续 30 天都有用量上传。", en: "Usage uploaded 30 days in a row." }, reward: 10_000, badge: { label: "30", tier: "gold" }, target: 30 },
-  { id: "streak_365", name: { zh: "连续 365 天 work", en: "365-Day Work Streak" }, how: { zh: "整整一年，一天没歇。", en: "A full year without a day off." }, reward: 100_000, badge: { label: "365", tier: "clay" }, target: 365 },
-  { id: "top_today", name: { zh: "今天 token 第一！", en: "Today's #1!" }, how: { zh: "某一天烧的 token 是全站第一。", en: "Burn the most tokens on the site in a day." }, reward: 5_000, badge: { label: "#1", tier: "gold" } },
-  { id: "tokens_100m", name: { zh: "一亿 token", en: "100M Tokens" }, how: { zh: "累计烧掉 1 亿 token。", en: "Burn 100 million tokens in total." }, reward: 3_000, badge: { label: "100M", tier: "silver" }, target: 100_000_000 },
-  { id: "tokens_1b", name: { zh: "十亿 token", en: "1B Tokens" }, how: { zh: "累计烧掉 10 亿 token。", en: "Burn 1 billion tokens in total." }, reward: 20_000, badge: { label: "1B", tier: "gold" }, target: 1_000_000_000 },
-  { id: "spend_1k", name: { zh: "千刀俱乐部", en: "$1K Club" }, how: { zh: "累计 AI 花费到 $1,000。", en: "Reach $1,000 in total AI spend." }, reward: 10_000, badge: { label: "$1K", tier: "ink" }, target: 1_000 },
-  { id: "big_pot", name: { zh: "大赢家", en: "Big Pot" }, how: { zh: "一手赢下 $10,000 以上。", en: "Win $10,000 or more in one hand." }, reward: 5_000, badge: { label: "BIG", tier: "clay" } },
-  { id: "straight_flush", name: { zh: "同花顺！", en: "Straight Flush!" }, how: { zh: "摊牌时亮出同花顺（皇家同花顺也算）。", en: "Show down a straight flush (royal counts)." }, reward: 20_000, badge: { label: "SF", tier: "ink" } },
+  { id: "streak_7", name: { zh: "连续 7 天 work", en: "7-Day Work Streak" }, how: { zh: "连续 7 天都有用量上传。", en: "Usage uploaded 7 days in a row." }, reward: 500, badge: { label: "7", tier: "silver" }, target: 7 },
+  { id: "streak_30", name: { zh: "连续 30 天 work", en: "30-Day Work Streak" }, how: { zh: "连续 30 天都有用量上传。", en: "Usage uploaded 30 days in a row." }, reward: 500, badge: { label: "30", tier: "gold" }, target: 30 },
+  { id: "streak_365", name: { zh: "连续 365 天 work", en: "365-Day Work Streak" }, how: { zh: "整整一年，一天没歇。", en: "A full year without a day off." }, reward: 500, badge: { label: "365", tier: "clay" }, target: 365 },
+  { id: "top_today", name: { zh: "今天 token 第一！", en: "Today's #1!" }, how: { zh: "某一天烧的 token 是全站第一。", en: "Burn the most tokens on the site in a day." }, reward: 500, badge: { label: "#1", tier: "gold" } },
+  { id: "tokens_100m", name: { zh: "一亿 token", en: "100M Tokens" }, how: { zh: "累计烧掉 1 亿 token。", en: "Burn 100 million tokens in total." }, reward: 500, badge: { label: "100M", tier: "silver" }, target: 100_000_000 },
+  { id: "tokens_1b", name: { zh: "十亿 token", en: "1B Tokens" }, how: { zh: "累计烧掉 10 亿 token。", en: "Burn 1 billion tokens in total." }, reward: 500, badge: { label: "1B", tier: "gold" }, target: 1_000_000_000 },
+  { id: "spend_1k", name: { zh: "千刀俱乐部", en: "$1K Club" }, how: { zh: "累计 AI 花费到 $1,000。", en: "Reach $1,000 in total AI spend." }, reward: 500, badge: { label: "$1K", tier: "ink" }, target: 1_000 },
+  { id: "big_pot", name: { zh: "大赢家", en: "Big Pot" }, how: { zh: "一手赢下 $10,000 以上。", en: "Win $10,000 or more in one hand." }, reward: 500, badge: { label: "BIG", tier: "clay" } },
+  { id: "full_house", name: { zh: "葫芦！", en: "Full House!" }, how: { zh: "摊牌时亮出葫芦。", en: "Show down a full house." }, reward: 500, badge: { label: "FH", tier: "silver" } },
+  { id: "quads", name: { zh: "四条！", en: "Quads!" }, how: { zh: "摊牌时亮出四条。", en: "Show down four of a kind." }, reward: 500, badge: { label: "4K", tier: "gold" } },
+  { id: "straight_flush", name: { zh: "同花顺！", en: "Straight Flush!" }, how: { zh: "摊牌时亮出同花顺（皇家同花顺也算）。", en: "Show down a straight flush (royal counts)." }, reward: 500, badge: { label: "SF", tier: "ink" } },
 ];
 
 /** 一手赢这么多算「大赢家」 */

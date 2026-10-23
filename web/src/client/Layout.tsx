@@ -5,7 +5,8 @@ import { api, fmtInt } from "./api";
 import { Guide } from "./Guide";
 import { Avatar, LoginButton } from "./components";
 import { BarIcon, BookIcon, CartIcon, GiftIcon, PodiumIcon, TrophyIcon } from "./icons";
-import { setLang, useLang, useT } from "./i18n";
+import { pick, setLang, useLang, useT } from "./i18n";
+import { findItem, type ItemId } from "../shared/cosmetics";
 import { loginHref, notifyMeChanged, useMe } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -17,13 +18,14 @@ const GIFT_INTENT = "yyb:open-gift";
 function DailyGift() {
   const { me } = useMe();
   const t = useT();
-  const [popped, setPopped] = useState<number | null>(null);
+  const lang = useLang();
+  const [popped, setPopped] = useState<{ amount: number; item: ItemId | null } | null>(null);
   const claimed = !!me?.daily?.claimed;
   const amount = me?.daily?.amount ?? 100;
   const claim = async () => {
-    const r = await api<{ amount: number }>("/api/me/daily", { method: "POST", json: {} });
+    const r = await api<{ amount: number; item: ItemId | null }>("/api/me/daily", { method: "POST", json: {} });
     if (r.amount) sfx.pop();
-    setPopped(r.amount);
+    setPopped(r);
     notifyMeChanged();
   };
   // 登录回来接着拆
@@ -58,10 +60,15 @@ function DailyGift() {
       className={`head-icon gift-btn${claimed ? " gift-done" : " gift-waiting"}`}
       onClick={open}
       aria-label={claimed ? t("今天的礼盒已经拆了", "Today's gift is opened") : t("拆每日礼盒", "Open the daily gift")}
-      title={claimed ? t("今天的礼盒已经拆了，明天再来", "Opened — come back tomorrow") : t(`每日礼盒：每天 $${amount}`, `Daily gift: $${amount} every day`)}
+      title={claimed ? t("今天的礼盒已经拆了，明天再来", "Opened — come back tomorrow") : t(`每日礼盒：每天 $${amount}，再随机送一个道具`, `Daily gift: $${amount} plus a random item, every day`)}
     >
       <GiftIcon open={claimed} />
-      {popped !== null && popped > 0 && <span className="gift-pop" key={popped}>+${popped}</span>}
+      {popped !== null && popped.amount > 0 && (
+        <span className="gift-pop" key={popped.amount}>
+          +${popped.amount}
+          {popped.item && <small>+1 {pick(findItem(popped.item)!.name, lang)}</small>}
+        </span>
+      )}
     </button>
   );
 }

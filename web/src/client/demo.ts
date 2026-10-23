@@ -43,12 +43,15 @@ function tokenBoard(range: string, sort: string): TokenRow[] {
   return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
-function wealthBoard(): WealthRow[] {
+function wealthBoard(sort: string): WealthRow[] {
   const rows = PEOPLE.map((p, i) => ({
     login: p.login, name: p.name, avatarUrl: null,
     badges: p.login === "hyiiiii" ? badges : DEMO_BADGES[i] ? [DEMO_BADGES[i]!] : [],
     stats: demoStats(p.login),
-    balance: p.login === "hyiiiii" ? localBalance() : Math.floor(p.cost * 100 * (0.7 + ((i * 37) % 60) / 100)) }));
+    balance: p.login === "hyiiiii" ? localBalance() : Math.floor(p.cost * 100 * (0.7 + ((i * 37) % 60) / 100)),
+    today: ((i * 7919) % 2400) - 1100,
+    todayHands: i % 4 === 3 ? 0 : 12 + ((i * 13) % 50) }));
+  if (sort === "today") return rows.sort((a, b) => Number(b.todayHands > 0) - Number(a.todayHands > 0) || b.today - a.today).map((r, i) => ({ ...r, rank: i + 1 }));
   return rows.sort((a, b) => b.balance - a.balance).map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
@@ -135,7 +138,7 @@ export function demoSpend(item: ItemId) {
 export function demoApi(path: string, method: string, _json?: unknown): unknown {
   const url = new URL(path, "https://demo.local");
   if (url.pathname === "/api/leaderboard") {
-    return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard() } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d", url.searchParams.get("sort") ?? "tokens") };
+    return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard(url.searchParams.get("sort") ?? "balance") } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d", url.searchParams.get("sort") ?? "tokens") };
   }
   if (url.pathname === "/api/achievements") {
     if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badge: null };
@@ -158,9 +161,11 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
   }
   if (url.pathname === "/api/me/daily") {
     const amount = dailyClaimed ? 0 : 100;
+    const item = dailyClaimed ? null : ITEMS[Math.floor(Math.random() * ITEMS.length)].id;
     if (!dailyClaimed) spendLocal(-100);
+    if (item) stock[item] += 1;
     dailyClaimed = true;
-    return { ok: true, amount };
+    return { ok: true, amount, item };
   }
   if (url.pathname === "/api/shop") {
     return {

@@ -351,8 +351,12 @@ describe("table flow", () => {
     expect(room.show(other, 0)).toMatch(/现在不能亮牌/);
     room.act(actor, "fold", undefined, 2001);
     expect(room.s.street).toBe("showdown");
-    expect(room.show(actor, 0)).toMatch(/现在不能亮牌/); // 弃牌的人不能亮
     expect(room.view(actor, 2002).seats[room.seatOf(other)]!.cards).toEqual([null, null]);
+    // 弃了牌的人：没亮之前别人看不到，自己还拿着；亮了一张就原地翻给大家看
+    expect(room.view(other, 2002).seats[room.seatOf(actor)]!.cards).toEqual([]);
+    expect(room.view(actor, 2002).seats[room.seatOf(actor)]!.cards.every(Boolean)).toBe(true);
+    expect(room.show(actor, 0)).toBeNull();
+    expect(room.view(other, 2002).seats[room.seatOf(actor)]!.cards).toEqual([room.s.seats[room.seatOf(actor)]!.hole[0], null]);
     expect(room.show(other, 1)).toBeNull();
     const seen = room.view(actor, 2003).seats[room.seatOf(other)]!;
     expect(seen.cards[0]).toBeNull();
@@ -363,6 +367,20 @@ describe("table flow", () => {
     // 下一手清掉
     room.tick(20_000);
     expect(room.view(actor, 20_001).seats[room.seatOf(other)]!.showMask).toBe(0);
+  });
+
+  it("throws tomatoes at someone else, not too often", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    room.sit(p(2), 3, 1000, 0);
+    expect(room.tomato({ userId: 1, login: "u1" }, 0, 1, 100)).toMatch(/不能砸自己/);
+    expect(room.tomato({ userId: 1, login: "u1" }, 2, 1, 100)).toMatch(/没有人/);
+    expect(room.tomato({ userId: 1, login: "u1" }, 3, 5, 100)).toBeNull();
+    expect(room.tomato({ userId: 1, login: "u1" }, 3, 1, 600)).toMatch(/慢一点/);
+    // 旁观的人也能扔，从桌边飞进来
+    expect(room.tomato({ userId: 9, login: "u9" }, 3, 1, 700)).toBeNull();
+    const ev = room.view(null, 800).events.filter((e) => e.kind === "tomato");
+    expect(ev.map((e) => [e.login, e.seat, e.what, e.from])).toEqual([["u1", 3, "5", 0], ["u9", 3, "1", null]]);
   });
 
   it("applies items: time card once per turn, peek and run-out after the hand", () => {
@@ -417,7 +435,7 @@ describe("table flow", () => {
     expect(room.seated()).toBe(4);
     const apart = () => room.s.seats.every((x, i) => !x?.bot || !room.s.seats[(i + 1) % 6]?.bot);
     let now = 0;
-    for (let n = 0; n < 4000 && room.s.handNo < 40; n++) {
+    for (let n = 0; n < 12000 && room.s.handNo < 40; n++) {
       now += 500;
       // 真人总是跟注或过牌
       if (room.s.seats[room.s.toAct]?.userId === 1) room.act(1, "call", undefined, now);
@@ -533,8 +551,10 @@ describe("achievements", () => {
     // 底池 $24,000：赢家（平分就两个人各 $12,000）都算大赢家
     const winners = room.s.seats.filter((x) => x && x.won >= 10_000).map((x) => x!.userId);
     expect(winners.length).toBeGreaterThan(0);
-    expect(room.s.unlocks).toEqual(winners.map((userId) => ({ userId, id: "big_pot" })));
+    // 随机发牌可能顺带亮出葫芦、四条，只看大赢家这一条
+    const bigPot = () => (room.s.unlocks ?? []).filter((u) => u.id === "big_pot");
+    expect(bigPot()).toEqual(winners.map((userId) => ({ userId, id: "big_pot" })));
     for (const w of winners) room.ackUnlock(w, "big_pot");
-    expect(room.s.unlocks).toEqual([]);
+    expect(bigPot()).toEqual([]);
   });
 });

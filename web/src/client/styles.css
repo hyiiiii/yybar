@@ -261,7 +261,10 @@ main { min-height: 60vh; }
 .turn-ring-track { stroke: var(--panel); }
 .turn-ring-bar { fill: none; stroke: var(--go); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100 100; animation: turn-ring linear both; }
 @keyframes turn-ring { 0% { stroke-dashoffset: 0; } 70% { stroke: var(--go); } 100% { stroke-dashoffset: 100; stroke: var(--danger); } }
-.seat-folded { opacity: 0.45; }
+.seat-folded > :not(.seat-cards) { opacity: 0.45; }
+/* 弃了的牌留在自己手里，变暗；一手结束后亮出来的那张恢复 */
+.seat-cards-folded .card { opacity: .45; filter: grayscale(.4); }
+.seat-cards-folded .card.card-up { opacity: 1; filter: none; }
 .seat-cards { position: absolute; top: 50%; display: flex; transform: translateY(-50%); }
 .seat-cards .card + .card { margin-left: -16px; }
 .pos-0 .seat-cards, .pos-4 .seat-cards, .pos-2 .seat-cards { right: calc(100% + 6px); }
@@ -597,7 +600,7 @@ main { min-height: 60vh; }
 .shop-preview { display: flex; justify-content: center; padding: 16px 0 14px; border-radius: 10px; background: var(--table-top); box-shadow: inset 0 0 0 1px var(--table-line-2); }
 .shop-preview .card:first-child { rotate: -6deg; }
 .shop-preview .card + .card { margin-left: -12px; rotate: 7deg; }
-.shop-grid-small { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.shop-grid-small { grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); }
 .shop-preview-emote { padding: 14px 0 10px; }
 .shop-preview-item { color: var(--accent); padding: 20px 0; }
 .shop-preview-item .icon { width: 40px; height: 40px; stroke-width: 1.4; }
@@ -605,6 +608,7 @@ main { min-height: 60vh; }
 .shop-info h3 { font-size: 15px; }
 .shop-info p { margin: 2px 0 0; font-size: 13px; color: var(--label-2); }
 .shop-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.shop-buy .btn, .shop-buy .chip-count { white-space: nowrap; flex-shrink: 0; }
 .shop-login { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .shop-note { text-align: left; margin: 0 0 14px; }
 
@@ -613,7 +617,12 @@ main { min-height: 60vh; }
 .seg-icons .icon { width: 18px; height: 18px; }
 .board-head { align-items: center; }
 .top-model { font-size: 12px; color: var(--label-2); white-space: nowrap; max-width: 14em; overflow: hidden; text-overflow: ellipsis; background: var(--fill); padding: 2px 9px; border-radius: 999px; }
-.board.board-wealth li { grid-template-columns: 28px 32px minmax(0, 1fr) auto 96px; }
+.board.board-wealth li { grid-template-columns: 28px 32px minmax(0, 1fr) auto 96px 30px; }
+/* 今日输赢 */
+.net { font-variant-numeric: tabular-nums; }
+.net-up { color: var(--go); }
+.net-down { color: var(--danger); }
+.net-none { color: var(--label-3); }
 
 /* 区块与面板 */
 .section { padding-block: 24px; }
@@ -765,7 +774,7 @@ main { min-height: 60vh; }
 
 @media (max-width: 600px) {
   .board.board-tokens li { grid-template-columns: 22px 32px minmax(0, 1fr) auto auto; gap: 8px; }
-  .board.board-wealth li { grid-template-columns: 22px 32px minmax(0, 1fr) 84px; }
+  .board.board-wealth li { grid-template-columns: 22px 32px minmax(0, 1fr) auto auto; gap: 8px; }
   .board-wealth .stat-line { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
   .top-model { max-width: 7em; }
 }
@@ -787,6 +796,7 @@ main { min-height: 60vh; }
 .seat-disc-click { cursor: pointer; }
 .seat-disc-click:hover { filter: brightness(0.97); }
 .seat-info { position: absolute; left: 50%; bottom: calc(100% + 16px); translate: -50% 0; z-index: 7; }
+.seat:has(.seat-info) { z-index: 9; }
 .pos-0 .seat-info, .pos-1 .seat-info { bottom: auto; top: calc(100% + 40px); }
 .info-card {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; white-space: nowrap;
@@ -808,10 +818,11 @@ main { min-height: 60vh; }
 .gift .gift-lid { transform-box: fill-box; transform-origin: 0% 100%; transition: transform .5s cubic-bezier(.3, 1.6, .5, 1); }
 .gift-open .gift-lid { transform: translate(-1px, -3px) rotate(-28deg); }
 .gift-pop { position: absolute; left: 50%; top: 100%; translate: -50% 0; font-size: 12px; font-weight: 700; color: #c88a0e; white-space: nowrap; pointer-events: none; }
+.gift-pop small { display: block; font-size: 11px; font-weight: 600; color: var(--accent); text-align: center; }
 @media (prefers-reduced-motion: no-preference) {
   .gift-waiting .gift { animation: gift-bounce 1.4s ease-in-out infinite; transform-origin: 50% 100%; }
   @keyframes gift-bounce { 0%, 55%, 100% { transform: none; } 15% { transform: translateY(-3px) scale(1.05, .95); } 30% { transform: translateY(0) scale(.96, 1.04); } 42% { transform: translateY(-1px) rotate(-6deg); } }
-  .gift-pop { animation: gift-pop 1.8s ease-out forwards; }
+  .gift-pop { animation: gift-pop 2.6s ease-out forwards; }
   @keyframes gift-pop { 0% { opacity: 0; translate: -50% -6px; scale: .6; } 15% { opacity: 1; scale: 1.15; } 70% { opacity: 1; translate: -50% 4px; scale: 1; } 100% { opacity: 0; translate: -50% 10px; } }
 }
 
@@ -917,3 +928,14 @@ main { min-height: 60vh; }
   .board.board-tokens li { grid-template-columns: 22px 32px minmax(0, 1fr) auto auto 30px; gap: 8px; }
   .sort-flip { width: 30px; }
 }
+
+/* 扔番茄：头像卡片上的两个按钮、飞过去的番茄、糊在头像上的一摊 */
+.tomato-row { display: flex; gap: 6px; margin-top: 8px; }
+.tomato-btn { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; padding-inline: 8px; }
+.tomato-btn b { font-size: 12px; }
+.tomato-btn .chip-count { font-size: 12px; margin-left: 2px; }
+.tomato-icon { display: inline-grid; width: 18px; height: 18px; }
+.tomato-icon svg, .tomato svg, .tomato-splat svg { width: 100%; height: 100%; display: block; }
+.tomato-layer { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+.tomato { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; filter: drop-shadow(0 3px 4px rgb(0 0 0 / .25)); }
+.tomato-splat { position: absolute; left: 0; top: 0; width: 66px; height: 66px; margin: -33px 0 0 -33px; opacity: .92; }

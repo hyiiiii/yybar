@@ -129,6 +129,11 @@ export const sfx = {
     [660, 880, 1100, 1320].forEach((f, k) => tone(f, k * 0.08, 0.3, { type: "triangle", gain: 0.25 }));
     for (let k = 0; k < 4; k++) noise(0.3 + k * 0.05, 0.05, { freq: 4500, q: 6, gain: 0.4 });
   },
+  /** 番茄砸到头上：啪叽一下 */
+  splat() {
+    noise(0, 0.16, { freq: 900, q: 0.9, gain: 0.55, to: 260 });
+    tone(220, 0, 0.12, { gain: 0.25, to: 90 });
+  },
   /** 发表情、拆礼盒：啵一下 */
   pop() {
     tone(420, 0, 0.12, { gain: 0.35, to: 980 });

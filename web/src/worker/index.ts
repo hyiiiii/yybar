@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
 import { achievementRoutes, syncAchievements } from "./achievements";
 import { parseBadges } from "../shared/achievements";
+import { ITEMS } from "../shared/cosmetics";
 import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
@@ -106,21 +107,33 @@ function statsOf(r: StatRow) {
 // ---------- 公开接口 ----------
 
 /**
- * 排行榜：by=tokens 按烧掉的 token 数（可选时间段），顺带最常用的模型；by=wealth 按筹码余额。
+ * 排行榜：by=tokens 按烧掉的 token 数（可选时间段），顺带最常用的模型；by=wealth 按筹码余额（sort=today 按今日输赢）。
  */
 app.get("/api/leaderboard", async (c) => {
   const by = c.req.query("by") ?? "tokens";
   if (by === "wealth") {
+    // 可以按余额排，也可以按今天（UTC）在牌桌上的输赢排
+    const sort = c.req.query("sort") === "today" ? "today" : "balance";
     const { results } = await c.env.DB.prepare(
       `SELECT * FROM (
          SELECT u.login, u.name, u.avatar_url, u.badges,
            s.hands, s.wins, s.vpip, s.pfr, s.threebet_opp, s.threebet,
+           COALESCE(pd.net, 0) AS today, COALESCE(pd.hands, 0) AS today_hands,
            (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 10000
              + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger l WHERE l.user_id = u.id) AS balance
-         FROM users u LEFT JOIN poker_stats s ON s.user_id = u.id WHERE u.show_on_board = 1
-       ) WHERE balance > 0 ORDER BY balance DESC LIMIT 100`,
-    ).all<{ login: string; name: string | null; avatar_url: string | null; badges: string; balance: number } & StatRow>();
-    return c.json({ by, rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance, stats: statsOf(r) })) });
+         FROM users u
+           LEFT JOIN poker_stats s ON s.user_id = u.id
+           LEFT JOIN poker_daily pd ON pd.user_id = u.id AND pd.day = ?
+         WHERE u.show_on_board = 1
+       ) WHERE balance > 0 ORDER BY ${sort === "today" ? "today_hands > 0 DESC, today DESC, balance DESC" : "balance DESC"} LIMIT 100`,
+    )
+      .bind(isoDay(new Date()))
+      .all<{ login: string; name: string | null; avatar_url: string | null; badges: string; balance: number; today: number; today_hands: number } & StatRow>();
+    return c.json({
+      by,
+      sort,
+      rows: results.map((r, i) => ({ rank: i + 1, ...publicUser(r), balance: r.balance, today: r.today, todayHands: r.today_hands, stats: statsOf(r) })),
+    });
   }
   if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
   const range = c.req.query("range") ?? "7d";
@@ -237,13 +250,20 @@ async function createApiToken(db: D1Database, userId: number, label: string) {
   return token;
 }
 
-/** 拆每日礼盒：每天（UTC）一次，固定 $100；按 ref 去重，重复点不会多发 */
+/** 拆每日礼盒：每天（UTC）一次，固定 $100，外加随机一个道具；按 ref 去重，重复点不会多发 */
 me.post("/daily", async (c) => {
   const user = c.get("user");
   const res = await c.env.DB.prepare("INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref) VALUES (?, ?, 'daily', ?)")
     .bind(user.id, DAILY_GIFT, `daily:${user.id}:${isoDay(new Date())}`)
     .run();
-  return c.json({ ok: true, amount: res.meta.changes ? DAILY_GIFT : 0 });
+  if (!res.meta.changes) return c.json({ ok: true, amount: 0, item: null });
+  // 筹码发出去了才送道具；道具没写进去不影响筹码
+  const item = ITEMS[Math.floor(Math.random() * ITEMS.length)].id;
+  await c.env.DB.prepare("INSERT INTO user_items (user_id, item, qty) VALUES (?, ?, 1) ON CONFLICT (user_id, item) DO UPDATE SET qty = qty + 1")
+    .bind(user.id, item)
+    .run()
+    .catch(() => {});
+  return c.json({ ok: true, amount: DAILY_GIFT, item });
 });
 
 me.post("/tokens", async (c) => {

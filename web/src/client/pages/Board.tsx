@@ -13,14 +13,16 @@ const RANGES = [
 ] as const;
 
 type By = "tokens" | "wealth";
-/** 燃烧 token 榜按 token 数排还是按花费排 */
+/** 燃烧 token 榜按 token 数排还是按花费排；财富榜按余额排还是按今日输赢排 */
 type Sort = "tokens" | "cost";
+type WealthSort = "balance" | "today";
 
 /** 排行榜：用图标切换「燃烧 token」（按 token 数，带最常用的模型）和「财富」（按筹码余额）。 */
 export function BoardPage() {
   const [by, setBy] = useState<By>("tokens");
   const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("7d");
   const [sort, setSort] = useState<Sort>("tokens");
+  const [wsort, setWsort] = useState<WealthSort>("balance");
   const [rows, setRows] = useState<(TokenRow | WealthRow)[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lang = useLang();
@@ -29,9 +31,9 @@ export function BoardPage() {
   useEffect(() => {
     setRows(null);
     setError(null);
-    const q = by === "tokens" ? `by=tokens&range=${range}&sort=${sort}` : "by=wealth";
+    const q = by === "tokens" ? `by=tokens&range=${range}&sort=${sort}` : `by=wealth&sort=${wsort}`;
     api<{ rows: (TokenRow | WealthRow)[] }>(`/api/leaderboard?${q}`).then((r) => setRows(r.rows), (e: Error) => setError(tr(e.message, lang)));
-  }, [by, range, sort]);
+  }, [by, range, sort, wsort]);
 
   return (
     <section className="section">
@@ -59,7 +61,7 @@ export function BoardPage() {
       {rows && rows.length === 0 && <p className="empty">{t("还没有人上榜。", "Nobody on the board yet.")}</p>}
       {rows && rows.length > 0 && (
         // 换榜、换时间段、换排序时整个列表重新挂载，一行一行滑进来
-        <ol className={`board board-${by}`} key={`${by}-${range}-${sort}`}>
+        <ol className={`board board-${by}`} key={`${by}-${range}-${sort}-${wsort}`}>
           {rows.map((r, i) => (
             <li key={r.login} style={{ "--i": Math.min(i, 20) } as React.CSSProperties}>
               <span className={`rank rank-${r.rank}`}>{r.rank}</span>
@@ -98,7 +100,23 @@ export function BoardPage() {
               ) : (
                 <>
                   <StatLine stats={r.stats} />
-                  <span className="num cost chip-count">{fmtInt(r.balance)}</span>
+                  <span className="num board-amount primary" title={t("今天（UTC）在牌桌上的输赢", "Today's table result (UTC)")}>
+                    {wsort === "balance" ? <span className="chip-count">{fmtInt(r.balance)}</span> : <Net n={r.today} hands={r.todayHands} />}
+                    <small>{wsort === "balance" ? <>{t("今日", "Today")} <Net n={r.today} hands={r.todayHands} /></> : <span className="chip-count">{fmtInt(r.balance)}</span>}</small>
+                  </span>
+                  {i === 0 ? (
+                    <button
+                      className="sort-flip"
+                      onClick={() => setWsort(wsort === "balance" ? "today" : "balance")}
+                      aria-label={wsort === "balance" ? t("改成按今日输赢排", "Sort by today's result") : t("改成按余额排", "Sort by balance")}
+                      title={wsort === "balance" ? t("改成按今日输赢排", "Sort by today's result") : t("改成按余额排", "Sort by balance")}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3v10M2.5 10.5 5 13l2.5-2.5M11 13V3M8.5 5.5 11 3l2.5 2.5" /></svg>
+                      <span>{wsort === "balance" ? "±" : "$"}</span>
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                 </>
               )}
             </li>
@@ -107,4 +125,10 @@ export function BoardPage() {
       )}
     </section>
   );
+}
+
+/** 今日输赢：赢了绿色带 +，输了红色带 −，今天没打显示一道横线 */
+function Net({ n, hands }: { n: number; hands: number }) {
+  if (!hands) return <span className="net net-none">—</span>;
+  return <span className={`net ${n > 0 ? "net-up" : n < 0 ? "net-down" : ""}`}>{n > 0 ? "+" : n < 0 ? "−" : ""}${fmtInt(Math.abs(n))}</span>;
 }

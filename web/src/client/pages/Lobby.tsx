@@ -13,7 +13,8 @@ import { useSeatWatch, useTable } from "../useTable";
 import { loginHref, notifyMeChanged, useMe } from "../useMe";
 import type { Card } from "../../shared/poker/cards";
 import { BLIND_LEVELS, BUY_IN_BB, MAX_BUY_IN_BB, MIN_BUY_IN_BB } from "../../shared/poker/room";
-import { DEFAULT_BACK, DEFAULT_EMOTES, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type ItemId } from "../../shared/cosmetics";
+import { DEFAULT_BACK, DEFAULT_EMOTES, DEFAULT_FACE, findCosmetic, findItem, ITEMS, TOMATO_PRICE, type ItemId } from "../../shared/cosmetics";
+import { TomatoIcon, TomatoLayer, type TomatoThrower } from "../Tomato";
 import type { TableView } from "../../shared/poker/types";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -334,6 +335,7 @@ export function LobbyPage() {
   // 桌面事件：表情在那个人头上冒一下；偷偷看、发发看由发牌员告诉全桌；自己用了道具刷新库存
   const [emotes, setEmotes] = useState<Record<number, { id: string; key: number }>>({});
   const handled = useRef(new Set<string>());
+  const tomatoes = useRef<TomatoThrower>(null);
   useEffect(() => {
     if (!view) return;
     const clock = Date.now() + conn.skew;
@@ -342,7 +344,10 @@ export function LobbyPage() {
       if (handled.current.has(key)) continue;
       handled.current.add(key);
       if (clock - e.at > 3000) continue; // 刚连上时看到的旧事件不再播
-      if (e.kind === "emote") {
+      if (e.kind === "tomato") {
+        tomatoes.current?.throw(e.from === null || e.from === undefined ? null : toDisplay(e.from), toDisplay(e.seat), Number(e.what) || 1);
+        if (e.login === me?.user?.login) notifyMeChanged();
+      } else if (e.kind === "emote") {
         sfx.pop();
         setEmotes((m) => ({ ...m, [e.seat]: { id: e.what, key: e.id } }));
         setTimeout(() => setEmotes((m) => (m[e.seat]?.key === e.id ? (({ [e.seat]: _, ...rest }) => rest)(m) : m)), 2800);
@@ -442,6 +447,24 @@ export function LobbyPage() {
       ) : (
         <span className="muted small">{info.error ? t("没拿到统计", "Couldn't load stats") : t("加载中…", "Loading…")}</span>
       )}
+      {/* 扔番茄：登录了、点的不是自己 */}
+      {signedIn && info.seat !== you && (
+        <div className="tomato-row">
+          {([1, 5] as const).map((n) => (
+            <button
+              key={n}
+              className="btn btn-small btn-ghost tomato-btn"
+              disabled={(me?.points?.balance ?? 0) < TOMATO_PRICE[n]}
+              onClick={() => conn.send({ t: "tomato", seat: info.seat, n })}
+              title={n === 1 ? t("扔一个番茄", "Throw a tomato") : t("连扔五个番茄", "Throw five tomatoes")}
+            >
+              <TomatoIcon />
+              {n > 1 && <b>×{n}</b>}
+              <span className="chip-count">{fmtInt(TOMATO_PRICE[n])}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -482,7 +505,8 @@ export function LobbyPage() {
       const cards = x.cards.length ? x.cards.map(toSpec) : undefined;
       if (cards && !x.folded) seen.current.cards[i] = cards;
       const acting = view.toAct === i && view.turnStart !== null && view.turnMs !== null;
-      const canShow = i === you && showdown && x.inHand && !x.folded && x.showMask < 3;
+      // 一手结束后：赢了没摊牌的、中途弃了牌的，都能点自己的牌亮给大家
+      const canShow = i === you && showdown && x.inHand && x.showMask < 3;
       list[toDisplay(i)] = {
         id: i,
         position: pos[i] ?? (view.street === "idle" ? t("等开局", "Waiting") : t("下一手", "Next")),
@@ -505,12 +529,15 @@ export function LobbyPage() {
         peeked: view.peek?.[i]?.map(toSpec),
         emote: emotes[i],
         tools: i === you ? tools : undefined,
-        mucked: x.folded && x.inHand ? seen.current.cards[i] : undefined,
+        // 别人弃牌：牌飞走；自己弃牌：牌留在手里（变暗），一手结束后还能翻过来亮
+        mucked: x.folded && x.inHand && i !== you && !x.showMask ? seen.current.cards[i] : undefined,
         // 用了加时卡 turnMs 会变长，key 带上它让圈按新时长重画
         timer: acting ? { key: `${view.handNo}-${view.street}-${i}-${view.turnStart}-${view.turnMs}`, total: view.turnMs!, elapsed: clock - view.turnStart! } : undefined,
         win: showdown && x.won > 0 ? { amount: x.won } : undefined,
         // 摊牌、都全下后翻开的牌留在手里；只有赢了没摊牌、自己选择亮的才丢到桌面上
-        tossed: showdown && !x.hand ? x.showMask : 0,
+        // 弃了牌的亮牌是在原地翻过来
+        tossed: showdown && !x.hand && !x.folded ? x.showMask : 0,
+        upMask: x.folded ? x.showMask : 0,
         onShow: canShow ? (k) => conn.send({ t: "show", which: k }) : undefined,
         note: seatNote,
         // 同一条街同一个人只会过一次牌；跟注两次时下注额不同，所以街 + 字 + 下注额就能分出每一次动作。
@@ -535,7 +562,7 @@ export function LobbyPage() {
   const left = view?.deadline ? Math.max(0, Math.ceil((view.deadline - (now + conn.skew)) / 1000)) : null;
   const buttonAt = view && view.street !== "idle" && view.button >= 0 ? toDisplay(view.button) : null;
   const yourSeat = you !== null ? view?.seats[you] : null;
-  const canShow = !!yourSeat && view?.street === "showdown" && yourSeat.inHand && !yourSeat.folded && yourSeat.showMask < 3;
+  const canShow = !!yourSeat && view?.street === "showdown" && yourSeat.inHand && yourSeat.showMask < 3;
   // 自己行动的最后 3 秒，每秒滴一声
   useEffect(() => {
     if (legal && left !== null && left > 0 && left <= 3) sfx.tick();
@@ -795,6 +822,7 @@ export function LobbyPage() {
         seats={seats}
         button={buttonAt}
         onEmptySeat={(i) => pickSeat(i)}
+        overlay={<TomatoLayer ref={tomatoes} />}
         center={
           <div className="felt-center">
             <Dealer stage={stage} say={say} />

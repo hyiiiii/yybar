@@ -88,6 +88,10 @@ export interface HandStat {
   pfr: boolean;
   tbOpp: boolean;
   tb: boolean;
+  /** 这一手的输赢：赢到的 - 投进去的（没被跟的部分已经退回） */
+  net?: number;
+  /** 这一手结束的日子（UTC，YYYY-MM-DD） */
+  day?: string;
 }
 
 export interface Cashout {
@@ -130,10 +134,12 @@ export interface RoomState {
   /** 打完的手的统计，宿主写进 poker_stats 后调用 ackStats */
   stats?: HandStat[];
   /** 牌桌上达成的成就（大赢家、同花顺），宿主写进账户后调用 ackUnlock */
-  unlocks?: { userId: number; id: "big_pot" | "straight_flush" }[];
+  unlocks?: { userId: number; id: "big_pot" | "full_house" | "quads" | "straight_flush" }[];
   /** 最近几秒的桌面事件（用了道具、发了表情），推给所有人 */
   events?: TableEvent[];
   eventSeq?: number;
+  /** 每个人上次扔番茄的时刻（按 userId），防刷屏 */
+  tomatoAt?: Record<number, number>;
 }
 
 /** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
@@ -147,6 +153,8 @@ export const TURN_MS = 15_000;
 const EVENT_MS = 8_000;
 /** 两次表情至少隔多久 */
 const EMOTE_GAP_MS = 1_500;
+/** 同一个人两次扔番茄至少隔多久（五连发自己要飞一秒多） */
+const TOMATO_GAP_MS = 2_000;
 /** 点了空位选带入时占座多久 */
 export const HOLD_MS = 10_000;
 /** 玩家开的桌没有真人超过这么久就收掉 */
@@ -157,8 +165,8 @@ const AWAY_KICK_MS = 60_000;
 const START_DELAY_MS = 1_500;
 /** 都全下之后，一条街一条街按这个节奏发，不一下子发完 */
 export const RUNOUT_STEP_MS = 2_400;
-const SHOWDOWN_PAUSE_MS = 6_000;
-const FOLD_WIN_PAUSE_MS = 3_000;
+const SHOWDOWN_PAUSE_MS = 9_000;
+const FOLD_WIN_PAUSE_MS = 5_000;
 
 /** 机器人桌上的三个机器人，按编号叫；坐 BOT_SEATS 里对应的座位：隔一个座位坐，互相不挨着 */
 export const TABLE_BOTS = ["bot-001", "bot-002", "bot-003"];
@@ -171,6 +179,8 @@ export const BOT_CASH_OUT_BB = 100;
 export const CATCH_UP_HANDS = 500;
 /** 机器人桌一手大约多久，算停手期间错过了几手 */
 const BOT_HAND_MS = 40_000;
+/** 摊牌亮出这些牌型解锁对应成就 */
+const HAND_UNLOCKS: Record<string, "full_house" | "quads" | "straight_flush"> = { 葫芦: "full_house", 四条: "quads", 同花顺: "straight_flush", 皇家同花顺: "straight_flush" };
 
 /** 筹码按美元写：1 个筹码 = $1，播报、动作和报错里都这样写。 */
 export function chips(n: number): string {
@@ -351,12 +361,12 @@ export class TableRoom {
     holds.forEach((h, i) => h?.userId === userId && (holds[i] = null));
   }
 
-  /** 赢了没摊牌（别人都弃了）时亮牌给大家看：which 0 第一张，1 第二张，2 两张。 */
+  /** 一手结束后亮牌给大家看：赢了没摊牌（别人都弃了）的、中途弃了牌的都可以。which 0 第一张，1 第二张，2 两张。 */
   show(userId: number, which: number): string | null {
     const i = this.seatOf(userId);
     const seat = this.s.seats[i];
     if (!seat) return "你没有坐在这张桌上";
-    if (this.s.street !== "showdown" || !seat.inHand || seat.folded || !seat.hole.length) return "现在不能亮牌";
+    if (this.s.street !== "showdown" || !seat.inHand || !seat.hole.length) return "现在不能亮牌";
     if (![0, 1, 2].includes(which)) return "看不懂的操作";
     seat.showMask = (seat.showMask ?? 0) | (which === 2 ? 3 : 1 << which);
     return null;
@@ -410,6 +420,25 @@ export class TableRoom {
     if (seat.lastEmote && now - seat.lastEmote < EMOTE_GAP_MS) return "慢一点";
     seat.lastEmote = now;
     this.event({ kind: "emote", seat: i, login: seat.login, what: id }, now);
+    return null;
+  }
+
+  /** 扔番茄前检查：目标座位上有人、不能砸自己、别扔太快。扣钱由宿主在这之后、tomato() 之前做 */
+  canTomato(userId: number, target: number, now: number): string | null {
+    if (!Number.isInteger(target) || !this.s.seats[target]) return "那个座位上没有人";
+    if (this.s.seats[target]!.userId === userId) return "不能砸自己";
+    const last = this.s.tomatoAt?.[userId];
+    if (last && now - last < TOMATO_GAP_MS) return "慢一点";
+    return null;
+  }
+
+  /** 扔番茄：在被砸的人那里播动画；from 是扔的人的座位（旁观就是 null） */
+  tomato(thrower: { userId: number; login: string }, target: number, n: 1 | 5, now: number): string | null {
+    const err = this.canTomato(thrower.userId, target, now);
+    if (err) return err;
+    this.s.tomatoAt = { ...Object.fromEntries(Object.entries(this.s.tomatoAt ?? {}).filter(([, t]) => now - t < TOMATO_GAP_MS)), [thrower.userId]: now };
+    const from = this.seatOf(thrower.userId);
+    this.event({ kind: "tomato", seat: target, login: thrower.login, what: String(n), from: from >= 0 ? from : null }, now);
     return null;
   }
 
@@ -555,7 +584,8 @@ export class TableRoom {
       if (x.inHand && x.hole.length) {
         const mask = x.shown ? 3 : (x.showMask ?? 0);
         if (i === you || x.shown) cards = x.hole;
-        else if (!x.folded) cards = x.hole.map((c, k) => (mask >> k) & 1 ? c : null);
+        // 弃了牌的人一手结束后自己亮了才给别人看（没亮的那张是背面）；没亮就什么都不给
+        else if (!x.folded || mask) cards = x.hole.map((c, k) => (mask >> k) & 1 ? c : null);
       }
       return {
         login: x.login,
@@ -1008,13 +1038,14 @@ export class TableRoom {
 
   private finish(now: number, pause: number, say: string) {
     this.s.runoutAt = null;
-    // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出同花顺；每个真人这一手的统计
+    // 牌桌上的成就：一手赢 $10,000 以上、摊牌亮出葫芦 / 四条 / 同花顺；每个真人这一手的统计
     for (const x of this.s.seats) {
       if (!x || x.bot || !x.inHand) continue;
       const pf = x.pf ?? { vpip: false, pfr: false, tbOpp: false, tb: false };
-      (this.s.stats ??= []).push({ userId: x.userId, won: x.won > 0, ...pf });
+      (this.s.stats ??= []).push({ userId: x.userId, won: x.won > 0, ...pf, net: x.won - x.committed, day: new Date(now).toISOString().slice(0, 10) });
       if (x.won >= BIG_POT) (this.s.unlocks ??= []).push({ userId: x.userId, id: "big_pot" });
-      if (x.shown && x.hand && (x.hand === "同花顺" || x.hand === "皇家同花顺")) (this.s.unlocks ??= []).push({ userId: x.userId, id: "straight_flush" });
+      const shownHand = x.shown && x.hand ? HAND_UNLOCKS[x.hand] : undefined;
+      if (shownHand) (this.s.unlocks ??= []).push({ userId: x.userId, id: shownHand });
     }
     this.s.street = "showdown";
     this.s.toAct = -1;

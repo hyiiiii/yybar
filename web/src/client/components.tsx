@@ -102,6 +102,8 @@ export interface Seat {
   onShow?: (k: number) => void;
   /** 头像上方的小标签：刚才的动作、牌型 */
   note?: string;
+  /** 弃了牌的人一手结束后亮出来的牌（位掩码）：这几张不变暗，原地翻过来 */
+  upMask?: number;
   /** 标签的 key：每次新动作都换一个，哪怕字一样（连着两条街都过牌）也重新弹一下 */
   noteKey?: string;
   /** note 是赢家的牌型：标成金色 */
@@ -153,10 +155,13 @@ export function FeltTable({
   button = null,
   className = "",
   onEmptySeat,
+  overlay,
 }: {
   seats: Seat[];
   className?: string;
   center: ReactNode;
+  /** 盖在整张桌子上的一层（扔番茄的动画） */
+  overlay?: ReactNode;
   button?: number | null;
   onEmptySeat?: (index: number) => void;
 }) {
@@ -190,24 +195,28 @@ export function FeltTable({
                   {s.peeked.map((c, j) => <PlayingCard key={j} card={c} face={s.face} extra="card-peeked" />)}
                 </div>
               )}
-              {!s.peeked && s.cards && !s.folded && (
-                <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}`}>
-                  {/* key 带上牌面：背面翻成正面（摊牌）时重新挂载，播翻牌动画 */}
-                  {s.cards.map((c, j) =>
-                    ((s.tossed ?? 0) >> j) & 1 ? null : s.you ? (
+              {/* 弃了牌：自己的牌留在手里变暗；别人的只有一手结束后亮了才摆出来 */}
+              {!s.peeked && s.cards && (!s.folded || s.you || s.cards.some((c) => c !== "back")) && (
+                <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}${s.folded ? " seat-cards-folded" : ""}`}>
+                  {/* key 带上牌面和亮没亮：背面翻成正面（摊牌）、弃了的牌亮出来时重新挂载，播翻牌动画 */}
+                  {s.cards.map((c, j) => {
+                    const up = ((s.upMask ?? 0) >> j) & 1;
+                    const key = `${j}-${cardKey(c)}-${up}`;
+                    const extra = up ? "card-up" : "";
+                    return ((s.tossed ?? 0) >> j) & 1 ? null : s.you ? (
                       <button
-                        key={`${j}-${cardKey(c)}`}
+                        key={key}
                         className="card-btn"
-                        disabled={!s.onShow}
+                        disabled={!s.onShow || !!up}
                         onClick={() => s.onShow?.(j)}
-                        aria-label={s.onShow ? "把这张牌亮到桌上" : undefined}
+                        aria-label={s.onShow ? "把这张牌亮给大家" : undefined}
                       >
-                        <PlayingCard card={c} back={s.back} face={s.face} />
+                        <PlayingCard card={c} back={s.back} face={s.face} extra={extra} />
                       </button>
                     ) : (
-                      <PlayingCard key={`${j}-${cardKey(c)}`} card={c} back={s.back} face={s.face} />
-                    ),
-                  )}
+                      <PlayingCard key={key} card={c} back={s.back} face={s.face} extra={extra} />
+                    );
+                  })}
                 </div>
               )}
               {!!s.tossed && s.cards && (
@@ -250,6 +259,7 @@ export function FeltTable({
           )}
         </div>
       ))}
+      {overlay}
     </div>
   );
 }
