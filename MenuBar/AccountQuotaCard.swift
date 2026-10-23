@@ -50,13 +50,7 @@ struct LocalQuotaCard: View {
 
     /// 本周(周一起)已知定价部分的花费;有未知定价模型时返回 nil(显示 —)。
     private func weekSpend(for app: UsageApp) -> Decimal? {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = .current
-        cal.firstWeekday = 2
-        let now = Date()
-        let startOfToday = cal.startOfDay(for: now)
-        let to = cal.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
-        let from = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? startOfToday
+        let (from, _, to) = QuotaCardView.dayAndWeekBounds()
         let unknown = appState.usageService.aggregator.snapshot().contains {
             $0.app == app && $0.day >= from && $0.day < to && $0.app != .grok && !Pricing.hasPrice(model: $0.model)
         }
@@ -69,6 +63,13 @@ struct LocalQuotaCard: View {
 struct QuotaOnlyServiceCard: View {
     @Environment(AppState.self) private var appState
     let app: UsageApp
+
+    /// Gemini App 今日 / 本周(周一起)的回答次数。
+    private var geminiAnswers: (today: Int, week: Int) {
+        let (week, today, tomorrow) = QuotaCardView.dayAndWeekBounds()
+        let log = appState.geminiAnswerLog
+        return (log.total(from: today, to: tomorrow), log.total(from: week, to: tomorrow))
+    }
 
     var body: some View {
         switch app {
@@ -89,11 +90,9 @@ struct QuotaOnlyServiceCard: View {
                 tint: .googleAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
                 windows: QuotaCardView.standardWindows(appState.localQuota(for: app)),
                 inUse: true,
-                refreshState: appState.googleRefreshState,
-                error: app == .gemini && !GoogleQuotaClient.isGeminiAppConnected
-                    ? tr("Not connected: the Gemini app's own quota has no readable source (agy's Gemini pool is shown under Antigravity).",
-                         "未接通:Gemini app 自己的额度没有可读来源(agy 的 Gemini 池显示在 Antigravity 里)。")
-                    : appState.googleQuotaError
+                answers: app == .gemini ? geminiAnswers : nil,
+                refreshState: app == .gemini ? appState.geminiAppRefreshState : appState.googleRefreshState,
+                error: app == .gemini ? appState.geminiAppQuotaError : appState.googleQuotaError
             )
         }
     }
@@ -187,6 +186,8 @@ struct QuotaCardView: View {
     var inUse: Bool = false
     /// 今日 / 本周花费(本机账号，来自本地日志);nil 不显示这一组。
     var costs: (today: Decimal?, week: Decimal?)? = nil
+    /// 今日 / 本周回答次数(Gemini App 没有花费，按次数);nil 不显示这一组。
+    var answers: (today: Int, week: Int)? = nil
     var serviceStatus: ServiceStatus? = nil
     var refreshState: QuotaRefreshState? = nil
     var error: String? = nil
@@ -323,6 +324,10 @@ struct QuotaCardView: View {
                 costItem(tr("Today", "今日"), costs.today)
                 costItem(tr("This week", "本周"), costs.week)
             }
+            if let answers {
+                countItem(tr("Today", "今日"), answers.today)
+                countItem(tr("This week", "本周"), answers.week)
+            }
             Spacer(minLength: 8)
             if let refreshState {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -333,6 +338,28 @@ struct QuotaCardView: View {
                         .lineLimit(1)
                 }
             }
+        }
+    }
+
+    /// 本周(周一起)开始、今天 0 点、明天 0 点。卡片底部「今日 / 本周」共用。
+    static func dayAndWeekBounds(now: Date = Date()) -> (weekStart: Date, today: Date, tomorrow: Date) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        cal.firstWeekday = 2
+        let today = cal.startOfDay(for: now)
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: today) ?? today
+        let week = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? today
+        return (week, today, tomorrow)
+    }
+
+    private func countItem(_ label: String, _ value: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+            Text(tr("\(value) answers", "\(value) 次"))
+                .font(.system(size: 11.5, weight: .semibold))
+                .monospacedDigit()
         }
     }
 

@@ -84,14 +84,136 @@ enum GrokBotQuotaClient {
     }
 }
 
+/// Grok Bot 账单查询结果。失败阶段只有 me / user / cycle / daily / parse，没有响应正文。
+enum GrokBotUsageOutcome: Sendable, Equatable {
+    case rows([GrokBotDailyUsage])
+    case failed(String)
+}
+
+/// Grok Bot 账单里的按天 token 合计。接口只有 `totalTokens`，没有输入/输出拆分。
+struct GrokBotDailyUsage: Equatable, Sendable {
+    var dayMillis: Int64
+    var model: String
+    var totalTokens: Int
+    var spendCents: Int
+}
+
+enum GrokBotUsageClient {
+    nonisolated static let meEndpoint = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetMe")!
+    nonisolated static let cycleEndpoint = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetMonthlyBillingCycle")!
+    nonisolated static let dailyEndpoint = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetDailySpendByCategory")!
+
+    /// 个人账号没有 teamId。失败不改已记过的用量。`failed` 只含阶段名，不含响应内容。
+    nonisolated static func fetch(accessToken: String) async -> GrokBotUsageOutcome {
+        guard let me = await post(meEndpoint, body: [:], bearer: accessToken) else { return .failed("me") }
+        guard let userId = integer(me["userId"]), userId > 0 else { return .failed("user") }
+        guard let cycle = await post(cycleEndpoint, body: [:], bearer: accessToken) else { return .failed("cycle") }
+        guard let start = integer(cycle["startDateEpochMillis"]),
+              let end = integer(cycle["endDateEpochMillis"]), end > start else { return .failed("cycle-range") }
+        guard let daily = await post(dailyEndpoint, body: [
+            "userId": userId,
+            "periodStartMs": String(start),
+            "periodEndMs": String(end),
+            "groupBy": "MODEL",
+            "spendType": "ALL",
+            "clientType": "grok-bot",
+            "products": ["sand"],
+        ], bearer: accessToken) else { return .failed("daily") }
+        guard let rows = parseDaily(daily) else { return .failed("parse") }
+        return .rows(rows)
+    }
+
+    /// `dailySpend` 缺失算失败(nil)；空数组表示这个账期确实没有用量。
+    nonisolated static func parse(data: Data) -> [GrokBotDailyUsage]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return parseDaily(root)
+    }
+
+    nonisolated static func parseDaily(_ root: [String: Any]) -> [GrokBotDailyUsage]? {
+        guard let rows = root["dailySpend"] as? [Any] else { return nil }
+        var merged: [String: GrokBotDailyUsage] = [:]
+        for item in rows {
+            guard let row = item as? [String: Any],
+                  let day = integer(row["day"]), day > 1_600_000_000_000,
+                  let model = row["category"] as? String else { continue }
+            let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.count <= 80, !name.contains("\n"), !name.contains("/") else { continue }
+            guard let tokens = integer(row["totalTokens"]), tokens >= 0, tokens <= Int64(Int.max) else { continue }
+            let cents = integer(row["spendCents"]) ?? 0
+            guard cents >= 0, cents <= Int64(Int.max) else { continue }
+            let key = "\(day)\t\(name)"
+            let next = GrokBotDailyUsage(dayMillis: day, model: name, totalTokens: Int(tokens), spendCents: Int(cents))
+            if let existing = merged[key] {
+                merged[key] = GrokBotDailyUsage(dayMillis: day, model: name,
+                                                totalTokens: max(existing.totalTokens, next.totalTokens),
+                                                spendCents: max(existing.spendCents, next.spendCents))
+            } else {
+                merged[key] = next
+            }
+        }
+        return merged.values.sorted { ($0.dayMillis, $0.model) < ($1.dayMillis, $1.model) }
+    }
+
+    /// 这几个接口经常先回 503，再试才成功。4xx 不重试。不记录响应正文。
+    nonisolated private static func post(_ url: URL, body: [String: Any], bearer: String) async -> [String: Any]? {
+        var request = URLRequest(url: url, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
+        var delay: UInt64 = 400_000_000
+        for attempt in 0..<3 {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else { return nil }
+                if (200..<300).contains(http.statusCode),
+                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    return root
+                }
+                if http.statusCode != 502 && http.statusCode != 503 && http.statusCode != 504 { return nil }
+            } catch {}
+            if attempt == 2 { return nil }
+            try? await Task.sleep(nanoseconds: delay)
+            delay *= 2
+        }
+        return nil
+    }
+
+    nonisolated static func integer(_ value: Any?) -> Int64? {
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            return number.int64Value
+        }
+        if let text = value as? String { return Int64(text) }
+        return nil
+    }
+}
+
 // MARK: - Grok Bot 登录(只读)
 //
 // Electron safeStorage 在 macOS 上的格式(Chromium os_crypt):
 //   密文 = "v10" + AES-128-CBC(PKCS7),IV 为 16 个空格(0x20);
 //   密钥 = PBKDF2-HMAC-SHA1(钥匙串「Grok Bot Safe Storage」里的口令，盐 "saltysalt",1003 次,16 字节)。
-// sand-secrets.json 的字段名没有公开，这里不假设结构：遍历整个 JSON,把能解出 "v10" 密文的值逐个解密，
-// 再从明文里挑 access token(优先键名含 access 的，排除 refresh;实际在 cursor-accounts 里当前账号的
-// cursor-access-token)。token 只留在内存，不写日志。
+// cursor-accounts 是序列化的 JSON 字符串，accounts[active] 内每个值分别加密。
+// 有账号表时只读取当前账号，避免误用另一个账号的额度；旧格式才递归查找密文。
+// token 只留在内存，不写日志。
+
+struct GrokBotAccount: Equatable, Sendable {
+    var email: String
+    var name: String?
+
+    /// profile 明文是 `{"email","name"}`。邮箱必须像邮箱，否则当成没读到。
+    nonisolated static func parse(_ text: String) -> GrokBotAccount? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let root = try? JSONSerialization.jsonObject(with: Data(trimmed.utf8)) as? [String: Any],
+              let email = root["email"] as? String else { return nil }
+        let clean = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.contains("@"), clean.count <= 254,
+              !clean.contains(" "), !clean.contains("\n"), !clean.contains("\r") else { return nil }
+        let name = (root["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return GrokBotAccount(email: clean, name: (name?.isEmpty == false) ? name : nil)
+    }
+}
 
 enum GrokBotAuthError: Error {
     /// 没有 sand-secrets.json 或钥匙串条目(Grok Bot 没登录过)。
@@ -161,8 +283,13 @@ enum GrokBotAuth {
 
     /// 读钥匙串口令并派生 AES 密钥。用 Security 框架在 yybar 进程内读，macOS 弹窗问的是 yybar 本身，
     /// 「始终允许」只把 yybar 加进这一项的访问列表(不用 /usr/bin/security,免得任何脚本都能静默读取)。
-    /// 自签名构建每次重新构建后可能再问一次。会阻塞到用户回应弹窗，调用方放到后台执行。
+    /// 会阻塞到用户回应弹窗，调用方放到后台执行。
+    ///
+    /// 派生出的密钥缓存在 yybar 自己的私有文件里(account-tokens/,0600):本机自签名构建没有团队 ID,
+    /// 钥匙串的「始终允许」只对当次构建有效，不缓存的话每次重新构建都会再弹窗要登录密码。
+    /// 有缓存就不碰钥匙串;缓存的密钥解不开登录文件时由调用方 `forgetCachedKey()`,下次再读钥匙串。
     nonisolated static func loadKey() -> Result<Data, GrokBotAuthError> {
+        if let cached = cachedKey() { return .success(cached) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -179,13 +306,60 @@ enum GrokBotAuth {
             return .failure(.keychainDenied(message))
         }
         guard let key = deriveKey(password: password) else { return .failure(.keychainDenied("key derivation failed")) }
+        saveCachedKey(key)
         return .success(key)
+    }
+
+    private nonisolated static let cachedKeyID = "safe-storage-key"
+
+    /// 缓存文件内容 `{"key": "<base64>"}`;AES-128 密钥固定 16 字节，长度不对当成没有缓存。
+    nonisolated static func cachedKey() -> Data? {
+        guard let data = AccountTokenFiles.read(kind: .grokBot, id: cachedKeyID),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let text = object["key"], let key = Data(base64Encoded: text), key.count == 16 else { return nil }
+        return key
+    }
+
+    private nonisolated static func saveCachedKey(_ key: Data) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["key": key.base64EncodedString()]) else { return }
+        try? AccountTokenFiles.write(data, kind: .grokBot, id: cachedKeyID)
+    }
+
+    /// 缓存的密钥解不开登录文件(Grok Bot 重装后口令变了)时删掉，下次重新读钥匙串。
+    nonisolated static func forgetCachedKey() {
+        AccountTokenFiles.delete(kind: .grokBot, id: cachedKeyID)
     }
 
     /// 从 sand-secrets.json 解出 access token,并检查是否过期。
     nonisolated static func loadToken(key: Data, now: Date = Date()) -> Result<String, GrokBotAuthError> {
         guard let data = try? Data(contentsOf: secretsURL), !data.isEmpty else { return .failure(.notSignedIn) }
         return extractToken(fileData: data, key: key, now: now)
+    }
+
+    /// 当前账号的邮箱。JWT 里没有邮箱，它在单独加密的 `cursor-account-profile` 里。
+    nonisolated static func loadAccount(key: Data) -> GrokBotAccount? {
+        guard let data = try? Data(contentsOf: secretsURL), !data.isEmpty else { return nil }
+        return account(fileData: data, key: key)
+    }
+
+    /// 只读 active 账号的 profile，不用另一个账号的邮箱。
+    nonisolated static func account(fileData: Data, key: Data) -> GrokBotAccount? {
+        guard let root = try? JSONSerialization.jsonObject(with: fileData) as? [String: Any],
+              let raw = root["cursor-accounts"] ?? root["cursorAccounts"] ?? root["cursor_accounts"] else { return nil }
+        var accountsValue: Any = raw
+        for _ in 0..<4 {
+            guard let string = accountsValue as? String, let nested = nestedJSON(string) else { break }
+            accountsValue = nested
+        }
+        guard let table = accountsValue as? [String: Any],
+              let active = table["active"] as? String, !active.isEmpty,
+              let accounts = table["accounts"] as? [String: Any],
+              let account = accounts[active] as? [String: Any],
+              let encoded = account["cursor-account-profile"] as? String ?? account["cursorAccountProfile"] as? String,
+              let blob = Data(base64Encoded: encoded),
+              let plain = decrypt(blob, key: key),
+              let text = String(data: plain, encoding: .utf8) else { return nil }
+        return GrokBotAccount.parse(text)
     }
 
     nonisolated static func extractToken(fileData: Data, key: Data, now: Date = Date()) -> Result<String, GrokBotAuthError> {
@@ -196,7 +370,24 @@ enum GrokBotAuth {
             blobs.append(("", fileData))
         } else if let root = try? JSONSerialization.jsonObject(with: fileData, options: [.fragmentsAllowed]) {
             fileKind = "JSON"
-            collectBlobs(root, path: "", into: &blobs)
+            if let dict = root as? [String: Any],
+               let raw = dict["cursor-accounts"] ?? dict["cursorAccounts"] ?? dict["cursor_accounts"] {
+                // 先展开外层账号表，再解密字段。不能直接在整份文件里挑过期时间最晚的 token。
+                var accountsValue = raw
+                for _ in 0..<4 {
+                    guard let string = accountsValue as? String, let nested = nestedJSON(string) else { break }
+                    accountsValue = nested
+                }
+                if let table = accountsValue as? [String: Any],
+                   let active = table["active"] as? String, !active.isEmpty,
+                   let accounts = table["accounts"] as? [String: Any],
+                   let account = accounts[active] as? [String: Any] {
+                    collectBlobs(account, path: "/cursor-accounts/accounts/<当前账号>", into: &blobs)
+                }
+                // 表损坏或 active 不存在时停止，不能退回其他账号或遗留的顶层 token。
+            } else {
+                collectBlobs(root, path: "", into: &blobs)
+            }
         } else {
             fileKind = "无法识别"
         }
@@ -272,7 +463,9 @@ enum GrokBotAuth {
     // MARK: 找密文 / 挑 token
 
     /// 密文可能存成 base64 / hex 字符串、Node Buffer 的 JSON({"type":"Buffer","data":[…]})或字节数组。
-    nonisolated private static func collectBlobs(_ value: Any, path: String, into blobs: inout [(path: String, blob: Data)]) {
+    nonisolated private static func collectBlobs(_ value: Any, path: String, depth: Int = 0,
+                                                into blobs: inout [(path: String, blob: Data)]) {
+        guard depth < 32 else { return }
         switch value {
         case let string as String:
             if let data = Data(base64Encoded: string), data.starts(with: versionPrefix) {
@@ -281,19 +474,25 @@ enum GrokBotAuth {
                 blobs.append((path, data))
             } else if let data = string.data(using: .isoLatin1), data.starts(with: versionPrefix) {
                 blobs.append((path, data))
+            } else if let nested = nestedJSON(string) {
+                collectBlobs(nested, path: path, depth: depth + 1, into: &blobs)
             }
         case let dict as [String: Any]:
             if dict["type"] as? String == "Buffer", let bytes = byteArray(dict["data"]) {
                 if bytes.starts(with: versionPrefix) { blobs.append((path, bytes)) }
                 return
             }
-            for (key, child) in dict { collectBlobs(child, path: path + "/" + key, into: &blobs) }
+            for (key, child) in dict where !key.lowercased().contains("refresh") {
+                collectBlobs(child, path: path + "/" + key, depth: depth + 1, into: &blobs)
+            }
         case let array as [Any]:
             if let bytes = byteArray(array) {
                 if bytes.starts(with: versionPrefix) { blobs.append((path, bytes)) }
                 return
             }
-            for (index, child) in array.enumerated() { collectBlobs(child, path: path + "/\(index)", into: &blobs) }
+            for (index, child) in array.enumerated() {
+                collectBlobs(child, path: path + "/\(index)", depth: depth + 1, into: &blobs)
+            }
         default:
             break
         }

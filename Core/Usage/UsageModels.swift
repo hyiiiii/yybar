@@ -1,7 +1,8 @@
 import Foundation
 
 /// 声明顺序即菜单栏 / 悬浮窗 / 统计页的排列顺序:Codex → Claude → Grok → Grok Bot → Gemini → agy。
-/// Grok Bot 没有本地用量日志(只有额度),用量统计里恒为 0;agy 的用量来自 agy 会话库(`AgyConversationScanner`,所有模型都记到 agy);Gemini 自己的客户端本机读不到，恒为 0。
+/// Grok Bot 的 token 是账单接口按天每模型的合计(没有输入/输出拆分，记在 inputTokens)。
+/// agy 的用量来自 agy 会话库。Gemini Apps 只给额度比例，没有 token 数，统计里保持 0。
 enum UsageApp: String, Sendable, Codable, Hashable, CaseIterable {
     case codex
     case claude
@@ -12,6 +13,14 @@ enum UsageApp: String, Sendable, Codable, Hashable, CaseIterable {
 }
 
 /// 单次 API 调用解析出的用量记录（内存中流转，不直接持久化）。
+/// 账单接口给出的某一天、某一个模型的 token 合计。
+struct APIUsageTotal: Sendable, Equatable {
+    var model: String
+    var day: Date
+    var inputTokens: Int
+    var costUSD: Decimal
+}
+
 struct UsageEntry: Sendable, Equatable {
     var app: UsageApp
     var model: String

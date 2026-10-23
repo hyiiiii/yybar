@@ -35,6 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// yybar://connect?token=…&state=…:网站授权后跳回来，保存上传令牌，打开 bar 页。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where appState.webAccount.handle(url: url) {
+            WindowCoordinator.shared.showMain(.bar)
+        }
+    }
+
     /// Dock / Finder 再次打开 App 时，显示主窗口。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         WindowCoordinator.shared.showMain(nil)

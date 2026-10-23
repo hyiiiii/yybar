@@ -73,10 +73,25 @@ final class AppState {
     // Gemini 池(Pro + Flash 共用)→ geminiQuota,Claude + GPT 池 → agyQuota,共用一个刷新状态。
     // Grok Bot 额度用本机 Grok Bot app 的登录读取(见 GrokBotQuotaClient / GrokBotAuth)。
     var geminiQuota: QuotaSnapshot?
+    /// Gemini Apps 独立额度；geminiQuota 仅保留为 agy 的 Gemini 模型池。
+    var geminiAppQuota: QuotaSnapshot?
+    var geminiAppEmail: String?
+    var geminiAppQuotaError: String?
+    var geminiAppRefreshState = QuotaRefreshState()
+    var geminiRecentModels: GeminiRecentModels?
+    /// Gemini App 每天每个模型的回答次数(当前 Google 账号的)。统计里 Gemini 没有 token,只看 Gemini 时按它显示。
+    var geminiAnswerLog = GeminiAnswerLog()
+    private var geminiModelsLastAttempt: Date?
+    /// 套餐名很少变：每小时(或换账号后)才重新读一次，减少发给 Google 的请求。
+    private var geminiPlanFetchedAt: Date?
+    private var geminiChromeKey: Data?
+    private var geminiChromeKeychainDenied = false
     var agyQuota: QuotaSnapshot?
     var googleQuotaError: String?
     var googleRefreshState = QuotaRefreshState()
     var grokBotQuota: QuotaSnapshot?
+    /// 当前 Grok Bot 登录的邮箱（cursor-account-profile，不是额度接口）。
+    var grokBotEmail: String?
     var grokBotQuotaError: String?
     var grokBotRefreshState = QuotaRefreshState()
     /// 从钥匙串「Grok Bot Safe Storage」派生的解密密钥，只留在内存，避免每次刷新都读钥匙串。
@@ -100,6 +115,8 @@ final class AppState {
     var cursorServiceStatus: ServiceStatus?
 
     let usageService = UsageService()
+    /// yybar 网站账号：头像、上传用量换筹码(bar 页)
+    let webAccount = YYBarWebAccount()
     private let scheduler = Scheduler()
     private var didBootstrap = false
     private var quotaCache = QuotaCachePayload()
@@ -127,6 +144,8 @@ final class AppState {
         reloadImportedCodexAccounts()
         reloadExtraAccounts()
         await migrateAccountTokensFromKeychain()
+        webAccount.scanUsage = { [weak self] in await self?.usageService.scanNow() }
+        webAccount.bootstrap()
         usageService.bootstrap(appState: self)
         await loadCodex()
         maybeShowKeychainPrompt()
@@ -149,6 +168,8 @@ final class AppState {
         Task { await refreshServiceStatus() }
         Task { await loadGrokQuota(reason: .userInitiated) }
         Task { await loadGoogleQuota(reason: .userInitiated) }
+        Task { await loadGeminiAppQuota(reason: .userInitiated) }
+        Task { await loadGrokBotQuota(reason: .userInitiated) }
     }
 
     /// 旧版本把其他账号的 token 存在钥匙串里，启动时先统一搬到文件(见 AccountTokenFiles)。
@@ -212,6 +233,7 @@ final class AppState {
         async let grokRefresh: Void = loadGrokQuota(reason: reason)
         async let googleRefresh: Void = loadGoogleQuota(reason: reason)
         async let grokBotRefresh: Void = loadGrokBotQuota(reason: reason)
+        async let geminiAppRefresh: Void = loadGeminiAppQuota(reason: reason)
         await loadCodex()
         await loadClaude()
         await loadCodexQuota(reason: reason)
@@ -219,6 +241,7 @@ final class AppState {
         await grokRefresh
         await googleRefresh
         await grokBotRefresh
+        await geminiAppRefresh
         await loadAllImportedCodexQuotas(reason: reason)
         await loadAllExtraQuotas(reason: reason)
         logQuotaSummary()
@@ -300,8 +323,13 @@ final class AppState {
             source = grokBotRefreshState.source
             error = grokBotQuotaError
             state = grokBotRefreshState
-        case .gemini, .agy:
-            snapshot = app == .gemini ? geminiQuota : agyQuota
+        case .gemini:
+            snapshot = geminiAppQuota
+            source = geminiAppRefreshState.source
+            error = geminiAppQuotaError
+            state = geminiAppRefreshState
+        case .agy:
+            snapshot = localQuota(for: .agy)
             source = googleRefreshState.source
             error = googleQuotaError
             state = googleRefreshState
@@ -350,6 +378,14 @@ final class AppState {
             }
         }
         if let record = quotaCache.gemini { geminiQuota = record.snapshot }
+        geminiAppEmail = GeminiChromeAuth.profile()?.email
+        if let email = geminiAppEmail { geminiAnswerLog = GeminiAnswerLog.load(account: email) }
+        if let email = geminiAppEmail, quotaCache.geminiAppEmail == email, let record = quotaCache.geminiApp {
+            geminiAppQuota = record.snapshot
+            geminiRecentModels = quotaCache.geminiRecentModels
+            geminiAppRefreshState.lastSuccessAt = record.updatedAt
+            geminiAppRefreshState.source = .cache
+        }
         if let record = quotaCache.agy { agyQuota = record.snapshot }
         if let updated = [quotaCache.gemini?.updatedAt, quotaCache.agy?.updatedAt].compactMap({ $0 }).max() {
             googleRefreshState.lastSuccessAt = updated
@@ -360,6 +396,8 @@ final class AppState {
             grokBotRefreshState.lastSuccessAt = record.updatedAt
             grokBotRefreshState.source = .cache
         }
+        googleEmail = GoogleQuotaClient.signedInEmail(home: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini"))
+        syncSharedGooglePlan()
         for (id, record) in quotaCache.extra ?? [:] {
             extraQuotas[id] = record.snapshot
             var state = QuotaRefreshState()
@@ -428,7 +466,8 @@ final class AppState {
     /// 身份:Gemini / agy 用 Google 邮箱(读不到时 "local"),Grok Bot 用 "local"。换账号后自动重新出现。
     private func quotaOnlyIdentity(_ app: UsageApp) -> String {
         switch app {
-        case .gemini, .agy: return nonEmpty(googleEmail) ?? "local"
+        case .gemini: return nonEmpty(geminiAppEmail) ?? "local"
+        case .agy: return nonEmpty(googleEmail) ?? "local"
         default: return "local"
         }
     }
@@ -453,6 +492,8 @@ final class AppState {
         if enabled {
             if app == .grokBot {
                 Task { await loadGrokBotQuota(reason: .userInitiated) }
+            } else if app == .gemini {
+                Task { await loadGeminiAppQuota(reason: .userInitiated) }
             } else {
                 Task { await loadGoogleQuota(reason: .userInitiated) }
             }
@@ -848,10 +889,59 @@ final class AppState {
         case .claude: return claudeQuota
         case .grok: return grokQuota
         case .grokBot: return grokBotQuota
-        // Gemini.app 的额度未接通(geminiQuota 是 agy 的 Gemini 池，只用于 Antigravity)。
-        case .gemini: return GoogleQuotaClient.isGeminiAppConnected ? geminiQuota : nil
+        case .gemini: return geminiAppQuota
         // Antigravity 显示 agy 的两个池子(Gemini 池 + Claude·GPT 池)。
         case .agy: return QuotaPool.antigravity(gemini: geminiQuota, thirdParty: agyQuota)
+        }
+    }
+
+    /// 本机账号的刷新状态(按服务)。
+    func localRefreshState(for app: UsageApp) -> QuotaRefreshState {
+        switch app {
+        case .codex: return codexRefreshState
+        case .claude: return claudeRefreshState
+        case .grok: return grokRefreshState
+        case .grokBot: return grokBotRefreshState
+        case .gemini: return geminiAppRefreshState
+        case .agy: return googleRefreshState
+        }
+    }
+
+    /// 本机账号最近一次刷新失败的原因(成功后清空)。
+    func localQuotaError(for app: UsageApp) -> String? {
+        switch app {
+        case .codex: return codexQuotaError
+        case .claude: return claudeQuotaError
+        case .grok: return grokQuotaError
+        case .grokBot: return grokBotQuotaError
+        case .gemini: return geminiAppQuotaError
+        case .agy: return googleQuotaError
+        }
+    }
+
+    /// 本机账号的套餐名(没有就是 nil)。
+    func localPlan(for app: UsageApp) -> String? {
+        let plan: String?
+        switch app {
+        case .codex: plan = codexAccount?.planType
+        case .claude: plan = claudeAccount?.subscriptionType
+        case .grok: plan = grokPlan
+        case .grokBot: plan = grokBotQuota?.planType
+        case .gemini: plan = geminiAppQuota?.planType
+        case .agy: plan = googlePlan
+        }
+        guard let plan, !plan.isEmpty else { return nil }
+        return plan.prefix(1).uppercased() + plan.dropFirst()
+    }
+
+    /// 官方状态页(Grok Bot 用 Cursor 的)。
+    func serviceStatus(for app: UsageApp) -> ServiceStatus? {
+        switch app {
+        case .codex: return codexServiceStatus
+        case .claude: return claudeServiceStatus
+        case .grok: return grokServiceStatus
+        case .grokBot: return cursorServiceStatus
+        case .gemini, .agy: return googleServiceStatus
         }
     }
 
@@ -1779,10 +1869,150 @@ final class AppState {
         }
     }
 
-    /// Gemini / agy 额度：一次 `agy -p /usage` 同时得到两个池子。失败保留已有快照;429 退避 10 分钟。
+    /// Gemini Apps 只读额度，沿用 Chrome 当前账号。与 agy 的缓存、刷新和退避完全分开。
+    func loadGeminiAppQuota(reason: QuotaRefreshReason) async {
+        guard SettingsStore.shared.showGemini, !geminiAppRefreshState.inFlight else { return }
+        let now = Date()
+        if let until = geminiAppRefreshState.backoffUntil, until > now { return }
+        if reason == .periodic {
+            if geminiChromeKeychainDenied { return }
+            if let last = geminiAppRefreshState.lastAttemptAt, now.timeIntervalSince(last) < 120 { return }
+        }
+        geminiAppRefreshState.inFlight = true
+        geminiAppRefreshState.lastAttemptAt = now
+        defer { geminiAppRefreshState.inFlight = false }
+        func failed(_ message: String) {
+            geminiAppQuotaError = message
+            geminiAppRefreshState.lastError = message
+            writeGeminiDiagnostic(message)
+        }
+        let profile: (directory: URL, email: String)
+        switch GeminiChromeAuth.loadProfile() {
+        case .success(let value):
+            profile = value
+        case .failure(let error) where error.message.contains("\(NSFileReadNoPermissionError)"):
+            failed("yybar 不能读取 Chrome 登录资料（\(error.message)）。请到系统设置 → 隐私与安全性 → 完全磁盘访问权限，允许 yybar 后重新打开")
+            return
+        case .failure(let error):
+            failed("请在 Chrome 当前个人资料中登录 Google，并打开 gemini.google.com（\(error.message)）")
+            return
+        }
+        if geminiAppEmail != profile.email {
+            geminiAppEmail = profile.email
+            geminiAnswerLog = GeminiAnswerLog.load(account: profile.email)
+            geminiAppQuota = nil
+            geminiRecentModels = nil
+            geminiModelsLastAttempt = nil
+            geminiPlanFetchedAt = nil
+            quotaCache.geminiRecentModels = nil
+            geminiAppRefreshState.source = nil
+            geminiAppRefreshState.lastSuccessAt = nil
+            quotaCache.geminiApp = nil
+            quotaCache.geminiAppEmail = profile.email
+            saveQuotaCache()
+        }
+        let key: Data
+        if let cached = geminiChromeKey { key = cached }
+        else {
+            switch await Task.detached(operation: { GeminiChromeAuth.loadKey() }).value {
+            case .success(let value):
+                key = value
+                geminiChromeKey = value
+                geminiChromeKeychainDenied = false
+            case .failure(.keychainDenied(let message)):
+                geminiChromeKeychainDenied = true
+                failed("读取「Chrome Safe Storage」被拒绝或取消（\(message)）。手动刷新可重试")
+                return
+            case .failure:
+                failed("无法读取 Chrome Google 登录，请先在 Chrome 打开 Gemini")
+                return
+            }
+        }
+        let login: GeminiChromeSession
+        do { login = try await Task.detached { try GeminiChromeAuth.loadSession(key: key) }.value }
+        catch {
+            geminiChromeKey = nil
+            failed("无法读取 Chrome Google 会话，请在 Chrome 打开 Gemini 后重试")
+            return
+        }
+        // 读 Cookie 时可能刚好切换 Chrome 个人资料。下次刷新重新校验身份。
+        guard login.email == geminiAppEmail else {
+            failed("Chrome 账号已变化，请重新刷新")
+            return
+        }
+        switch await GeminiAppQuotaClient.fetch(session: login) {
+        case .success(var snapshot):
+            snapshot.planType = geminiAppQuota?.planType
+            if geminiPlanFetchedAt.map({ Date().timeIntervalSince($0) >= 3600 }) ?? true {
+                geminiPlanFetchedAt = Date()
+                if let plan = await GeminiAppQuotaClient.fetchPlan(session: login) { snapshot.planType = plan }
+            }
+            markActivityIfConsumed(.gemini, old: geminiAppQuota, new: snapshot)
+            geminiAppQuota = snapshot
+            syncSharedGooglePlan()
+            quotaCache.geminiApp = QuotaCacheRecord(snapshot: snapshot, source: .api, updatedAt: snapshot.fetchedAt)
+            quotaCache.geminiAppEmail = login.email
+            saveQuotaCache()
+            recordQuotaHistory(accountKey: QuotaHistoryAccountKey.geminiApp(email: login.email), app: .gemini,
+                               kind: .geminiApp, snapshot: snapshot, sampledAt: snapshot.fetchedAt)
+            geminiAppQuotaError = nil
+            geminiAppRefreshState.lastError = nil
+            geminiAppRefreshState.lastSuccessAt = snapshot.fetchedAt
+            geminiAppRefreshState.backoffUntil = nil
+            geminiAppRefreshState.source = .api
+            // 会话元数据(回答次数 + 近期模型)独立限频，每 10 分钟最多读一次；失败不影响已成功的额度。
+            var activityNote = ""
+            if geminiModelsLastAttempt.map({ Date().timeIntervalSince($0) >= 600 }) ?? true {
+                geminiModelsLastAttempt = Date()
+                switch await GeminiAppQuotaClient.fetchActivity(session: login, log: geminiAnswerLog) {
+                case .success(let activity):
+                    var log = geminiAnswerLog
+                    let added = log.record(activity.answers)
+                    log.markChats(activity.chats)
+                    if log != geminiAnswerLog {
+                        geminiAnswerLog = log
+                        log.saveInBackground()
+                    }
+                    if let recent = activity.recent {
+                        geminiRecentModels = recent
+                        quotaCache.geminiRecentModels = recent
+                        saveQuotaCache()
+                    }
+                    activityNote = " chats=\(activity.chats.count) answers+\(added) turnTime=\(activity.timedByTurn) chatTime=\(activity.timedByChat)"
+                case .failure(let error):
+                    activityNote = " activity=failed"
+                    if error.isRateLimited || error.requiresBrowserVerification {
+                        geminiAppRefreshState.backoffUntil = Date().addingTimeInterval(rateLimitBackoff)
+                    }
+                }
+            }
+            let five = snapshot.fiveHour.map { String(format: "%.1f%%", $0.usedPercent) } ?? "—"
+            let week = snapshot.weekly.map { String(format: "%.1f%%", $0.usedPercent) } ?? "—"
+            writeGeminiDiagnostic("ok 5h=\(five) week=\(week)" + activityNote)
+        case .failure(let error):
+            if error.isRateLimited || error.requiresBrowserVerification {
+                geminiAppRefreshState.backoffUntil = now.addingTimeInterval(rateLimitBackoff)
+            }
+            if error.requiresBrowserVerification {
+                failed(geminiAppQuota == nil ? error.description : "Google 要求网页验证，当前显示上次额度；请在 Chrome 打开 Gemini 检查后重试")
+            } else if case .missingToken = error {
+                failed("Chrome 的 Gemini 登录已失效，请打开 gemini.google.com 后重试")
+            } else if error.isAuthFailure {
+                failed("Gemini 拒绝了网页会话，请在 Chrome 打开 Gemini 后重试")
+            } else { failed(error.description) }
+        }
+    }
+
+    /// 只写阶段和百分比，不写 Cookie、钥匙串或邮箱。
+    private func writeGeminiDiagnostic(_ message: String) {
+        let url = QuotaCache.cacheFileURL().deletingLastPathComponent().appendingPathComponent("gemini-diagnostics.txt")
+        try? Data((message + "\n").utf8).write(to: url, options: .atomic)
+    }
+
+    /// agy 额度：一次 `agy -p /usage` 同时得到两个池子。失败保留已有快照;429 退避 10 分钟。
     func loadGoogleQuota(reason: QuotaRefreshReason) async {
         let settings = SettingsStore.shared
-        guard settings.showGemini || settings.showAgy, !googleRefreshState.inFlight else { return }
+        guard settings.showAgy, !googleRefreshState.inFlight else { return }
         let now = Date()
         if let until = googleRefreshState.backoffUntil, until > now { return }
         if reason == .periodic, let last = googleRefreshState.lastAttemptAt,
@@ -1796,7 +2026,11 @@ final class AppState {
             // Antigravity 包含 Gemini 池：任一池下降都呼吸。
             markActivityIfConsumed(.agy, old: geminiQuota, new: result.gemini)
             googleEmail = GoogleQuotaClient.signedInEmail(home: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini"))
-            googlePlan = result.plan
+            if let plan = result.plan, !plan.isEmpty {
+                googlePlan = plan
+            } else {
+                syncSharedGooglePlan()
+            }
             if let gemini = result.gemini {
                 geminiQuota = gemini
                 quotaCache.gemini = QuotaCacheRecord(snapshot: gemini, source: .api, updatedAt: gemini.fetchedAt)
@@ -1861,9 +2095,12 @@ final class AppState {
                 grokBotKeychainDenied = true
                 var reason = ""
                 if case .keychainDenied(let message) = error { reason = "(\(message))" }
-                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝或取消\(reason)。点刷新会再询问，选「始终允许」后不再弹出")
+                markGrokBotFailure("读取钥匙串「Grok Bot Safe Storage」被拒绝或取消\(reason)。点刷新会再询问，允许一次后 yybar 会记住，不再弹出")
                 return
             }
+        }
+        if let account = await Task.detached(operation: { GrokBotAuth.loadAccount(key: key) }).value {
+            grokBotEmail = account.email
         }
         let token: String
         switch await Task.detached(operation: { GrokBotAuth.loadToken(key: key) }).value {
@@ -1876,8 +2113,12 @@ final class AppState {
             case .expired:
                 markGrokBotFailure("Grok Bot 登录已过期，打开 Grok Bot app 让它续期后再刷新")
             case .noToken(let diagnostics):
-                // 钥匙串口令可能变了(重装 / 重新登录),下次重新读。
-                grokBotKey = nil
+                // 一个加密块都解不开：钥匙串口令变了(Grok Bot 重装),丢掉缓存的密钥，下次重新读钥匙串。
+                // 解得开但没有 token 时密钥没问题，保留，免得每次刷新都弹钥匙串。
+                if diagnostics.blobCount > 0, diagnostics.decryptedCount == 0 {
+                    grokBotKey = nil
+                    GrokBotAuth.forgetCachedKey()
+                }
                 markGrokBotFailure("没能从 Grok Bot app 的登录里解出 token:\(diagnostics.summary)")
                 // 界面只放得下一行;完整诊断(只有路径和数量，不含任何值)写到数据目录方便排查。
                 let url = QuotaCache.cacheFileURL().deletingLastPathComponent().appendingPathComponent("grokbot-diagnostics.txt")
@@ -1901,6 +2142,18 @@ final class AppState {
             grokBotRefreshState.backoffUntil = nil
             grokBotRefreshState.lastSuccessAt = Date()
             grokBotRefreshState.source = .api
+            switch await GrokBotUsageClient.fetch(accessToken: token) {
+            case .rows(let rows):
+                writeGrokBotUsageDiagnostic("ok rows=\(rows.count)")
+                let totals = rows.map { row in
+                    let date = Date(timeIntervalSince1970: TimeInterval(row.dayMillis) / 1000)
+                    return APIUsageTotal(model: row.model, day: UsageDay.startOfDay(for: date),
+                                         inputTokens: row.totalTokens, costUSD: Decimal(row.spendCents) / 100)
+                }
+                await usageService.recordGrokBotTotals(totals)
+            case .failed(let stage):
+                writeGrokBotUsageDiagnostic("failed \(stage)")
+            }
         case .failure(let error):
             if error.isRateLimited {
                 grokBotRefreshState.backoffUntil = Date().addingTimeInterval(rateLimitBackoff)
@@ -1913,9 +2166,23 @@ final class AppState {
         }
     }
 
+    /// 只写行数或失败阶段，不写 token、账号或响应。
+    private func writeGrokBotUsageDiagnostic(_ message: String) {
+        let url = QuotaCache.cacheFileURL().deletingLastPathComponent().appendingPathComponent("grokbot-usage.txt")
+        try? Data((message + "\n").utf8).write(to: url, options: .atomic)
+    }
+
     private func markGrokBotFailure(_ message: String) {
         grokBotQuotaError = message
         grokBotRefreshState.lastError = message
+    }
+
+    /// Gemini App 和同一邮箱的 Antigravity 共用 Google AI 套餐。邮箱不同就不抄过去。
+    private func syncSharedGooglePlan() {
+        guard let plan = geminiAppQuota?.planType, !plan.isEmpty,
+              let gemini = geminiAppEmail, let agy = googleEmail,
+              gemini.compare(agy, options: .caseInsensitive) == .orderedSame else { return }
+        googlePlan = plan
     }
 
     /// 没有本地会话日志的服务：两次刷新之间剩余减少了(5H 或 WK),就让菜单栏图标呼吸到下次刷新之后。

@@ -16,6 +16,8 @@ final class UsageService {
     private(set) var lastError: String?
 
     private weak var appState: AppState?
+    /// 扫描进行中送来的 Grok Bot 合计，等这次扫描落盘前覆盖进去，避免被旧快照写回去。
+    private var pendingGrokBotTotals: [APIUsageTotal] = []
 
     func bootstrap(appState: AppState) {
         self.appState = appState
@@ -79,6 +81,8 @@ final class UsageService {
         }
         await performScan(rebuild: request)
         isScanning = false
+        // 扫描结束前刚入队的合计，这里落盘。扫描自己的保存已经把更早入队的合计写进去了。
+        await drainGrokBotTotals()
         if let next = pendingRebuild {
             pendingRebuild = nil
             await scan(rebuild: next)
@@ -156,6 +160,7 @@ final class UsageService {
             localAggregator.ingest(agy.entries)
         }
 
+        applyPendingGrokBotTotals()
         // 持久化
         let buckets = localAggregator.snapshot()
         let newScanState = ScanState(
@@ -184,10 +189,20 @@ final class UsageService {
             }
         }.value
 
+        while !pendingGrokBotTotals.isEmpty {
+            applyPendingGrokBotTotals()
+            let late = UsageRollupPayload(pricingFingerprint: Pricing.fingerprint,
+                                          buckets: localAggregator.snapshot(), updatedAt: Date())
+            await Task.detached(priority: .utility) { try? UsageRollupCache.save(late) }.value
+        }
         lastScanAt = Date()
         lastError = nil
         refreshCombinedTotals()
         publishTotals()
+        // 开着自动上传时，把今天以前、还没传过的天传到 yybar 网站
+        if let appState {
+            appState.webAccount.usageDidUpdate(.init(buckets: aggregator.snapshot(), answers: appState.geminiAnswerLog.counts))
+        }
 
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(started))
         print("[UsageScan 用量扫描] claude files=\(claude.filesScanned) lines=\(claude.linesParsed) new=\(claude.entries.count); codex files=\(codex.filesScanned) lines=\(codex.linesParsed) new=\(codex.entries.count); grok files=\(grok.filesScanned) lines=\(grok.linesParsed) new=\(grok.entries.count); agy dbs=\(agy.filesScanned) calls=\(agy.linesParsed) new=\(agy.entries.count); elapsed=\(elapsed)")
@@ -226,7 +241,8 @@ final class UsageService {
     }
 
     private static func repriced(_ bucket: UsageBucket, _ reprice: Reprice) -> UsageBucket {
-        guard bucket.app != .grok else { return bucket }
+        // Grok 的费用来自日志。Grok Bot 只有合计 token 和账单里的美分，不能按输入价重算。
+        guard bucket.app != .grok, bucket.app != .grokBot else { return bucket }
         switch reprice {
         case .none:
             return bucket
@@ -240,6 +256,51 @@ final class UsageService {
                                        cacheRead: bucket.cacheReadTokens, cacheCreation: bucket.cacheCreationTokens,
                                        requestInputTokens: 0)
         return updated
+    }
+
+    /// Grok Bot 每天每模型的 token 合计。同一天再报同一个数只是覆盖，不会加第二次。
+    /// 扫描进行中先入队，由扫描落盘前写入。若扫描用旧快照盖住了刚写入的合计，再写一次。
+    func recordGrokBotTotals(_ rows: [APIUsageTotal]) async {
+        guard !rows.isEmpty else { return }
+        pendingGrokBotTotals = mergeTotals(pendingGrokBotTotals, rows)
+        await drainGrokBotTotals()
+    }
+
+    private func drainGrokBotTotals() async {
+        if isScanning || pendingGrokBotTotals.isEmpty { return }
+        let rows = pendingGrokBotTotals
+        pendingGrokBotTotals = []
+        localAggregator.setDailyTotals(app: .grokBot, rows: rows)
+        refreshCombinedTotals()
+        let version = localAggregator.version
+        await saveRollup()
+        guard isScanning || localAggregator.version != version else { return }
+        pendingGrokBotTotals = mergeTotals(pendingGrokBotTotals, rows)
+        if !isScanning { await drainGrokBotTotals() }
+    }
+
+    private func saveRollup() async {
+        let rollup = UsageRollupPayload(pricingFingerprint: Pricing.fingerprint,
+                                        buckets: localAggregator.snapshot(), updatedAt: Date())
+        await Task.detached(priority: .utility) {
+            do { try UsageRollupCache.save(rollup) }
+            catch { print("[UsageScan 用量扫描] Grok Bot 汇总写盘失败: \(error)") }
+        }.value
+    }
+
+    private func applyPendingGrokBotTotals() {
+        guard !pendingGrokBotTotals.isEmpty else { return }
+        let rows = pendingGrokBotTotals
+        pendingGrokBotTotals = []
+        localAggregator.setDailyTotals(app: .grokBot, rows: rows)
+    }
+
+    private func mergeTotals(_ existing: [APIUsageTotal], _ rows: [APIUsageTotal]) -> [APIUsageTotal] {
+        var merged: [String: APIUsageTotal] = [:]
+        for row in existing + rows {
+            merged["\(row.day.timeIntervalSince1970)\t\(row.model)"] = row
+        }
+        return Array(merged.values)
     }
 
     private func updateCloudStatus() {

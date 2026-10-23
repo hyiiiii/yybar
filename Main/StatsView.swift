@@ -31,7 +31,7 @@ enum StatsRange: Hashable, CaseIterable {
     var chineseLabel: String {
         switch self {
         case .today: return "今天"
-        case .yesterday: return "昨天"
+        case .yesterday: return "昨日"
         case .thisWeek: return "本周"
         case .thisMonth: return "本月"
         case .thisYear: return "本年"
@@ -171,6 +171,8 @@ enum StatsServiceFilter: Hashable, CaseIterable {
 enum StatsMetric: Hashable {
     case cost
     case tokens
+    /// Gemini App 的回答次数。不在切换器里：只看 Gemini 时自动使用(见 StatsView.answersOnly)。
+    case answers
 }
 
 /// 单日视图的对比基准。
@@ -277,6 +279,8 @@ struct StatsView: View {
     @State private var modelSortAscending = StatsSelections.current.modelSortAscending
     /// 模型明细数据更新时的淡入提示。
     @State private var modelsRowsOpacity: Double = 1
+    /// 每日用量柱子的高度比例(0~1)。切换时间范围 / 服务筛选后从 0 长到 1,见 replayBarRise。
+    @State private var barReveal: Double = 1
     @State private var customFrom = StatsSelections.current.customFrom
     @State private var customTo = StatsSelections.current.customTo
 
@@ -293,9 +297,11 @@ struct StatsView: View {
 
     /// 费用 / Tokens、对比基准、合并 Tokens 共用的切换动画。
     private static let switchAnimation = Animation.spring(response: 0.45, dampingFraction: 0.86)
+    /// 每日用量柱子从底部长出来的动画。
+    private static let barRiseAnimation = Animation.spring(response: 0.55, dampingFraction: 0.8)
 
     /// 工具栏上提供的时间范围。其余 StatsRange case 保留但不再展示。
-    private static let toolbarRanges: [StatsRange] = [.today, .last7, .last30, .thisMonth, .all, .custom]
+    private static let toolbarRanges: [StatsRange] = [.today, .yesterday, .last7, .last30, .all, .custom]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -324,6 +330,12 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeading(title: tr("Overview", "概览"))
             kpiRow
+            if answersOnly {
+                Text(tr("Gemini Apps doesn't report tokens or cost, so Gemini is counted by answers, read from your Gemini web chats since yybar started recording.",
+                        "Gemini App 不提供 token 和费用，这里按回答次数统计(从 Gemini 网页会话读取，从 yybar 开始记录起)。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if isSingleDay {
                 singleDayPanel
             } else {
@@ -351,7 +363,8 @@ struct StatsView: View {
             SectionHeading(title: tr("Token activity", "Token 活动"),
                            subtitle: tr("All tokens including cache, over the last year. Uses the service filter above.",
                                         "最近一年的全部 Token(含缓存),跟随上方服务筛选。"))
-            TokenActivityPanel(daily: activityDaily, filter: serviceFilter)
+            TokenActivityPanel(daily: answersOnly ? appState.geminiAnswerLog.daily : activityDaily,
+                               filter: serviceFilter, answers: answersOnly)
         }
     }
 
@@ -408,6 +421,8 @@ struct StatsView: View {
     /// 时间范围 / 服务筛选 / 自定义日期：会改变各部分高度。
     /// 正在看概览(页面最上面)时用弹簧动画;看下面的部分时瞬时切换，由 anchorKeeper 精确补回滚动位置。
     private func applyFilterChange(_ change: () -> Void) {
+        let chartKey = dailyChartKey
+        defer { if dailyChartKey != chartKey { replayBarRise() } }
         if let reading = anchorKeeper.readingSection,
            let readingIndex = MainTab.statsPages.firstIndex(of: reading), readingIndex > 0 {
             // 冻结上方各部分(已冻结的保持原高度)。
@@ -419,6 +434,28 @@ struct StatsView: View {
             withAnimation(Self.switchAnimation) { change() }
         } else {
             change()
+        }
+    }
+
+    /// 只看 Gemini 时：Gemini App 没有 token / 费用，统计页改按回答次数显示(GeminiAnswerLog)。
+    private var answersOnly: Bool { visibleApps == [.gemini] }
+
+    /// 实际用的口径：只看 Gemini 时是回答次数，否则是用户选的 费用 / Tokens。
+    private var effectiveMetric: StatsMetric { answersOnly ? .answers : metric }
+
+    /// 每日用量图的数据口径：时间范围(含自定义日期)和显示的服务。变了就换一张新图，柱子重新长出来。
+    private var dailyChartKey: String {
+        "\(range)|\(customFrom.timeIntervalSince1970)|\(customTo.timeIntervalSince1970)|\(visibleApps)"
+    }
+
+    /// 柱子先瞬间收到 0(新图第一帧就是空的)，下一轮再用弹簧动画长到实际高度。
+    /// 只靠 Swift Charts 自己的过渡不够：换时间范围时新出现的日期会直接冒出来，看不出动画。
+    private func replayBarRise() {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { barReveal = 0 }
+        DispatchQueue.main.async {
+            withAnimation(Self.barRiseAnimation) { barReveal = 1 }
         }
     }
 
@@ -513,7 +550,23 @@ struct StatsView: View {
             .fill(status.map { $0.indicator == .unknown ? Color.secondary.opacity(0.4) : $0.indicator.dotColor }
                   ?? Color.secondary.opacity(0.4))
             .frame(width: 7, height: 7)
-            .help(status.map { $0.description ?? $0.indicator.label } ?? tr("Status unavailable", "暂无状态"))
+            .help(statusHelp(for: item, status: status))
+    }
+
+    /// 圆点的悬停说明。Grok Bot 是 Anysphere(Cursor)的 App,状态取 Cursor 状态页的「Grok Bot」组件，
+    /// 和 xAI 的 Grok 不是同一个服务;合并的「Grok · Grok Bot」圆点取更严重的那个，说明里两个都写。
+    private func statusHelp(for item: StatsServiceFilter, status: ServiceStatus?) -> String {
+        func text(_ s: ServiceStatus?) -> String { s.map { $0.description ?? $0.indicator.label } ?? tr("Status unavailable", "暂无状态") }
+        guard SettingsStore.shared.showServiceStatus else { return tr("Status unavailable", "暂无状态") }
+        switch item {
+        case .grokPair:
+            return tr("Grok (xAI status): \(text(appState.grokServiceStatus))\nGrok Bot (Cursor status): \(text(appState.cursorServiceStatus))",
+                      "Grok(xAI 状态页):\(text(appState.grokServiceStatus))\nGrok Bot(Cursor 状态页):\(text(appState.cursorServiceStatus))")
+        case .grokBot:
+            return tr("Cursor status: ", "Cursor 状态页：") + text(status)
+        default:
+            return text(status)
+        }
     }
 
     private static func worse(_ a: ServiceStatus?, _ b: ServiceStatus?) -> ServiceStatus? {
@@ -543,7 +596,61 @@ struct StatsView: View {
 
     // MARK: KPI row
 
+    @ViewBuilder
     private var kpiRow: some View {
+        if answersOnly { answersKPIRow } else { tokensKPIRow }
+    }
+
+    /// 只看 Gemini 时的三张卡：回答次数(环比 / 对比基准)、最常用模型、用过的模型。
+    private var answersKPIRow: some View {
+        let log = appState.geminiAnswerLog
+        let bounds = rangeBounds
+        let total = log.total(from: bounds.from, to: bounds.to)
+        let models = log.byModel(from: bounds.from, to: bounds.to)
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        let detail: String?
+        let line: Double?
+        if isSingleDay {
+            let day = Calendar.current.startOfDay(for: bounds.from)
+            let base = baselineAverage(apps: [.gemini], before: day) { Double(log.total(from: $0, to: $1)) }
+            detail = deltaText(current: Double(total), previous: base, label: baseline.compareLabel)
+            line = base
+        } else {
+            detail = deltaText(current: Double(total),
+                               previous: previousRangeBounds.map { Double(log.total(from: $0.from, to: $0.to)) },
+                               label: tr("vs previous", "较上期"))
+            line = nil
+        }
+        let top = models.first
+        return HStack(alignment: .top, spacing: 12) {
+            KPICard(
+                title: tr("Answers", "回答次数"),
+                value: tr("\(total)", "\(total) 次"),
+                detail: detail,
+                segments: isSingleDay ? [KPISegment(id: UsageApp.gemini.rawValue, color: UsageApp.gemini.statsTint, value: Double(total))] : [],
+                baselineLine: line
+            )
+            KPICard(
+                title: tr("Top model", "最常用模型"),
+                value: top?.key ?? "—",
+                detail: top.map { item in
+                    let share = total > 0 ? Int((Double(item.value) / Double(total) * 100).rounded()) : 0
+                    return tr("\(item.value) answers · \(share)%", "\(item.value) 次 · 占 \(share)%")
+                },
+                segments: []
+            )
+            KPICard(
+                title: tr("Models used", "用过的模型"),
+                value: tr("\(models.count)", "\(models.count) 个"),
+                detail: models.isEmpty ? nil : models.prefix(3).map(\.key).joined(separator: " · "),
+                segments: []
+            )
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var tokensKPIRow: some View {
         let current = totals(for: visibleApps, in: rangeBounds)
         let previous = previousRangeBounds.map { totals(for: visibleApps, in: $0) }
         let currentCost = knownCost(for: visibleApps, in: rangeBounds)
@@ -668,6 +775,18 @@ struct StatsView: View {
 
     // MARK: Daily usage panel
 
+    /// 只看 Gemini 时没有 费用 / Tokens 可切换，换成「回答次数」标签。
+    @ViewBuilder
+    private var metricControl: some View {
+        if answersOnly {
+            Text(tr("Answers", "回答次数"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        } else {
+            metricPicker
+        }
+    }
+
     private var metricPicker: some View {
         // 切换时条形、竖线、柱状图平滑过渡，数字滚动(与合并 Tokens 同一套弹簧动画)。
         Picker("", selection: Binding(
@@ -685,31 +804,59 @@ struct StatsView: View {
     private var dailyUsagePanel: some View {
         let samples = dailySamples
         let average = samples.isEmpty ? 0 : samples.map(\.total).reduce(0, +) / Double(samples.count)
+        // 纵轴固定在最终高度：柱子长出来时刻度不跟着缩放(自动刻度会随柱子一起变，看起来像没动)。
+        let yTop = Self.niceCeiling(max(samples.map(\.total).max() ?? 0, average))
 
+        // Gemini 是次数，不和 token / 费用叠在柱子里：柱子下面留一条窄道，有回答的那天放一颗 Gemini 小星，
+        // 回答越多星越大(面积 ∝ 次数),具体次数在悬停浮层里。只看 Gemini 时柱子本身就是次数，不画这条道。
+        let chartApps = answersOnly ? [UsageApp.gemini] : visibleApps.filter { $0 != .gemini }
+        let laneDays: [GeminiLaneDay] = answersOnly || !visibleApps.contains(.gemini) ? [] : samples.compactMap { sample in
+            let count = Int(dayValue(app: .gemini, day: sample.day))
+            return count > 0 ? GeminiLaneDay(day: sample.day, count: count) : nil
+        }
+        let laneMax = laneDays.map(\.count).max() ?? 0
+        let lane = laneMax > 0 ? yTop * 0.18 : 0
+        // 日均写在标题旁(一小段虚线 + 数值，和图里的虚线对应)，不再标在图里：范围长时柱子密，图内标注会压在柱子上。
+        let averageLegend = AnyView(
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                DashedLegendLine()
+                    .stroke(Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                    .frame(width: 14, height: 1)
+                    .alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 3.5 }
+                Text("\(tr("avg", "日均")) \(formatMetric(average))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .fixedSize()
+            }
+            .opacity(samples.allSatisfy({ $0.total == 0 }) ? 0 : 1)
+        )
         return Panel(title: "Daily usage", chinese: "每日用量", right: AnyView(
             HStack(spacing: 12) {
-                HStack(spacing: 10) {
-                    ForEach(visibleApps, id: \.self) { app in
-                        HStack(spacing: 5) {
-                            ServiceLogo(app: app, size: 11)
-                            Text(app.statsShortTitle)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                // 放得下就写服务名，窗口窄时只留图标(悬停看名字)，不折行。
+                ViewThatFits(in: .horizontal) {
+                    serviceLegend(names: true)
+                    serviceLegend(names: false)
                 }
-                metricPicker
+                metricControl
             }
-        )) {
-            if samples.allSatisfy({ $0.total == 0 }) {
+        ), titleAccessory: averageLegend) {
+            if samples.allSatisfy({ $0.total == 0 }) && laneDays.isEmpty {
                 placeholderHeight(104, message: tr("No usage in this range", "这段时间没有用量"))
             } else {
                 Chart {
+                    ForEach(laneDays) { item in
+                        PointMark(x: .value("Day", item.day, unit: .day), y: .value("Gemini", -lane / 2))
+                            .symbol { ServiceLogo(app: .gemini, size: Self.laneSymbolSize(item.count, max: laneMax)) }
+                            .opacity((selectedSample == nil || selectedSample?.day == item.day ? 1 : 0.45) * barReveal)
+                    }
+
                     ForEach(samples) { sample in
-                        ForEach(visibleApps, id: \.self) { app in
+                        ForEach(chartApps, id: \.self) { app in
                             BarMark(
                                 x: .value("Day", sample.day, unit: .day),
-                                y: .value("Value", sample.value(for: app)),
+                                y: .value("Value", sample.value(for: app) * barReveal),
                                 width: barWidth(dayCount: samples.count),
                                 stacking: .standard
                             )
@@ -719,15 +866,9 @@ struct StatsView: View {
                         }
                     }
 
-                    RuleMark(y: .value("Average", average))
+                    RuleMark(y: .value("Average", average * barReveal))
                         .foregroundStyle(Color.secondary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .annotation(position: .top, alignment: .trailing, spacing: 2) {
-                            Text("\(tr("avg", "日均")) \(formatMetric(average))")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
 
                     if let selected = selectedSample {
                         RuleMark(x: .value("Selected", selected.day, unit: .day))
@@ -743,14 +884,17 @@ struct StatsView: View {
                 }
                 .chartXSelection(value: $selectedDay)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: max(1, samples.count / 6))) { _ in
-                        AxisValueLabel(format: .dateTime.month(.defaultDigits).day(), centered: true)
+                    // 日期标签放在当天的刻度上、不做居中，正对它那天的柱子。
+                    // (原来 stride 每 N 天 + centered 会把标签居中到 N 天区间里，偏到后面两天多。)
+                    AxisMarks(values: Self.dayLabelTicks(samples.map(\.day))) { _ in
+                        AxisValueLabel(format: .dateTime.month(.defaultDigits).day(), anchor: .top)
                             .font(.system(size: 10))
                             .foregroundStyle(Color.secondary)
                     }
                 }
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                    // 刻度只标 0 以上(下面的 Gemini 窄道不标);0 那条网格线就是柱子和窄道的分界。
+                    AxisMarks(position: .leading, values: Self.axisTicks(top: yTop)) { value in
                         AxisGridLine()
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
@@ -762,10 +906,66 @@ struct StatsView: View {
                         }
                     }
                 }
+                .chartYScale(domain: -lane...yTop)
                 // 与「今天」面板同高。
                 .frame(height: 104)
+                // 换时间范围 / 服务时换一张新图(旧图立即移走，不做淡出叠在一起)，柱子从 0 长出来。
+                .id(dailyChartKey)
+                .transition(.identity)
             }
         }
+    }
+
+    /// 横轴日期标签：大约 6 个，每 N 天一个，从最后一天往前数(最后一天总有标签)。
+    private static func dayLabelTicks(_ days: [Date]) -> [Date] {
+        guard !days.isEmpty else { return [] }
+        let step = max(1, days.count / 6)
+        var picked = stride(from: days.count - 1, through: 0, by: -step).map { days[$0] }
+        picked.reverse()
+        return picked
+    }
+
+    /// 每日用量右上角的服务图例。
+    private func serviceLegend(names: Bool) -> some View {
+        HStack(spacing: names ? 10 : 8) {
+            ForEach(visibleApps, id: \.self) { app in
+                HStack(spacing: 5) {
+                    ServiceLogo(app: app, size: 11)
+                    if names {
+                        Text(app.statsShortTitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .help(app.statsShortTitle)
+            }
+        }
+    }
+
+    /// 纵轴刻度：0 到 top,步长取约 top / 3 的整齐数(1、2、2.5、5 × 10ⁿ)。
+    private static func axisTicks(top: Double) -> [Double] {
+        guard top > 0, top.isFinite else { return [0] }
+        let raw = top / 3
+        let magnitude = pow(10, floor(log10(raw)))
+        let step = [1, 2, 2.5, 5, 10].map { $0 * magnitude }.first { $0 >= raw * 0.999_999 } ?? raw
+        return stride(from: 0, through: top * 1.000_001, by: step).map { $0 }
+    }
+
+    /// Gemini 窄道上小星的大小：7~13pt,面积按当天回答次数 / 这段时间单日最多。
+    private static func laneSymbolSize(_ count: Int, max: Int) -> CGFloat {
+        7 + 6 * CGFloat((Double(count) / Double(Swift.max(max, 1))).squareRoot())
+    }
+
+    /// 纵轴上限取不小于 value 的「整齐」数(1、1.2、1.5、2、2.5、3、4、5、6、8 × 10ⁿ)。
+    private static func niceCeiling(_ value: Double) -> Double {
+        guard value > 0, value.isFinite else { return 1 }
+        let magnitude = pow(10, floor(log10(value)))
+        for step in [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10] where step * magnitude >= value * 0.999_999 {
+            return step * magnitude
+        }
+        return 10 * magnitude
     }
 
     private func barWidth(dayCount: Int) -> MarkDimension {
@@ -789,7 +989,9 @@ struct StatsView: View {
                     ServiceLogo(app: app, size: 10)
                     Text(app.statsShortTitle)
                     Spacer(minLength: 10)
-                    Text(formatMetric(sample.value(for: app)))
+                    Text(app == .gemini
+                         ? Self.answersText(dayValue(app: .gemini, day: sample.day))
+                         : formatMetric(sample.value(for: app)))
                         .monospacedDigit()
                 }
                 .font(.system(size: 11))
@@ -821,26 +1023,38 @@ struct StatsView: View {
                                average: baselineAverage(apps: [app], before: day) { metricValue(app: app, from: $0, to: $1) }))
         })
         let groups = singleDayGroups
-        // 合并行按两者之和计，比例尺取各行(合并后)的最大值。
+        // 合并行按两者之和计，比例尺取各行(合并后)的最大值。Gemini 是次数，不参与(只看 Gemini 时除外)。
         let maxValue = max(groups.map { group in
-            max(group.compactMap { rows[$0]?.value }.reduce(0, +), group.compactMap { rows[$0]?.average }.reduce(0, +))
+            let same = group.filter(sharesUnit)
+            return max(same.compactMap { rows[$0]?.value }.reduce(0, +), same.compactMap { rows[$0]?.average }.reduce(0, +))
         }.max() ?? 0, 0.0001)
-        let todayTotal = rows.values.map(\.value).reduce(0, +)
-        let averageTotal = rows.values.map(\.average).reduce(0, +)
+        // 合并的 Gemini · Antigravity 行右侧要写两种单位，所有行的数值列一起加宽，条形右端仍对齐。
+        let hasMixedMerged = groups.contains { group in
+            group.count == 2 && !isPairSplit(group[0]) && group.contains { !sharesUnit($0) }
+        }
+        let valueWidth: CGFloat = hasMixedMerged ? 200 : 150
+        let sameUnitRows = rows.values.filter { sharesUnit($0.app) }
+        let todayTotal = sameUnitRows.map(\.value).reduce(0, +)
+        let averageTotal = sameUnitRows.map(\.average).reduce(0, +)
         let isToday = range == .today
 
         return Panel(
-            title: isToday ? "Today" : "This day",
-            chinese: isToday ? "今天" : "当天",
+            title: isToday ? "Today" : (range == .yesterday ? "Yesterday" : "This day"),
+            chinese: isToday ? "今天" : (range == .yesterday ? "昨日" : "当天"),
             right: AnyView(HStack(spacing: 10) {
                 baselinePicker
-                metricPicker
+                metricControl
             }),
-            titleAccessory: isToday ? AnyView(todayFlame) : nil
+            // 火苗参与标题的基线布局；昨日保留同尺寸占位，避免标题行变矮带动面板晃动。
+            titleAccessory: AnyView(todayFlame.opacity(isToday ? 1 : 0)
+                .allowsHitTesting(isToday).accessibilityHidden(!isToday))
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(groups, id: \.self) { group in
                     let groupRows = group.compactMap { rows[$0] }
+                    // Gemini(次数)和 Antigravity(token / 费用)单位不同：拆开时各用自己的比例尺;
+                    // 合并时条形只算 Antigravity(和其他行同一比例尺)，Gemini 的次数写在右侧数值里。
+                    let mixedUnits = group.count == 2 && group.contains { !sharesUnit($0) }
                     if group.count == 2, isPairSplit(group[0]) {
                         // 拆开：同一行变成并列两条，各占半宽，各有自己的基准竖线和数值(比例尺取这两条自己的最大值)。
                         let pairMax = max(groupRows.map { max($0.value, $0.average) }.max() ?? 0, 0.0001)
@@ -855,8 +1069,9 @@ struct StatsView: View {
                                         if index == 0 { pairButton(group) }
                                     }
                                     .fixedSize()
-                                    singleDayBar(value: row.value, average: row.average, maxValue: pairMax, tint: row.app.statsTint)
-                                    singleDayValue(value: row.value, average: row.average)
+                                    singleDayBar(value: row.value, average: row.average,
+                                                 maxValue: mixedUnits ? max(row.value, row.average, 0.0001) : pairMax, tint: row.app.statsTint)
+                                    singleDayValue(value: row.value, average: row.average, app: row.app)
                                         .fixedSize()
                                 }
                                 .frame(maxWidth: .infinity)
@@ -864,8 +1079,12 @@ struct StatsView: View {
                         }
                         .transition(Self.pairTransition)
                     } else {
-                        let value = groupRows.map(\.value).reduce(0, +)
-                        let average = groupRows.map(\.average).reduce(0, +)
+                        // 条形用同单位的行;整组都是次数(单独的 Gemini)时就用它自己。
+                        let sameRows = groupRows.filter { sharesUnit($0.app) }
+                        let countRows = groupRows.filter { !sharesUnit($0.app) }
+                        let barRows = sameRows.isEmpty ? countRows : sameRows
+                        let value = barRows.map(\.value).reduce(0, +)
+                        let average = barRows.map(\.average).reduce(0, +)
                         HStack(spacing: 10) {
                             HStack(spacing: 6) {
                                 HStack(spacing: -4) {
@@ -878,12 +1097,24 @@ struct StatsView: View {
                             }
                             .frame(width: 196, alignment: .leading)
 
-                            // 合并时一整条(两者相加，单色)。
-                            singleDayBar(value: value, average: average, maxValue: maxValue, tint: group[0].statsTint)
+                            // 合并时一整条(两者相加，单色)。单独一行的 Gemini(次数)用自己的比例尺。
+                            singleDayBar(value: value, average: average,
+                                         maxValue: sameRows.isEmpty ? max(value, average, 0.0001) : maxValue,
+                                         tint: group[0].statsTint)
 
-                            singleDayValue(value: value, average: average)
-                                .frame(width: 150, alignment: .trailing)
+                            Group {
+                                if mixedUnits, let count = countRows.first {
+                                    mixedPairValue(value: value, average: average, count: count)
+                                } else {
+                                    singleDayValue(value: value, average: average, app: barRows.first?.app ?? group[0])
+                                }
+                            }
+                            .frame(width: valueWidth, alignment: .trailing)
                         }
+                        .help(mixedUnits
+                              ? tr("The bar is Antigravity only. Gemini Apps is counted in answers (shown on the right).",
+                                   "条形只算 Antigravity;Gemini App 按回答次数，写在右侧。")
+                              : "")
                         .transition(Self.pairTransition)
                     }
                 }
@@ -945,8 +1176,19 @@ struct StatsView: View {
         .frame(height: 18)
     }
 
-    private func singleDayValue(value: Double, average: Double) -> some View {
-        Text("\(formatMetric(value)) / \(tr("avg", "均")) \(formatMetric(average))")
+    /// 合并的 Gemini · Antigravity:「Antigravity 数值 · Gemini 次数 / 均 … · …」。
+    private func mixedPairValue(value: Double, average: Double, count: SingleDayRow) -> some View {
+        Text("\(formatMetric(value)) · \(Self.answersText(count.value)) / \(tr("avg", "均")) \(formatMetric(average)) · \(Self.answersText(count.average))")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .contentTransition(.numericText())
+    }
+
+    private func singleDayValue(value: Double, average: Double, app: UsageApp) -> some View {
+        Text("\(formatValue(value, app: app)) / \(tr("avg", "均")) \(formatValue(average, app: app))")
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .monospacedDigit()
@@ -981,7 +1223,9 @@ struct StatsView: View {
         let pct = Int((total / average * 100).rounded())
         let progress = isToday
             ? tr(" So far today: \(pct)% of it.", " 今天到目前为止为它的 \(pct)%。")
-            : tr(" That day: \(pct)% of it.", " 当天为它的 \(pct)%。")
+            : (range == .yesterday
+                ? tr(" Yesterday: \(pct)% of it.", " 昨日为它的 \(pct)%。")
+                : tr(" That day: \(pct)% of it.", " 当天为它的 \(pct)%。"))
         return legend + progress
     }
 
@@ -1006,6 +1250,8 @@ struct StatsView: View {
     /// `value(from, to)` 返回区间合计。
     private func baselineAverage(apps: [UsageApp], before day: Date, _ value: (Date, Date) -> Double) -> Double {
         let cal = Calendar.current
+        // 顶部选「昨日」只切换展示的用量，下方对比选项仍沿用「今天」的基准。
+        let day = range == .yesterday ? cal.startOfDay(for: Date()) : day
         switch baseline {
         case .yesterday:
             let from = cal.date(byAdding: .day, value: -1, to: day) ?? day
@@ -1016,7 +1262,10 @@ struct StatsView: View {
             return value(from, day) / Double(days)
         case .all:
             let set = Set(apps)
-            guard let first = index.firstDay(for: set, before: day) else { return 0 }
+            let earliest = set == [.gemini]
+                ? appState.geminiAnswerLog.firstDay(before: day)
+                : index.firstDay(for: set, before: day)
+            guard let first = earliest else { return 0 }
             let days = max(1, cal.dateComponents([.day], from: cal.startOfDay(for: first), to: day).day ?? 1)
             return value(first, day) / Double(days)
         }
@@ -1032,27 +1281,50 @@ struct StatsView: View {
         return metricValue(app: app, from: day, to: next)
     }
 
+    /// 某服务在区间内的数值。Gemini App 没有 token / 费用，不管当前口径都按回答次数。
     private func metricValue(app: UsageApp, from: Date, to: Date) -> Double {
-        switch metric {
+        if app == .gemini { return Double(appState.geminiAnswerLog.total(from: from, to: to)) }
+        switch effectiveMetric {
         case .cost:
             return knownCost(for: [app], in: (from, to)).value.doubleValue
         case .tokens:
             return Double(tokenCount(totals(for: [app], in: (from, to))))
+        case .answers:
+            return 0
         }
     }
 
+    /// 和当前口径同单位才能放在一起加、共用比例尺:只看 Gemini 时是 Gemini,否则是 Gemini 以外的服务。
+    private func sharesUnit(_ app: UsageApp) -> Bool {
+        answersOnly || app != .gemini
+    }
+
+    /// 某服务数值的文字：Gemini 写次数，其他按当前口径。
+    private func formatValue(_ value: Double, app: UsageApp) -> String {
+        app == .gemini ? Self.answersText(value) : formatMetric(value)
+    }
+
     private func formatMetric(_ value: Double) -> String {
-        switch metric {
+        switch effectiveMetric {
         case .cost: return StatsFormatter.cost(Decimal(value))
         case .tokens: return StatsFormatter.compactToken(Int(value.rounded()))
+        case .answers: return Self.answersText(value)
         }
     }
 
     private func formatMetricAxis(_ value: Double) -> String {
-        switch metric {
+        switch effectiveMetric {
         case .cost: return "$\(Int(value.rounded()))"
         case .tokens: return StatsFormatter.compactToken(Int(value.rounded()))
+        case .answers: return "\(Int(value.rounded()))"
         }
+    }
+
+    /// 回答次数:日均可能是小数，保留一位(整数不带小数点)。
+    static func answersText(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        let number = rounded == rounded.rounded() ? "\(Int(rounded))" : String(format: "%.1f", rounded)
+        return tr("\(number) answers", "\(number) 次")
     }
 
     // MARK: Current limits panel
@@ -1066,7 +1338,11 @@ struct StatsView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
                 ForEach(Array(apps.enumerated()), id: \.element) { index, app in
                     QuotaTile(app: app, lanes: quotaLanes(for: app), note: quotaNote(for: app),
-                              unavailable: app == .gemini && !GoogleQuotaClient.isGeminiAppConnected)
+                              unavailable: false)
+                        .help(quotaNote(for: app) ?? (app == .gemini
+                            ? tr("Models of the latest replies read from your recent Gemini chats. Gemini Apps doesn't report tokens or cost; answers are counted in stats (filter by Gemini).",
+                                 "最近读到的几条回答用的模型。Gemini App 不提供 token 和费用，统计里按回答次数算(服务筛选选 Gemini)。")
+                            : app.displayName))
                         .padding(.vertical, 8)
                         .overlay(alignment: .top) {
                             if index >= 2 { Divider() }
@@ -1098,14 +1374,9 @@ struct StatsView: View {
 
     private func quotaNote(for app: UsageApp) -> String? {
         switch app {
-        case .codex, .claude: return nil
-        case .grok: return appState.grokPlan
-        case .grokBot:
-            return appState.grokBotQuota?.planType ?? appState.grokBotQuotaError
-        case .gemini:
-            return GoogleQuotaClient.isGeminiAppConnected ? nil
-                : tr("Not connected (Gemini app quota has no readable source)", "未接通(Gemini app 的额度没有可读来源)")
-        case .agy: return tr("From agy", "数据来自 agy")
+        case .codex, .claude, .grok, .agy: return nil
+        case .grokBot: return appState.grokBotQuotaError
+        case .gemini: return appState.geminiAppQuotaError
         }
     }
 
@@ -1119,7 +1390,9 @@ struct StatsView: View {
     private var modelsTable: some View {
         let rows = sortedModelRows
         // 用量(全部 Token,含缓存)最多的模型旁加一个跳动的小火苗;只有一个模型时不加。
-        let hottest = rows.count > 1 ? rows.max { $0.totalTokens < $1.totalTokens }?.id : nil
+        // 只看 Gemini 时按回答次数比。
+        let score: (ModelRow) -> Int = answersOnly ? { $0.answers ?? 0 } : { $0.totalTokens }
+        let hottest = rows.count > 1 ? rows.filter { score($0) > 0 }.max { score($0) < score($1) }?.id : nil
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 modelHeader(tr("Model", "模型"), .model, alignment: .leading)
@@ -1145,6 +1418,18 @@ struct StatsView: View {
                 }
             }
             .opacity(modelsRowsOpacity)
+            if rows.contains(where: { $0.answers != nil }) {
+                Text(tr("Gemini Apps reports answers only (read from your Gemini web chats); no tokens or cost.",
+                        "Gemini App 只有回答次数(从 Gemini 网页会话读取)，没有 token 和费用。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            if rows.contains(where: { $0.app == .grokBot }) {
+                Text(tr("Grok Bot reports total tokens (shown in Input); no input/output/cache breakdown. — means no model cost estimate is available.",
+                        "Grok Bot 仅提供总 token（暂列在输入列），没有输入／输出／缓存拆分；费用 — 表示暂无模型成本估值。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
         }
         .frame(maxWidth: .infinity)
         .ccPanel(cornerRadius: 12)
@@ -1161,21 +1446,56 @@ struct StatsView: View {
         }
     }
 
+    @ViewBuilder
     private func modelRow(_ row: ModelRow, isHottest: Bool) -> some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 7) {
-                ServiceLogo(app: row.app, size: 13)
-                Text(row.model)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if isHottest {
-                    HotFlame()
-                        .padding(.leading, -2)
-                        .help(tr("Most tokens in this range", "这段时间用量最多"))
-                        .transition(.opacity)
-                }
+        if let answers = row.answers {
+            answersModelRow(row, answers: answers, isHottest: isHottest)
+        } else {
+            tokenModelRow(row, isHottest: isHottest)
+        }
+    }
+
+    private func modelNameCell(_ row: ModelRow, isHottest: Bool, detail: String? = nil) -> some View {
+        HStack(spacing: 7) {
+            ServiceLogo(app: row.app, size: 13)
+            Text(row.model)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let detail {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if isHottest {
+                HotFlame()
+                    .padding(.leading, -2)
+                    .help(answersOnly ? tr("Most answers in this range", "这段时间回答最多") : tr("Most tokens in this range", "这段时间用量最多"))
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Gemini App 的行：模型名后写回答次数，token / 费用列都是 —。
+    private func answersModelRow(_ row: ModelRow, answers: Int, isHottest: Bool) -> some View {
+        HStack(spacing: 0) {
+            modelNameCell(row, isHottest: isHottest, detail: tr("\(answers) answers", "\(answers) 次回答"))
+            ForEach(Array(([96, 96, 104, 104, 96] as [CGFloat]).enumerated()), id: \.offset) { _, width in
+                numberCell("—")
+                    .foregroundStyle(.secondary)
+                    .frame(width: width, alignment: .trailing)
+            }
+        }
+        .help(tr("Gemini Apps doesn't report tokens or cost", "Gemini App 不提供 token 和费用"))
+        .font(.system(size: 12))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func tokenModelRow(_ row: ModelRow, isHottest: Bool) -> some View {
+        HStack(spacing: 0) {
+            modelNameCell(row, isHottest: isHottest)
             numberCell(StatsFormatter.tableToken(row.inputTokens)).frame(width: 96, alignment: .trailing)
             numberCell(StatsFormatter.tableToken(row.outputTokens)).frame(width: 96, alignment: .trailing)
             numberCell(StatsFormatter.tableToken(row.cacheReadTokens)).frame(width: 104, alignment: .trailing)
@@ -1193,6 +1513,10 @@ struct StatsView: View {
             numberCell(row.isPriced ? StatsFormatter.cost(row.cost) : "—")
                 .fontWeight(.medium)
                 .frame(width: 96, alignment: .trailing)
+                .help(row.app == .grokBot
+                    ? tr("Grok Bot billing reports total tokens only. No model cost estimate is available for rows without a positive reported amount.",
+                         "Grok Bot 账单只给总 token；未返回正数金额的行暂无模型成本估值，不代表免费调用。")
+                    : tr("Estimated cost", "估算费用"))
         }
         .font(.system(size: 12))
         .padding(.horizontal, 14)
@@ -1231,6 +1555,8 @@ struct StatsView: View {
 
     private var sortedModelRows: [ModelRow] {
         func less(_ a: ModelRow, _ b: ModelRow) -> Bool {
+            // 只看 Gemini 时 token 列全是 —，除按名称外都按回答次数排。
+            if answersOnly && modelSortKey != .model { return (a.answers ?? 0) < (b.answers ?? 0) }
             switch modelSortKey {
             case .model: return a.model.localizedStandardCompare(b.model) == .orderedAscending
             case .input: return a.inputTokens < b.inputTokens
@@ -1240,7 +1566,11 @@ struct StatsView: View {
             case .cost: return a.costSortValue < b.costSortValue
             }
         }
-        return modelRows.sorted { modelSortAscending ? less($0, $1) : less($1, $0) }
+        return modelRows.sorted { a, b in
+            // 排序列相同(比如 Gemini 各行的 token / 费用都是 —)时，回答次数多的在前。
+            if less(a, b) == less(b, a) { return (a.answers ?? 0) > (b.answers ?? 0) }
+            return modelSortAscending ? less(a, b) : less(b, a)
+        }
     }
 
     private func numberCell(_ text: String) -> some View {
@@ -1256,7 +1586,16 @@ struct StatsView: View {
             entry.totals.add(b)
             byKey[key] = entry
         }
-        return byKey.map { key, entry in
+        var geminiRows: [ModelRow] = []
+        if visibleApps.contains(.gemini) {
+            let (from, to) = rangeBounds
+            for (model, count) in appState.geminiAnswerLog.byModel(from: from, to: to) where count > 0 {
+                geminiRows.append(ModelRow(id: "gemini-answers|\(model)", app: .gemini, model: model,
+                                           inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
+                                           cost: 0, isPriced: false, answers: count))
+            }
+        }
+        return geminiRows + byKey.map { key, entry in
             ModelRow(
                 id: key,
                 app: entry.app,
@@ -1266,7 +1605,7 @@ struct StatsView: View {
                 cacheReadTokens: entry.totals.cacheReadTokens,
                 cacheCreationTokens: entry.totals.cacheCreationTokens,
                 cost: entry.totals.costUSD,
-                isPriced: entry.app == .grok || entry.totals.costUSD > 0 || Pricing.hasPrice(model: entry.model)
+                isPriced: Pricing.hasDisplayableCost(app: entry.app, model: entry.model, cost: entry.totals.costUSD)
             )
         }
     }
@@ -1369,17 +1708,21 @@ struct StatsView: View {
             }
             // Grok Bot 只有周额度。
             add(base: QuotaHistoryAccountKey.grokBotPrimary(),
-                provider: "Grok Bot", plan: appState.grokBotQuota?.planType, email: nil, index: nil,
+                provider: "Grok Bot", plan: appState.grokBotQuota?.planType, email: appState.grokBotEmail, index: nil,
                 tint: .grokAccent, snapshot: appState.grokBotQuota,
                 accountExists: SettingsStore.shared.showGrokBot)
         }
+
+        add(base: QuotaHistoryAccountKey.geminiApp(email: appState.geminiAppEmail),
+            provider: "Gemini", plan: appState.geminiAppQuota?.planType, email: appState.geminiAppEmail, index: nil,
+            tint: .googleAccent, snapshot: appState.geminiAppQuota, accountExists: SettingsStore.shared.showGemini)
 
         // Antigravity:agy 的 Gemini 池和 Claude·GPT 池各一条。
         let agyShown = SettingsStore.shared.showAgy
         for (pool, label, snapshot) in [("gemini", "Antigravity · Gemini", appState.geminiQuota),
                                         ("3p", "Antigravity · Claude·GPT", appState.agyQuota)] {
             add(base: QuotaHistoryAccountKey.agyPrimary(pool: pool),
-                provider: label, plan: nil, email: appState.googleEmail, index: nil,
+                provider: label, plan: appState.googlePlan, email: appState.googleEmail, index: nil,
                 tint: .googleAccent, snapshot: agyShown ? snapshot : nil, accountExists: agyShown && snapshot != nil)
         }
         for (idx, account) in appState.extraAccounts(for: .google).enumerated() {
@@ -1535,19 +1878,26 @@ struct StatsView: View {
     private var dailySamples: [DailySample] {
         let cal = Calendar.current
         var byDay: [Date: [UsageApp: Double]] = [:]
+        let (rangeFrom, rangeTo) = rangeBounds
+        if effectiveMetric == .answers {
+            for (day, count) in appState.geminiAnswerLog.daily where day >= rangeFrom && day < rangeTo {
+                byDay[day, default: [:]][.gemini, default: 0] += Double(count)
+            }
+        }
         for b in filteredBuckets {
             let value: Double
-            switch metric {
+            switch effectiveMetric {
             case .cost:
-                guard b.app == .grok || b.costUSD > 0 || Pricing.hasPrice(model: b.model) else { continue }
+                guard Pricing.hasDisplayableCost(app: b.app, model: b.model, cost: b.costUSD) else { continue }
                 value = b.costUSD.doubleValue
             case .tokens:
                 value = Double(b.inputTokens + b.outputTokens + b.cacheCreationTokens + (mergeTokens ? b.cacheReadTokens : 0))
+            case .answers:
+                continue
             }
             byDay[b.day, default: [:]][b.app, default: 0] += value
         }
 
-        let (rangeFrom, rangeTo) = rangeBounds
         let today = cal.startOfDay(for: Date())
         let firstDataDay = byDay.keys.min() ?? today
         var day = rangeFrom == .distantPast ? firstDataDay : cal.startOfDay(for: rangeFrom)
@@ -1606,7 +1956,7 @@ final class StatsDataIndex {
         for b in buckets {
             var day = grouped[b.app]?[b.day] ?? DayTotals()
             day.totals.add(b)
-            if b.app == .grok || b.costUSD > 0 || Pricing.hasPrice(model: b.model) {
+            if Pricing.hasDisplayableCost(app: b.app, model: b.model, cost: b.costUSD) {
                 day.knownCost += b.costUSD
                 day.hasKnown = true
             } else {
@@ -1707,6 +2057,8 @@ private struct TokenActivityPanel: View {
     let daily: [Date: Int]
     /// 上方服务筛选：全部用火苗同色系的暖色，单个服务用它的识别色。
     let filter: StatsServiceFilter
+    /// 只看 Gemini 时 daily 是回答次数(不是 token),标题和数字单位跟着换。
+    var answers = false
 
     private enum Mode: String, Hashable {
         case daily
@@ -1733,7 +2085,7 @@ private struct TokenActivityPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             summaryRow
             HStack {
-                Text(tr("Token activity", "Token 活动"))
+                Text(answers ? tr("Answer activity", "回答活动") : tr("Token activity", "Token 活动"))
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 HStack(spacing: 14) {
@@ -1771,9 +2123,9 @@ private struct TokenActivityPanel: View {
     private var summaryRow: some View {
         let streaks = streaks
         return HStack(spacing: 0) {
-            summaryCell(StatsFormatter.compactToken(daily.values.reduce(0, +)), tr("Total tokens", "累计 Token 数"))
+            summaryCell(amount(daily.values.reduce(0, +)), answers ? tr("Total answers", "累计回答次数") : tr("Total tokens", "累计 Token 数"))
             Divider().frame(height: 34)
-            summaryCell(StatsFormatter.compactToken(daily.values.max() ?? 0), tr("Peak day", "Token 使用峰值"))
+            summaryCell(amount(daily.values.max() ?? 0), answers ? tr("Peak day", "单日最多回答") : tr("Peak day", "Token 使用峰值"))
             Divider().frame(height: 34)
             summaryCell(tr("\(streaks.longest) days", "\(streaks.longest) 天"), tr("Longest streak", "最长连续天数"))
             Divider().frame(height: 34)
@@ -1914,21 +2266,38 @@ private struct TokenActivityPanel: View {
     }
 
     private func monthLabels(starts: [Date], pitch: CGFloat) -> some View {
-        let cal = Self.calendar
+        let columns = Self.monthLabelColumns(starts: starts, calendar: Self.calendar)
         return ZStack(alignment: .topLeading) {
-            ForEach(Array(starts.enumerated()), id: \.offset) { index, start in
-                let month = cal.component(.month, from: start)
-                let previous = index > 0 ? cal.component(.month, from: starts[index - 1]) : -1
-                if month != previous && index < starts.count - 2 {
-                    Text(tr(start.formatted(.dateTime.month(.abbreviated)), "\(month)月"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                        .offset(x: CGFloat(index) * pitch)
-                }
+            ForEach(columns, id: \.self) { index in
+                let start = starts[index]
+                Text(tr(start.formatted(.dateTime.month(.abbreviated)), "\(Self.calendar.component(.month, from: start))月"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .offset(x: CGFloat(index) * pitch)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 标月份的列：每月 1 号所在的那一周(列的周一已进入新月份，或第一列的那一周包含 1 号)。
+    /// 53 周比一年多一点，最左边常是去年同月只剩几天的残段——它不标，免得挤在下个月旁边;
+    /// 若最左边标出的月份和最右边的相同(去年同月几乎完整时)，也只留右边今年的。最后两列放不下文字，不标。
+    static func monthLabelColumns(starts: [Date], calendar cal: Calendar) -> [Int] {
+        var columns: [Int] = []
+        for (index, start) in starts.enumerated() where index < starts.count - 2 {
+            let month = cal.component(.month, from: start)
+            if index == 0 {
+                if cal.component(.day, from: start) <= 7 { columns.append(index) }
+            } else if month != cal.component(.month, from: starts[index - 1]) {
+                columns.append(index)
+            }
+        }
+        if columns.count > 1, let first = columns.first, let last = columns.last,
+           cal.component(.month, from: starts[first]) == cal.component(.month, from: starts[last]) {
+            columns.removeFirst()
+        }
+        return columns
     }
 
     // MARK: Colors
@@ -2005,7 +2374,13 @@ private struct TokenActivityPanel: View {
                   "\(cal.component(.year, from: date))年\(cal.component(.month, from: date))月\(cal.component(.day, from: date))日")
     }
 
+    /// 汇总里的数字：token 用紧凑写法，回答次数直接写次数。
+    private func amount(_ value: Int) -> String {
+        answers ? tr("\(value)", "\(value) 次") : StatsFormatter.compactToken(value)
+    }
+
     private func tokens(_ value: Int) -> String {
+        if answers { return tr("\(value) answers", "\(value) 次回答") }
         let compact = StatsFormatter.compactToken(value).replacingOccurrences(of: " ", with: "")
         return tr("\(compact) tokens", "\(compact) 个 Token")
     }
@@ -2162,7 +2537,8 @@ private struct QuotaTile: View {
 // MARK: - Limit bar row
 
 /// 条用服务识别色;剩余 ≤50% 时百分比文字转为状态色(黄 / 橙 / 红),保留预警。
-private struct LimitBarRow: View {
+/// 一行额度：标签 / 进度条 / 剩余百分比 / 重置倒计时。统计页「当前额度」和菜单栏浮窗共用。
+struct LimitBarRow: View {
     let label: String
     let window: QuotaWindow?
     let tint: Color
@@ -2569,6 +2945,23 @@ private struct QuotaTimelineTable: View {
 
 // MARK: - Daily / Model row models
 
+/// 标题旁日均图例里的一小段水平虚线(和图里的日均线同样式)。
+private struct DashedLegendLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return path
+    }
+}
+
+/// 每日用量图下方 Gemini 窄道的一天。
+private struct GeminiLaneDay: Identifiable {
+    var id: Date { day }
+    let day: Date
+    let count: Int
+}
+
 private struct DailySample: Identifiable {
     var id: Date { day }
     let day: Date
@@ -2596,6 +2989,8 @@ private struct ModelRow: Identifiable {
     let cacheCreationTokens: Int
     let cost: Decimal
     let isPriced: Bool
+    /// Gemini App 的行：回答次数(没有 token / 费用)。其他服务为 nil。
+    var answers: Int? = nil
 
     /// 排序用:未知定价排在最后。
     var costSortValue: Double { isPriced ? NSDecimalNumber(decimal: cost).doubleValue : -1 }

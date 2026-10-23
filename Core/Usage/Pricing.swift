@@ -48,6 +48,13 @@ nonisolated final class CustomModelPrices: @unchecked Sendable {
 }
 
 enum Pricing {
+    /// Grok Bot 只返回合计 token，不能按 API 单价推导模型费用。
+    /// 旧汇总把接口未返回的金额存为 0；这类行应显示未知，不能因模型恰有公开价格而显示 $0。
+    nonisolated static func hasDisplayableCost(app: UsageApp, model: String, cost: Decimal) -> Bool {
+        if app == .grokBot { return cost > 0 }
+        return app == .grok || cost > 0 || hasPrice(model: model)
+    }
+
     /// 价格表与 cc-switch `seed_model_pricing` / CodexBar `CostUsagePricing` 对齐（2026 上半年价位）。
     /// 命中不到时返回 nil。键为归一化后的模型名（剥 `openai/` 前缀和末尾 `-YYYYMMDD` / `-YYYY-MM-DD` 日期段）。
     nonisolated static let table: [String: ModelPrice] = [

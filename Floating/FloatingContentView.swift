@@ -31,7 +31,9 @@ struct FloatingContentView: View {
                 case .codex: email = appState.codexAccount?.email
                 case .claude: email = appState.claudeAccount?.email
                 case .grok: email = appState.grokAccount?.email
-                case .grokBot, .gemini, .agy: email = nil
+                case .grokBot: email = appState.grokBotEmail
+                case .gemini: email = appState.geminiAppEmail
+                case .agy: email = appState.googleEmail
                 }
                 rows.append(Row(id: "local:\(app.rawValue)", app: app,
                                 name: email.map { $0.components(separatedBy: "@").first ?? $0 } ?? app.displayName,

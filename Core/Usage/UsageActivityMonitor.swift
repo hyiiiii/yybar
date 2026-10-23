@@ -57,8 +57,12 @@ final class UsageActivityMonitor {
     @ObservationIgnored private var pendingTool: [UsageApp: Bool] = [:]
     /// hook 状态：服务 → 会话 id → 状态。有条目的服务以 hook 为准。
     @ObservationIgnored private var hookSessions: [UsageApp: [String: HookSession]] = [:]
-    /// 日志里看到的中断(Ctrl-C / 拒绝审批时 Claude、Codex 不触发 Stop hook):"服务.会话" → 时间。
+    /// 日志里看到会话已经停下，但 hook 没写成 idle：
+    /// Claude / Codex 的 Ctrl-C，以及 Codex 写出 `task_complete` 却没跑 Stop。
+    /// "服务.会话" → 时间。
     @ObservationIgnored private var interruptedAt: [String: Date] = [:]
+    /// Codex 会话 id → 会话日志路径。找一次要遍历整个 ~/.codex/sessions,找到就记住。
+    @ObservationIgnored private var codexRolloutPaths: [String: String] = [:]
     @ObservationIgnored private var roots: [(app: UsageApp, path: String)] = []
     @ObservationIgnored private var stream: FSEventStreamRef?
     @ObservationIgnored private var hookStream: FSEventStreamRef?
@@ -136,8 +140,9 @@ final class UsageActivityMonitor {
             guard path.hasSuffix(".jsonl") else { continue }
             lastWrite[root.app] = now
             if hookSessions[root.app] != nil {
-                // 以 hook 为准;日志只用来发现 hook 报不出来的中断。
-                if Self.endsWithInterrupt(path: path, app: root.app) {
+                // 以 hook 为准;日志只用来发现 hook 报不出来的结束(中断，或 Codex 的 task_complete)。
+                if Self.endsWithInterrupt(path: path, app: root.app)
+                    || Self.endsWithTurnComplete(path: path, app: root.app) {
                     for sid in (hookSessions[root.app] ?? [:]).keys where path.contains(sid) {
                         interruptedAt["\(root.app.rawValue).\(sid)"] = now
                     }
@@ -175,7 +180,22 @@ final class UsageActivityMonitor {
         }
         hookSessions = sessions
         interruptedAt = interruptedAt.filter { now.timeIntervalSince($0.value) < Self.hookFileLifetime }
+        noteFinishedCodexTurns(now: now)
         recompute(now: now)
+    }
+
+    /// Codex 桌面端经常把回合写到 `task_complete`，但不触发 Stop hook，状态文件会一直停在 busy。
+    /// 启动和每次重读 hook 目录时补看一次对应会话日志，不必干等 15 分钟。
+    private func noteFinishedCodexTurns(now: Date) {
+        for (sid, session) in hookSessions[.codex] ?? [:] where session.state == .busy {
+            let key = "\(UsageApp.codex.rawValue).\(sid)"
+            if let seen = interruptedAt[key], seen >= session.at { continue }
+            let path = codexRolloutPaths[sid] ?? Self.codexRolloutPath(sessionId: sid)
+            if let path { codexRolloutPaths[sid] = path }
+            guard let path,
+                  Self.endsWithTurnComplete(path: path, app: .codex) else { continue }
+            interruptedAt[key] = max(now, session.at)
+        }
     }
 
     /// 额度刷新发现该服务的剩余减少了：呼吸到 `until`(通常到下一次刷新之后)。
@@ -258,6 +278,33 @@ final class UsageActivityMonitor {
             }
         }
         return false
+    }
+
+    /// Codex 回合正常结束。桌面端经常不跑 Stop hook，只在会话日志末尾写 `task_complete`。
+    nonisolated static func endsWithTurnComplete(path: String, app: UsageApp) -> Bool {
+        guard app == .codex, let text = tail(path: path) else { return false }
+        for line in text.split(separator: "\n").reversed() {
+            guard let lineData = line.data(using: .utf8),
+                  let record = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
+            let type = record["type"] as? String
+            let payloadType = (record["payload"] as? [String: Any])?["type"] as? String
+            if type == "event_msg", payloadType == "task_complete" { return true }
+            if type == "event_msg", payloadType == "task_started" || payloadType == "turn_aborted" { return false }
+            if type == "response_item" { return false }
+        }
+        return false
+    }
+
+    /// `~/.codex/sessions/**/rollout-*-<sessionId>.jsonl`。会话 id 只允许 UUID 字符。
+    nonisolated static func codexRolloutPath(sessionId: String) -> String? {
+        guard !sessionId.isEmpty, sessionId.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { return nil }
+        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return nil }
+        for case let url as URL in enumerator {
+            let name = url.lastPathComponent
+            if name.hasSuffix("-\(sessionId).jsonl") { return url.path }
+        }
+        return nil
     }
 
     nonisolated private static func tail(path: String) -> String? {

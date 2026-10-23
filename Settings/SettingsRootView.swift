@@ -38,8 +38,8 @@ struct SettingsRootView: View {
                 PrefsGroup(
                     title: "Model prices",
                     chinese: "模型价格",
-                    desc: appState.isRepricing ? "Recalculating costs with the new prices…" : "USD per million tokens. Models come from Models in Statistics; Grok costs come from its own logs. Press Return or leave a field to save; past costs are recalculated.",
-                    chineseDesc: appState.isRepricing ? "正在按新价格重算历史费用…" : "美元 / 百万 Token。模型取自统计 · 模型明细(Grok 的费用直接取自其日志，不在此列)。回车或离开输入框即保存，历史费用会按新价格重算"
+                    desc: appState.isRepricing ? "Recalculating costs with the new prices…" : "USD per million tokens, for the Codex, Claude Code and Antigravity models in Statistics › Models. Grok and Grok Bot costs come from their own logs and bills, and Gemini Apps only reports answers, so they aren't listed. Press Return or leave a field to save; past costs are recalculated.",
+                    chineseDesc: appState.isRepricing ? "正在按新价格重算历史费用…" : "美元 / 百万 Token。列出统计 · 模型明细里出现过的 Codex、Claude Code、Antigravity 模型;Grok 和 Grok Bot 的费用直接取自它们的日志和账单，Gemini App 只有回答次数，都不在此列。回车或离开输入框即保存，历史费用会按新价格重算"
                 ) {
                     ModelPriceRows()
                 }
@@ -257,19 +257,18 @@ struct SettingsRootView: View {
         switch app {
         case .grokBot:
             detected = GrokBotQuotaClient.isInstalled
-            // Grok Bot 的 token 里没有邮箱，只显示额度接口返回的套餐。
-            email = nil
+            email = appState.grokBotEmail
             plan = appState.grokBotQuota?.planType
             enabled = Binding(get: { settings.showGrokBot }, set: { settings.showGrokBot = $0 })
             menuBar = Binding(get: { settings.menuBarShowGrokBot }, set: { settings.menuBarShowGrokBot = $0 })
             floating = floatingBinding(get: { settings.floatingShowGrokBot }, set: { settings.floatingShowGrokBot = $0 })
         case .gemini:
             detected = GoogleQuotaClient.isGeminiInstalled
-            email = appState.googleEmail
-            plan = appState.googlePlan
+            email = appState.geminiAppEmail
+            plan = appState.geminiAppQuota?.planType
             enabled = Binding(get: { settings.showGemini }, set: {
                 settings.showGemini = $0
-                if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
+                if $0 { Task { await appState.loadGeminiAppQuota(reason: .userInitiated) } }
             })
             menuBar = Binding(get: { settings.menuBarShowGemini }, set: { settings.menuBarShowGemini = $0 })
             floating = floatingBinding(get: { settings.floatingShowGemini }, set: { settings.floatingShowGemini = $0 })
@@ -634,8 +633,8 @@ struct SettingsRootView: View {
     }
 
     private var footer: some View {
-        Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code and Grok",
-                "yybar \(appVersion) · Codex、Claude Code 和 Grok 的额度与本地用量"))
+        Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code, Grok, Grok Bot, Gemini and Antigravity",
+                "yybar \(appVersion) · Codex、Claude Code、Grok、Grok Bot、Gemini 和 Antigravity 的额度与用量"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)

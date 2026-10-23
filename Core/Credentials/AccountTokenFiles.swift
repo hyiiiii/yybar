@@ -5,6 +5,7 @@ import Security
 //
 // 「其他账号」的 token(导入的 Codex 账号、额外的 Claude 账号)存成只有本用户可读的文件：
 // Application Support/yybar/account-tokens/(目录 0700)下每个账号一个 JSON(文件 0600),原子替换写入。
+// Grok Bot 登录的解密密钥(从钥匙串「Grok Bot Safe Storage」派生)也缓存在这里，见 GrokBotAuth.loadKey。
 // 保护级别与 Codex CLI 自己的 ~/.codex/auth.json、yybar 的 Grok 账号(grok-homes/)相同。
 //
 // 为什么不用钥匙串：本机自签名的 App 没有 Apple 团队 ID,钥匙串条目的访问分区(partition list)只能按
@@ -17,10 +18,16 @@ enum AccountTokenFiles {
     enum Kind: String {
         case codex
         case claude
+        case grokBot = "grokbot"
+        /// yybar 网站的上传令牌和头像信息(见 YYBarWebAccount)
+        case yybarWeb = "yybarweb"
     }
 
+    /// 与 ExtraAccountStore.supportDirectory() 同一目录;这里自己拼，免得独立回归测试也要编进账号存储。
     nonisolated static func directory() -> URL {
-        ExtraAccountStore.supportDirectory().appendingPathComponent("account-tokens", isDirectory: true)
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return support.appendingPathComponent("yybar/account-tokens", isDirectory: true)
     }
 
     /// 文件名：`<kind>-<账号 id 百分号编码>.json`(Claude 的 id 含邮箱，编码后只剩字母数字和 -._%)。

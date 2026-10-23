@@ -20,6 +20,17 @@
     <string>6.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.yybar.app</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>yybar</string>
+            </array>
+        </dict>
+    </array>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>

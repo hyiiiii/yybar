@@ -22,6 +22,10 @@ struct QuotaCachePayload: Sendable, Equatable, Codable {
     var agy: QuotaCacheRecord?
     /// Grok Bot 每周额度。字段缺失时为 nil,旧缓存兼容。
     var grokBot: QuotaCacheRecord?
+    /// Gemini Apps 网页额度，绝不能用旧 gemini 字段(agy 池)填充。
+    var geminiApp: QuotaCacheRecord?
+    var geminiAppEmail: String?
+    var geminiRecentModels: GeminiRecentModels?
 }
 
 enum QuotaCache {

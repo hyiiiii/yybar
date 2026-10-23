@@ -115,6 +115,12 @@ enum ActivityHooksRegression {
         let untouched = try String(contentsOf: home.appendingPathComponent(".claude/settings.json"), encoding: .utf8)
         precondition(untouched == "{ not json")
 
+        let log = root.appendingPathComponent("turn.jsonl")
+        try Data("{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}}\n".utf8).write(to: log)
+        precondition(UsageActivityMonitor.endsWithTurnComplete(path: log.path, app: .codex))
+        try Data("{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n".utf8).write(to: log)
+        precondition(!UsageActivityMonitor.endsWithTurnComplete(path: log.path, app: .codex))
+
         print("ActivityHooksRegression OK")
     }
 }

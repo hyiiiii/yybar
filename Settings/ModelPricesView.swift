@@ -3,7 +3,8 @@ import SwiftUI
 // MARK: - ModelPriceRows
 //
 // 设置 · 通用 ·「模型价格」卡片内容。模型列表取自本地用量(即统计 · 模型明细里出现过的模型),
-// 按归一化模型名合并;Grok 的费用直接取自 Grok CLI 日志，不在此列。
+// 按归一化模型名合并。只列按价格表计费的服务(Codex、Claude Code、Antigravity):
+// Grok 的费用取自 Grok CLI 日志、Grok Bot 的取自 Cursor 账单，改价格不影响它们;Gemini App 只有回答次数。
 // 每格是美元 / 百万 Token,预填当前生效价格(自定义 > 内置);改完按回车或离开输入框即保存，
 // 和内置价格相同则视为恢复默认。保存后由 AppState.setCustomPrice 防抖重算全部历史费用。
 
@@ -20,10 +21,10 @@ struct ModelPriceRows: View {
         let builtIn: ModelPrice?
     }
 
-    /// Codex 在前、Claude 在后，各自按名称排序。
+    /// 服务按 UsageApp 顺序(Codex → Claude → Antigravity),同一服务按名称排序。
     private var models: [Model] {
         var byKey: [String: Model] = [:]
-        for bucket in appState.usageService.aggregator.snapshot() where bucket.app != .grok {
+        for bucket in appState.usageService.aggregator.snapshot() where Self.priced(bucket.app) {
             let raw = bucket.model
             guard !raw.isEmpty, !raw.hasPrefix("<"), raw != "unknown" else { continue }
             let key = Pricing.normalize(model: raw)
@@ -31,9 +32,18 @@ struct ModelPriceRows: View {
                 byKey[key] = Model(id: key, app: bucket.app, name: raw, builtIn: Pricing.table[key])
             }
         }
+        let order = Dictionary(uniqueKeysWithValues: UsageApp.allCases.enumerated().map { ($1, $0) })
         return byKey.values.sorted {
-            if $0.app != $1.app { return $0.app == .codex }
+            if $0.app != $1.app { return order[$0.app, default: 0] < order[$1.app, default: 0] }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    /// 费用按价格表算的服务。Grok / Grok Bot 的费用来自日志 / 账单，Gemini App 没有 token。
+    static func priced(_ app: UsageApp) -> Bool {
+        switch app {
+        case .codex, .claude, .agy: return true
+        case .grok, .grokBot, .gemini: return false
         }
     }
 
@@ -97,8 +107,7 @@ private struct ModelPriceRow: View {
     var body: some View {
         HStack(spacing: ModelPriceColumn.spacing) {
             HStack(spacing: 7) {
-                ServiceLogoImage(logoName: model.app.rawValue,
-                                 tint: model.app == .codex ? .codexAccent : .claudeAccent, size: 13)
+                ServiceLogoImage(logoName: model.app.rawValue, tint: model.app.accent, size: 13)
                 Text(model.name)
                     .font(.system(size: 12))
                     .lineLimit(1)

@@ -93,6 +93,8 @@ struct QuotaPool: Sendable, Equatable, Codable {
 
 enum QuotaError: Error, CustomStringConvertible {
     case missingToken
+    /// Google 网页验证 / 异常流量拦截，与登录凭据是否有效无关。
+    case webVerificationRequired
     case http(Int, String)
     case transport(String)
     case decode(String)
@@ -105,6 +107,7 @@ enum QuotaError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .missingToken: return "missing access token"
+        case .webVerificationRequired: return "Google 要求网页验证，请在 Chrome 打开 Gemini 检查后重试"
         case .http(let code, let msg): return "http \(code): \(msg)"
         case .transport(let msg): return "transport: \(msg)"
         case .decode(let msg): return "decode: \(msg)"
@@ -121,6 +124,11 @@ enum QuotaError: Error, CustomStringConvertible {
 
     var isRateLimited: Bool {
         httpStatusCode == 429
+    }
+
+    var requiresBrowserVerification: Bool {
+        if case .webVerificationRequired = self { return true }
+        return false
     }
 
     var isAuthFailure: Bool {

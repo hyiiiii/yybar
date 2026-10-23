@@ -11,6 +11,7 @@ enum QuotaHistoryAccountKind: String, Sendable, Codable {
     case grokBotPrimary
     case agyPrimary
     case agyExtra
+    case geminiApp
 }
 
 /// 记录哪个额度窗口。周窗口的记录用 `QuotaHistoryAccountKey.weekly(_:)` 派生的 key 存，
@@ -83,6 +84,10 @@ enum QuotaHistoryAccountKey {
 
     nonisolated static func grokBotPrimary() -> String {
         "grokbot:primary"
+    }
+
+    nonisolated static func geminiApp(email: String?) -> String {
+        "gemini:app:\(email ?? "local")"
     }
 
     /// 本机 agy 的两个池子:pool 为 "gemini" 或 "3p"(Claude·GPT)。
