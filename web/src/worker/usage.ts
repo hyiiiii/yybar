@@ -1,6 +1,8 @@
 import { addDays, isoDay, parseCostMicro } from "./util";
+import { serverCostMicro, type ModelPrice } from "../shared/pricing";
 
-export const APPS = ["codex", "claude", "grok"] as const;
+/** 和 yybar App 的 UsageApp 一致。Gemini 没有 token 和花费，只有回答次数（answers）。 */
+export const APPS = ["codex", "claude", "grok", "grokBot", "gemini", "agy"] as const;
 export type UsageApp = (typeof APPS)[number];
 
 export const LIMITS = {
@@ -8,7 +10,7 @@ export const LIMITS = {
   entriesPerDay: 300,
   modelLength: 120,
   maxTokens: 1e12,
-  /** 单日总花费上限（美元）。超过视为异常数据，整个请求拒收。 */
+  /** 单日总花费上限（美元，App 报的和服务端算的都看）。超过视为异常数据，整个请求拒收。 */
   maxDailyCostUSD: 5000,
   earliestDay: "2023-01-01",
 };
@@ -21,7 +23,10 @@ export interface UsageRow {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  costMicro: number;
+  /** App 报上来的花费（微美元）。只作对照和 Grok 封顶用，真正算筹码的花费由服务端按价格表算（saveUpload） */
+  clientCostMicro: number;
+  /** 回答次数（Gemini 用；别的服务是 0） */
+  answers: number;
 }
 
 export interface ParsedUpload {
@@ -87,7 +92,8 @@ export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUp
         outputTokens: tokenCount(r.outputTokens, "outputTokens", day),
         cacheReadTokens: tokenCount(r.cacheReadTokens, "cacheReadTokens", day),
         cacheCreationTokens: tokenCount(r.cacheCreationTokens, "cacheCreationTokens", day),
-        costMicro,
+        clientCostMicro: costMicro,
+        answers: r.answers === undefined ? 0 : tokenCount(r.answers, "answers", day),
       };
       dayCost += costMicro;
       // 同一 (app, model) 出现多次时合并
@@ -98,7 +104,8 @@ export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUp
         prev.outputTokens += row.outputTokens;
         prev.cacheReadTokens += row.cacheReadTokens;
         prev.cacheCreationTokens += row.cacheCreationTokens;
-        prev.costMicro += row.costMicro;
+        prev.clientCostMicro += row.clientCostMicro;
+        prev.answers += row.answers;
       } else {
         byKey.set(key, row);
       }
@@ -111,41 +118,80 @@ export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUp
   return { days: [...seen], rows };
 }
 
-/** 这个用户已经上传过的日期（升序）。 */
-export async function uploadedDays(db: D1Database, userId: number, from = "0000-00-00", to = "9999-99-99"): Promise<string[]> {
+/** 「我的」页的上传记录：最近收到的 limit 天，每天最后一次什么时候传上来的、多少 token、多少花费。
+ * 上传标记按（日期, 服务）记，用量也按服务对上，不然一天传了几个服务 token 会被算几遍 */
+export async function uploadHistory(db: D1Database, userId: number, limit = 10) {
   const { results } = await db
-    .prepare("SELECT day FROM usage_uploads WHERE user_id = ? AND day BETWEEN ? AND ? ORDER BY day")
+    .prepare(
+      `SELECT u.day, MAX(u.uploaded_at) AS uploaded_at,
+         COALESCE(SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens), 0) AS tokens,
+         COALESCE(SUM(d.cost_micro), 0) AS cost_micro
+       FROM usage_uploads u LEFT JOIN daily_usage d ON d.user_id = u.user_id AND d.day = u.day AND d.app = u.app
+       WHERE u.user_id = ? GROUP BY u.day ORDER BY u.day DESC LIMIT ?`,
+    )
+    .bind(userId, limit)
+    .all<{ day: string; uploaded_at: string; tokens: number; cost_micro: number }>();
+  return results;
+}
+
+/** 这个用户已经上传过的（日期, 服务），按日期升序。 */
+export async function uploadedPairs(db: D1Database, userId: number, from = "0000-00-00", to = "9999-99-99"): Promise<{ day: string; app: string }[]> {
+  const { results } = await db
+    .prepare("SELECT day, app FROM usage_uploads WHERE user_id = ? AND day BETWEEN ? AND ? ORDER BY day, app")
     .bind(userId, from, to)
-    .all<{ day: string }>();
-  return results.map((r) => r.day);
+    .all<{ day: string; app: string }>();
+  return results;
 }
 
 /**
- * 每一天只收第一次：已经上传过的日期（usage_uploads 里有记录）整天跳过，不改也不加，
- * 所以同一天传几次、从几台 Mac 传，筹码都只算一次。返回这次收下的和跳过的日期。
- * 写用量和打标记在同一个事务里：用量只在「这一天还没标记」时写入，写完再标记，并发的两次上传只有先到的那次生效。
+ * 每一天的每个服务只收第一次：已经上传过的（日期, 服务）（usage_uploads 里有记录）整个跳过，不改也不加，
+ * 所以同一天传几次、从几台 Mac 传，筹码都只算一次；以后 App 新支持了某个服务，以前的日子还能把这个服务补上。
+ * 写用量和打标记在同一个事务里：用量只在「这一天这个服务还没标记」时写入，写完再标记，并发的两次上传只有先到的那次生效。
+ * 返回这次有新内容收下的日期，和整天都传过、全部跳过的日期。
  */
 export async function saveUpload(db: D1Database, userId: number, upload: ParsedUpload): Promise<{ accepted: string[]; skipped: string[] }> {
   if (upload.days.length === 0) return { accepted: [], skipped: [] };
+  // 花费按服务端的价格表现算（App 里可以自己改价），App 报的另存一列
+  const prices = await loadPrices(db);
+  const cost = new Map(upload.rows.map((r) => [r, serverCostMicro(r, prices)]));
+  for (const day of upload.days) {
+    const total = upload.rows.reduce((s, r) => s + (r.day === day ? cost.get(r)! : 0), 0);
+    if (total > LIMITS.maxDailyCostUSD * 1_000_000) throw new UploadError(`${day}: 单日花费超过 $${LIMITS.maxDailyCostUSD}，疑似异常数据`);
+  }
   const sorted = [...upload.days].sort();
-  const done = new Set(await uploadedDays(db, userId, sorted[0], sorted[sorted.length - 1]));
+  const done = new Set((await uploadedPairs(db, userId, sorted[0], sorted[sorted.length - 1])).map((p) => `${p.day}|${p.app}`));
   const insert = db.prepare(
     `INSERT OR IGNORE INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens,
-       cache_read_tokens, cache_creation_tokens, cost_micro)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
-     WHERE NOT EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2)`,
+       cache_read_tokens, cache_creation_tokens, cost_micro, answers, client_cost_micro)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+     WHERE NOT EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2 AND app = ?3)`,
   );
-  const mark = db.prepare("INSERT OR IGNORE INTO usage_uploads (user_id, day) VALUES (?, ?)");
+  const mark = db.prepare("INSERT OR IGNORE INTO usage_uploads (user_id, day, app) VALUES (?, ?, ?)");
   const stmts: D1PreparedStatement[] = [];
+  const accepted: string[] = [];
+  const skipped: string[] = [];
   for (const day of upload.days) {
-    if (done.has(day)) continue;
-    for (const r of upload.rows) {
-      if (r.day !== day) continue;
-      stmts.push(insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, r.costMicro));
+    const apps = [...new Set(upload.rows.filter((r) => r.day === day).map((r) => r.app))];
+    const fresh = apps.filter((app) => !done.has(`${day}|${app}`));
+    if (apps.length && !fresh.length) skipped.push(day);
+    if (fresh.length) accepted.push(day);
+    for (const app of fresh) {
+      for (const r of upload.rows) {
+        if (r.day !== day || r.app !== app) continue;
+        stmts.push(insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, cost.get(r)!, r.answers, r.clientCostMicro));
+      }
+      stmts.push(mark.bind(userId, day, app));
     }
-    stmts.push(mark.bind(userId, day));
   }
   // batch 在一个事务里执行，失败会整体回滚
   if (stmts.length) await db.batch(stmts);
-  return { accepted: upload.days.filter((d) => !done.has(d)), skipped: upload.days.filter((d) => done.has(d)) };
+  return { accepted, skipped };
+}
+
+/** 服务端的模型价格表（model_prices），网页上「总花费」旁边的问号也用它 */
+export async function loadPrices(db: D1Database): Promise<ModelPrice[]> {
+  const { results } = await db
+    .prepare("SELECT model, vendor, input, output, cache_read, cache_write, billed FROM model_prices ORDER BY vendor, model")
+    .all<ModelPrice>();
+  return results;
 }

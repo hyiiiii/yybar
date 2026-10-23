@@ -139,6 +139,23 @@ export const sfx = {
     tone(1320, 0, 0.35, { type: "triangle", gain: 0.18 });
     tone(1760, 0.09, 0.45, { type: "triangle", gain: 0.14 });
   },
+  /** 入座：椅子往前一挪、咚一声坐下，再把带入的筹码码在桌上。别人入座时 gain 小一点 */
+  sit(gain = 1) {
+    noise(0, 0.12, { freq: 420, q: 1.2, gain: 0.35 * gain, to: 260 });
+    tone(196, 0.03, 0.12, { gain: 0.3 * gain, to: 150 });
+    for (let k = 0; k < 3; k++) noise(0.17 + k * 0.045, 0.04, { freq: 4600 + k * 200, q: 6, gain: 0.4 * gain });
+  },
+  /** 离座：筹码收起来，椅子往后一推 */
+  leave(gain = 1) {
+    for (let k = 0; k < 3; k++) noise(k * 0.045, 0.04, { freq: 4400 - k * 200, q: 6, gain: 0.35 * gain });
+    noise(0.16, 0.22, { freq: 600, q: 1, gain: 0.3 * gain, to: 300 });
+    tone(330, 0.2, 0.18, { gain: 0.12 * gain, to: 220 });
+  },
+  /** 掷骰子：在桌上咕噜噜滚几下，最后咚一声停住 */
+  dice() {
+    [0, 0.07, 0.13, 0.19, 0.24, 0.29].forEach((at, k) => noise(at, 0.035, { freq: 2200 + Math.random() * 1400, q: 4, gain: 0.45 - k * 0.05 }));
+    tone(170, 0.33, 0.08, { gain: 0.3, to: 110 });
+  },
   /** 发表情、拆礼盒：啵一下 */
   pop() {
     tone(420, 0, 0.12, { gain: 0.35, to: 980 });

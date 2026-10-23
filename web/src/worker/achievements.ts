@@ -4,22 +4,44 @@ import { requireSession, sessionUser } from "./auth";
 import type { AppEnv } from "./types";
 import { addDays, isoDay } from "./util";
 
-/** 解锁一个成就并发奖励；已经解锁过的什么都不做（两条都按主键 / ref 去重）。 */
-export async function grantAchievement(db: D1Database, userId: number, id: AchievementId) {
+/** 解锁一个成就（还没领奖励，等用户自己点「领取」）；已经解锁过的什么都不做（按主键去重）。 */
+export async function unlockAchievement(db: D1Database, userId: number, id: AchievementId) {
+  if (!findAchievement(id)) return;
+  await db.prepare("INSERT OR IGNORE INTO user_achievements (user_id, id) VALUES (?, ?)").bind(userId, id).run();
+}
+
+/** 解锁了还没领的成就有几个：顶栏奖杯旁边的提醒 */
+export async function readyCount(db: D1Database, userId: number): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM user_achievements WHERE user_id = ? AND claimed_at IS NULL").bind(userId).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * 领一个已经解锁的成就：发奖励、记下领取时间。返回这次发了多少（已经领过、没解锁返回 0）。
+ * 发奖励只在这一行还没领时写（同一条语句里判断），ref 也去重，连点两下不会发两次。
+ */
+export async function claimAchievement(db: D1Database, userId: number, id: AchievementId): Promise<number> {
   const a = findAchievement(id);
-  if (!a) return;
-  await db.batch([
-    db.prepare("INSERT OR IGNORE INTO user_achievements (user_id, id) VALUES (?, ?)").bind(userId, id),
+  if (!a) return 0;
+  const [paid] = await db.batch([
     db
-      .prepare("INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref) VALUES (?, ?, 'achievement', ?)")
-      .bind(userId, a.reward, `ach:${userId}:${id}`),
+      .prepare(
+        `INSERT OR IGNORE INTO points_ledger (user_id, delta, reason, ref)
+         SELECT ?1, ?2, 'achievement', ?3
+         WHERE EXISTS (SELECT 1 FROM user_achievements WHERE user_id = ?1 AND id = ?4 AND claimed_at IS NULL)`,
+      )
+      .bind(userId, a.reward, `ach:${userId}:${id}`, id),
+    db
+      .prepare("UPDATE user_achievements SET claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE user_id = ? AND id = ? AND claimed_at IS NULL")
+      .bind(userId, id),
   ]);
+  return paid.meta.changes ? a.reward : 0;
 }
 
 const TOKENS = "input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens";
 
 /**
- * 按用量和流水检查一遍能自动判定的成就，新达成的就解锁。返回进度（连续天数、累计 token、累计花费美元）。
+ * 按用量和流水检查一遍能自动判定的成就，新达成的就解锁（奖励等用户自己领）。返回进度（连续天数、累计 token、累计花费美元）。
  * 打开网站（/api/me）和成就页时调用。
  */
 export async function syncAchievements(db: D1Database, userId: number) {
@@ -67,24 +89,47 @@ export async function syncAchievements(db: D1Database, userId: number) {
     spend_1k: spend >= 1_000,
   };
   for (const id of Object.keys(reached) as AchievementId[]) {
-    if (reached[id] && !have.has(id)) await grantAchievement(db, userId, id);
+    if (reached[id] && !have.has(id)) await unlockAchievement(db, userId, id);
   }
   return { streak, tokens, spend };
 }
 
 export const achievementRoutes = new Hono<AppEnv>();
 
-/** 成就列表；登录了顺带检查一遍、给出进度和正在戴的徽章 */
+/** 成就列表；登录了顺带检查一遍、给出进度、领没领和正在戴的徽章 */
 achievementRoutes.get("/", async (c) => {
   const user = await sessionUser(c);
-  if (!user) return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badges: [] });
+  if (!user) return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null, claimedAt: null })), progress: null, badges: [] });
   const progress = await syncAchievements(c.env.DB, user.id);
-  const { results } = await c.env.DB.prepare("SELECT id, unlocked_at FROM user_achievements WHERE user_id = ?")
+  const { results } = await c.env.DB.prepare("SELECT id, unlocked_at, claimed_at FROM user_achievements WHERE user_id = ?")
     .bind(user.id)
-    .all<{ id: string; unlocked_at: string }>();
-  const at = new Map(results.map((r) => [r.id, r.unlocked_at]));
+    .all<{ id: string; unlocked_at: string; claimed_at: string | null }>();
+  const at = new Map(results.map((r) => [r.id, r]));
   const row = await c.env.DB.prepare("SELECT badges FROM users WHERE id = ?").bind(user.id).first<{ badges: string }>();
-  return c.json({ achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: at.get(a.id) ?? null })), progress, badges: parseBadges(row?.badges) });
+  return c.json({
+    achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: at.get(a.id)?.unlocked_at ?? null, claimedAt: at.get(a.id)?.claimed_at ?? null })),
+    progress,
+    badges: parseBadges(row?.badges),
+  });
+});
+
+/** 领奖励：带 id 领那一个，不带就把解锁了还没领的全领了。返回这次一共领了多少 */
+achievementRoutes.post("/claim", requireSession, async (c) => {
+  const body = await c.req.json<{ id?: string }>().catch(() => ({}) as { id?: string });
+  const user = c.get("user");
+  if (body.id !== undefined && !findAchievement(body.id)) return c.json({ error: "没有这个成就" }, 404);
+  const ids = body.id
+    ? [body.id as AchievementId]
+    : (
+        await c.env.DB.prepare("SELECT id FROM user_achievements WHERE user_id = ? AND claimed_at IS NULL").bind(user.id).all<{ id: string }>()
+      ).results.map((r) => r.id as AchievementId);
+  let amount = 0;
+  for (const id of ids) amount += await claimAchievement(c.env.DB, user.id, id);
+  if (body.id && !amount) {
+    const row = await c.env.DB.prepare("SELECT claimed_at FROM user_achievements WHERE user_id = ? AND id = ?").bind(user.id, body.id).first<{ claimed_at: string | null }>();
+    return c.json({ error: row ? "已经领过了" : "还没解锁这个成就" }, 400);
+  }
+  return c.json({ ok: true, amount });
 });
 
 /** 戴上或摘下一个徽章：on 为 true 戴上（必须已解锁，最多同时戴 3 个），false 摘下。牌桌上下次连上时生效。 */
@@ -94,8 +139,9 @@ achievementRoutes.post("/wear", requireSession, async (c) => {
   if (!body.id || !findAchievement(body.id)) return c.json({ error: "没有这个成就" }, 404);
   let badges = parseBadges(user.badges).filter((b) => b !== body.id);
   if (body.on) {
-    const ok = await c.env.DB.prepare("SELECT 1 FROM user_achievements WHERE user_id = ? AND id = ?").bind(user.id, body.id).first();
+    const ok = await c.env.DB.prepare("SELECT claimed_at FROM user_achievements WHERE user_id = ? AND id = ?").bind(user.id, body.id).first<{ claimed_at: string | null }>();
     if (!ok) return c.json({ error: "还没解锁这个成就" }, 400);
+    if (!ok.claimed_at) return c.json({ error: "先领了这个成就再戴" }, 400);
     if (badges.length >= MAX_BADGES) return c.json({ error: `最多戴 ${MAX_BADGES} 个徽章` }, 400);
     badges = [...badges, body.id];
   }

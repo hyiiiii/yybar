@@ -13,7 +13,7 @@ export function newDeck(): Card[] {
 }
 
 /** 均匀随机数 [0, n)，用 crypto 取随机，拒绝采样避免取模偏差。 */
-function randomInt(n: number): number {
+export function randomInt(n: number): number {
   const limit = Math.floor(0x1_0000_0000 / n) * n;
   const buf = new Uint32Array(1);
   for (;;) {

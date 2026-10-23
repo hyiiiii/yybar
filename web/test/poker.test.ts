@@ -426,6 +426,22 @@ describe("table flow", () => {
     expect(room.view(null, 9000).events).toEqual([]);
   });
 
+  it("rolls 0-100 for seated players and spectators, not too fast", () => {
+    const room = TableRoom.create({ no: 1, sb: 5, bb: 10, bots: false });
+    room.sit(p(1), 0, 1000, 0);
+    expect(room.roll(p(1), 100, () => 100)).toBeNull();
+    expect(room.roll(p(1), 200, () => 7)).toMatch(/慢一点/);
+    // 旁观的人也能掷，座位记成 -1
+    expect(room.roll(p(2), 300, () => 0)).toBeNull();
+    expect(room.view(null, 300).events).toEqual([
+      expect.objectContaining({ kind: "roll", seat: 0, login: "u1", what: "100" }),
+      expect.objectContaining({ kind: "roll", seat: -1, login: "u2", what: "0" }),
+    ]);
+    expect(room.roll(p(1), 2200)).toBeNull();
+    const n = Number(room.view(null, 2200).events.at(-1)!.what);
+    expect(Number.isInteger(n) && n >= 0 && n <= 100).toBe(true);
+  });
+
   it("keeps three bots playing at the bot table, never side by side", () => {
     const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
     // 没有真人也坐着三个机器人：0、2、4 号，各带 $100

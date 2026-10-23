@@ -73,37 +73,39 @@ function fly(layer: HTMLElement, item: ThrowItem, from: Point, to: Point, k: num
     [0, 0.2, 0.4, 0.6, 0.8, 1].map((p) => ({ transform: at(p) })),
     { duration: dur, easing: item === "rose" ? "ease-out" : "linear", fill: "forwards" },
   );
-  anim.onfinish = () => (item === "rose" ? landRose(layer, t, end) : splat(layer, t, end, k, n));
+  // 落地动画要从飞行的最后一帧接着播：Web Animations 不会把动画位置写回 style,style 里还是起点
+  anim.onfinish = () => (item === "rose" ? landRose(layer, t, end, at(1)) : splat(layer, t, end, k, n));
 }
 
 /** 番茄：换成一摊，弹一下，最后一个落下后一起往下滑、淡掉 */
 function splat(layer: HTMLElement, tomato: HTMLElement, end: Point, k: number, n: number) {
   sfx.splat();
-  const s = spawn(layer, "tomato-splat", SPLAT_SVG, {
-    transform: `translate(${end.x}px, ${end.y}px) rotate(${Math.round(Math.random() * 360)}deg)`,
-    opacity: "0",
-  });
+  // 缩放、下滑都写进同一个 transform:单独的 scale / translate 属性是绕整层的左上角算的，
+  // 一摊会从左上方「飞」进来
+  const rot = Math.round(Math.random() * 360);
+  const at = (dy: number, scale: number) => `translate(${end.x}px, ${end.y + dy}px) rotate(${rot}deg) scale(${scale})`;
+  const s = spawn(layer, "tomato-splat", SPLAT_SVG, { transform: at(0, 0.4), opacity: "0" });
   // 一摊挂上去了再拿掉番茄，中间不会空一帧
   tomato.remove();
   const keep = 2200 + (n - 1 - k) * 220;
   s.animate(
     [
-      { opacity: 1, scale: 0.4 },
-      { opacity: 1, scale: 1.15, offset: 0.06 },
-      { opacity: 1, scale: 1, offset: 0.12 },
-      { opacity: 1, translate: "0 6px", offset: 0.75 },
-      { opacity: 0, translate: "0 18px" },
+      { opacity: 1, transform: at(0, 0.4) },
+      { opacity: 1, transform: at(0, 1.15), offset: 0.06 },
+      { opacity: 1, transform: at(0, 1), offset: 0.12 },
+      { opacity: 1, transform: at(6, 1), offset: 0.75 },
+      { opacity: 0, transform: at(18, 1) },
     ],
     { duration: reduced() ? 1200 : keep, easing: "ease-out", fill: "forwards" },
   ).onfinish = () => s.remove();
 }
 
 /** 玫瑰：落在头像上停一会儿，冒几颗小心心往上飘，然后一起淡掉 */
-function landRose(layer: HTMLElement, rose: HTMLElement, end: Point) {
+function landRose(layer: HTMLElement, rose: HTMLElement, end: Point, from: string) {
   sfx.rose();
   rose.animate(
     [
-      { transform: rose.style.transform, opacity: 1 },
+      { transform: from, opacity: 1 },
       { transform: `translate(${end.x}px, ${end.y}px) scale(1.12)`, opacity: 1, offset: 0.08 },
       { transform: `translate(${end.x}px, ${end.y}px) scale(1)`, opacity: 1, offset: 0.16 },
       { transform: `translate(${end.x}px, ${end.y}px) scale(1)`, opacity: 1, offset: 0.8 },

@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { api, fmtInt, fmtTokens } from "../api";
 import { Badge, LoginButton, fmtMoney } from "../components";
 import { pick, tr, useLang, useT } from "../i18n";
+import { sfx } from "../sound";
 import { notifyMeChanged, useMe } from "../useMe";
 import { MAX_BADGES, type Achievement } from "../../shared/achievements";
 
-type Row = Achievement & { unlockedAt: string | null };
+type Row = Achievement & { unlockedAt: string | null; claimedAt: string | null };
 type Progress = { streak: number; tokens: number; spend: number };
 type Response = { achievements: Row[]; progress: Progress | null; badges: string[] };
 
@@ -18,7 +19,7 @@ function progressOf(a: Row, p: Progress | null): number | null {
   return null;
 }
 
-/** 成就：达成送筹码，解锁的徽章可以挑一个戴在名字后面。 */
+/** 成就：达成后在这里自己领筹码（顶栏奖杯旁边会提醒），领了的徽章可以挑几个戴在名字后面。 */
 export function AchievementsPage() {
   const { me } = useMe();
   const lang = useLang();
@@ -26,22 +27,24 @@ export function AchievementsPage() {
   const [data, setData] = useState<Response | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 刚领的成就：奖励数字往上飘一下 */
+  const [claimed, setClaimed] = useState<Set<string>>(new Set());
   const signedIn = !!me?.user;
 
   const load = () => api<Response>("/api/achievements").then(setData, (e: Error) => setNote(tr(e.message, lang)));
   useEffect(() => {
     load();
   }, [signedIn]);
-  // 打开页面时可能刚解锁了新的，顶栏余额跟着刷新
+  // 打开页面时可能刚解锁了新的，顶栏奖杯的提醒跟着刷新
   useEffect(() => {
     if (data?.progress) notifyMeChanged();
   }, [!!data?.progress]);
 
-  const wear = async (id: string, on: boolean) => {
+  const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setNote(null);
     try {
-      await api("/api/achievements/wear", { method: "POST", json: { id, on } });
+      await fn();
       notifyMeChanged();
       await load();
     } catch (e) {
@@ -50,8 +53,20 @@ export function AchievementsPage() {
       setBusy(false);
     }
   };
+  const wear = (id: string, on: boolean) => run(() => api("/api/achievements/wear", { method: "POST", json: { id, on } }));
+  /** 领一个（id）或者全部领了 */
+  const claim = (ids: string[], one?: string) =>
+    run(async () => {
+      const r = await api<{ amount: number }>("/api/achievements/claim", { method: "POST", json: one ? { id: one } : {} });
+      if (r.amount) {
+        sfx.chips(3);
+        setClaimed(new Set(ids));
+      }
+    });
 
-  const unlocked = data?.achievements.filter((a) => a.unlockedAt).length ?? 0;
+  const rows = data?.achievements ?? [];
+  const unlocked = rows.filter((a) => a.unlockedAt).length;
+  const ready = rows.filter((a) => a.unlockedAt && !a.claimedAt);
   const fmtProgress = (a: Row, n: number) =>
     a.id.startsWith("tokens_") ? `${fmtTokens(n)} / ${fmtTokens(a.target!)}` : a.id === "spend_1k" ? `$${fmtInt(n)} / $${fmtInt(a.target!)}` : t(`${n} / ${a.target} 天`, `${n} / ${a.target} days`);
 
@@ -64,22 +79,35 @@ export function AchievementsPage() {
         </div>
       )}
       {signedIn && data && (
-        <p className="muted ach-summary">
-          {t(
-            `已解锁 ${unlocked} / ${data.achievements.length}。点「戴上」把徽章挂在名字后面，最多同时戴 ${MAX_BADGES} 个（正在戴 ${data.badges.length} 个）。`,
-            `${unlocked} of ${data.achievements.length} unlocked. Tap "Wear" to show badges after your name — up to ${MAX_BADGES} at once (wearing ${data.badges.length}).`,
+        <div className="ach-summary">
+          <p className="muted">
+            {t(
+              `已解锁 ${unlocked} / ${rows.length}。达成后在这里领奖励，领了的徽章可以「戴上」挂在名字后面，最多同时戴 ${MAX_BADGES} 个（正在戴 ${data.badges.length} 个）。`,
+              `${unlocked} of ${rows.length} unlocked. Claim rewards here once you earn them; claimed badges can be worn after your name — up to ${MAX_BADGES} at once (wearing ${data.badges.length}).`,
+            )}
+          </p>
+          {ready.length > 1 && (
+            <button className="btn btn-small btn-claim" disabled={busy} onClick={() => claim(ready.map((a) => a.id))}>
+              {t(`全部领取 +${fmtMoney(ready.reduce((s, a) => s + a.reward, 0))}`, `Claim all +${fmtMoney(ready.reduce((s, a) => s + a.reward, 0))}`)}
+            </button>
           )}
-        </p>
+        </div>
       )}
       {note && <p className="note shop-note" role="status">{note}</p>}
       <div className="ach-grid">
-        {(data?.achievements ?? []).map((a, idx) => {
+        {rows.map((a, idx) => {
           const done = !!a.unlockedAt;
+          const owned = done && !!a.claimedAt;
+          const waiting = done && !a.claimedAt;
           const wearing = !!data?.badges.includes(a.id);
           const full = (data?.badges.length ?? 0) >= MAX_BADGES;
           const now = progressOf(a, data?.progress ?? null);
           return (
-            <article key={a.id} className={`ach${done ? " done" : ""}${wearing ? " wearing" : ""}`} style={{ "--i": idx } as React.CSSProperties}>
+            <article
+              key={a.id}
+              className={`ach${done ? " done" : ""}${waiting ? " ready" : ""}${wearing ? " wearing" : ""}`}
+              style={{ "--i": idx } as React.CSSProperties}
+            >
               <div className="ach-badge">
                 {/* 戴上 / 摘下时换 key，徽章弹一下 */}
                 <span key={wearing ? "on" : "off"} className={wearing ? "badge-wear" : undefined}>
@@ -97,8 +125,15 @@ export function AchievementsPage() {
                 )}
               </div>
               <div className="ach-foot">
-                <span className="ach-reward">+{fmtMoney(a.reward)}</span>
-                {done ? (
+                <span className="ach-reward">
+                  +{fmtMoney(a.reward)}
+                  {claimed.has(a.id) && owned && <i key={a.claimedAt} className="ach-reward-pop">+{fmtMoney(a.reward)}</i>}
+                </span>
+                {waiting ? (
+                  <button className="btn btn-small btn-claim" disabled={busy} onClick={() => claim([a.id], a.id)}>
+                    {t("领取", "Claim")}
+                  </button>
+                ) : owned ? (
                   wearing ? (
                     <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => wear(a.id, false)}>{t("摘下", "Take off")}</button>
                   ) : (

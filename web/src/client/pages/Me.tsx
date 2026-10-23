@@ -74,7 +74,6 @@ export function MePage() {
 
       <section className="card-box">
         <h2>{t("上传记录", "Uploads")}</h2>
-        <p className="muted">{t("yybar App 每天上传一次汇总（只有 token 数和花费，不含对话内容），每一天只收第一次。", "The yybar app uploads a daily summary (token counts and spend only, no conversations). Each day is accepted once.")}</p>
         {actionError && <p className="error">{actionError}</p>}
         {me.uploads && me.uploads.length > 0 ? (
           <div className="table-scroll">

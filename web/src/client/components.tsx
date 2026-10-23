@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { fmtInt } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { DEFAULT_BACK, DEFAULT_FACE } from "../shared/cosmetics";
@@ -6,7 +6,7 @@ import { EmoteSprite } from "./Dealer";
 import { pick, useLang, useT } from "./i18n";
 import { findAchievement } from "../shared/achievements";
 import { loginHref, notifyMeChanged } from "./useMe";
-import { RobotIcon } from "./icons";
+import { DiceIcon, RobotIcon } from "./icons";
 import { BOT_FACES } from "./bots";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
@@ -116,8 +116,8 @@ export interface Seat {
   peeked?: CardSpec[];
   /** 自己座位下面的小工具条（道具、表情） */
   tools?: ReactNode;
-  /** 刚发的表情，key 换了重新播 */
-  emote?: { id: string; key: number };
+  /** 刚发的表情或掷的骰子（roll 是点数），key 换了重新播 */
+  emote?: { id: string; key: number; roll?: number };
   /** 显示用的名字（机器人按语言翻译） */
   name?: string;
   /** 名字后面戴的成就徽章 */
@@ -187,10 +187,16 @@ export function FeltTable({
                 {s.held && <TurnRing key={s.held.key} total={s.held.total} elapsed={s.held.elapsed} hold />}
               </div>
               {s.note && <span key={s.noteKey ?? s.note} className={`seat-note${s.noteWin ? " seat-note-win" : ""}`}>{s.note}</span>}
-              {s.emote && (
-                <span key={s.emote.key} className="seat-emote" aria-label={s.emote.id}>
-                  <EmoteSprite id={s.emote.id} size={60} />
+              {s.emote && s.emote.roll !== undefined ? (
+                <span key={s.emote.key} className="seat-emote seat-roll" aria-label={String(s.emote.roll)}>
+                  <RollNumber n={s.emote.roll} />
                 </span>
+              ) : (
+                s.emote && (
+                  <span key={s.emote.key} className="seat-emote" aria-label={s.emote.id}>
+                    <EmoteSprite id={s.emote.id} size={60} />
+                  </span>
+                )
               )}
               {s.peeked && (
                 <div className="seat-cards seat-cards-peeked" title="偷偷看">
@@ -348,13 +354,40 @@ export function fmtMoney(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
-export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+export function Stat({ label, value, hint, help }: { label: string; value: string; hint?: string; help?: ReactNode }) {
   return (
     <div className="stat">
-      <div className="stat-label">{label}</div>
+      <div className="stat-label">
+        {label}
+        {help}
+      </div>
       <div className="stat-value">{value}</div>
       {hint && <div className="stat-hint">{hint}</div>}
     </div>
   );
 }
 
+
+/** 掷骰子的点数：先乱跳一小会儿，再停在掷出的数上 */
+function RollNumber({ n }: { n: number }) {
+  const still = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [shown, setShown] = useState(() => (still ? n : Math.floor(Math.random() * 101)));
+  const [landed, setLanded] = useState(still);
+  useEffect(() => {
+    if (still) return;
+    let k = 0;
+    const id = setInterval(() => {
+      if (++k < 8) return setShown(Math.floor(Math.random() * 101));
+      clearInterval(id);
+      setShown(n);
+      setLanded(true);
+    }, 55);
+    return () => clearInterval(id);
+  }, [n]);
+  return (
+    <>
+      <DiceIcon rolling={!still} />
+      <b className={landed ? "landed" : undefined}>{shown}</b>
+    </>
+  );
+}

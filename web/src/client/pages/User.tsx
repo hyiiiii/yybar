@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
 import { Avatar, Badges, Stat } from "../components";
 import { UsageStats } from "../UsageCharts";
+import { PriceHelp } from "../Prices";
 import { tr, useLang, useT } from "../i18n";
 
 export function ProfileView({ profile }: { profile: Profile }) {
@@ -12,11 +13,11 @@ export function ProfileView({ profile }: { profile: Profile }) {
   return (
     <>
       <div className="stats">
-        <Stat label={t("总花费", "Total spend")} value={fmtUSD(totals.cost_micro)} hint={t(`${totals.active_days} 个活跃日`, `${totals.active_days} active days`)} />
+        <Stat label={t("总花费", "Total spend")} help={<PriceHelp />} value={fmtUSD(totals.cost_micro)} hint={t(`${totals.active_days} 个活跃日`, `${totals.active_days} active days`)} />
         <Stat label={t("总 Token", "Total tokens")} value={fmtTokens(tokens)} hint={t(`输出 ${fmtTokens(totals.output_tokens)}`, `${fmtTokens(totals.output_tokens)} output`)} />
         <Stat label={t("筹码", "Chips")} value={fmtInt(points.balance)} hint={t(`累计换得 ${fmtInt(points.earned)}`, `${fmtInt(points.earned)} earned in total`)} />
       </div>
-      <UsageStats series={profile.series} models={profile.models ?? []} activity={profile.activity ?? []} />
+      <UsageStats series={profile.series} models={profile.models ?? []} modelsAll={profile.modelsAll} activity={profile.activity ?? []} />
     </>
   );
 }

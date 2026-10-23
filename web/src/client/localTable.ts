@@ -102,6 +102,7 @@ export function openLocalTable(
         err = local.room.throwAt(YOU, msg.seat, msg.item, msg.n, now);
       }
     }
+    else if (msg.t === "roll") err = local.room.roll(YOU, now);
     else if (msg.t === "act") err = local.room.act(YOU.userId, msg.action, msg.amount, now);
     if (err) onMsg({ t: "error", msg: err });
     emit(local);

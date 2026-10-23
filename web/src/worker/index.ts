@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
-import { achievementRoutes, syncAchievements } from "./achievements";
+import { achievementRoutes, readyCount, syncAchievements } from "./achievements";
 import { parseBadges } from "../shared/achievements";
 import { ITEMS } from "../shared/cosmetics";
 import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
-import { parseUpload, saveUpload, uploadedDays, UploadError } from "./usage";
+import { loadPrices, parseUpload, saveUpload, uploadedPairs, uploadHistory, UploadError } from "./usage";
 import { addDays, isoDay, pointsFromMicro, randomToken, sha256 } from "./util";
 
 const app = new Hono<AppEnv>();
@@ -16,12 +16,20 @@ app.route("/auth", authRoutes);
 /** 每日礼盒的筹码 */
 const DAILY_GIFT = 100;
 
-const RANGES: Record<string, number | null> = { today: 0, "7d": 6, "30d": 29, all: null };
+/** 时间段：从几天前到几天前（含）。App 只传已经过完的天，所以网页上用「昨天」不用「今天」；today 留给旧页面 */
+const RANGES: Record<string, { from: number | null; to: number }> = {
+  yesterday: { from: 1, to: 1 },
+  today: { from: 0, to: 0 },
+  "7d": { from: 6, to: 0 },
+  "30d": { from: 29, to: 0 },
+  all: { from: null, to: 0 },
+};
 
-/** 起始日期（含）。日期按上传者本地时区记录，这里以 UTC 今天为基准往前推。 */
-function rangeStart(range: string): string | null {
-  const days = RANGES[range];
-  return days === null || days === undefined ? null : addDays(isoDay(new Date()), -days);
+/** 起止日期（含）。日期按上传者本地时区记录，这里以 UTC 今天为基准往前推。 */
+function rangeDays(range: string): { start: string | null; end: string } {
+  const r = RANGES[range];
+  const today = isoDay(new Date());
+  return { start: r?.from === null || r?.from === undefined ? null : addDays(today, -r.from), end: addDays(today, -(r?.to ?? 0)) };
 }
 
 async function pointsOf(db: D1Database, userId: number) {
@@ -42,12 +50,12 @@ async function dailySeries(db: D1Database, userId: number, days: number) {
     .prepare(
       `SELECT day, app,
          SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens,
-         SUM(cost_micro) AS cost_micro
+         SUM(cost_micro) AS cost_micro, SUM(answers) AS answers
        FROM daily_usage WHERE user_id = ? AND day >= ?
        GROUP BY day, app ORDER BY day`,
     )
     .bind(userId, addDays(isoDay(new Date()), -(days - 1)))
-    .all<{ day: string; app: string; tokens: number; cost_micro: number }>();
+    .all<{ day: string; app: string; tokens: number; cost_micro: number; answers: number }>();
   return results;
 }
 
@@ -66,15 +74,28 @@ async function totalsOf(db: D1Database, userId: number) {
     .first();
 }
 
-/** 模型明细：最近 30 天每天每个模型的输入、输出、缓存读取、缓存写入和花费；网页按今天 / 7 天 / 30 天、按服务自己加起来 */
+/** 模型明细：最近 30 天每天每个模型的输入、输出、缓存读取、缓存写入和花费；网页按昨天 / 7 天 / 30 天、按服务自己加起来 */
 async function topModels(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
       `SELECT day, app, model, input_tokens AS input, output_tokens AS output,
-         cache_read_tokens AS cache_read, cache_creation_tokens AS cache_write, cost_micro
+         cache_read_tokens AS cache_read, cache_creation_tokens AS cache_write, cost_micro, answers
        FROM daily_usage WHERE user_id = ? AND day >= ? ORDER BY day`,
     )
     .bind(userId, addDays(isoDay(new Date()), -30))
+    .all();
+  return results;
+}
+
+/** 模型明细的「全部」：所有日子每个模型加起来 */
+async function modelTotals(db: D1Database, userId: number) {
+  const { results } = await db
+    .prepare(
+      `SELECT app, model, SUM(input_tokens) AS input, SUM(output_tokens) AS output,
+         SUM(cache_read_tokens) AS cache_read, SUM(cache_creation_tokens) AS cache_write, SUM(cost_micro) AS cost_micro, SUM(answers) AS answers
+       FROM daily_usage WHERE user_id = ? GROUP BY app, model`,
+    )
+    .bind(userId)
     .all();
   return results;
 }
@@ -83,11 +104,11 @@ async function topModels(db: D1Database, userId: number) {
 async function activityOf(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
-      `SELECT day, app, SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens
+      `SELECT day, app, SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens, SUM(answers) AS answers
        FROM daily_usage WHERE user_id = ? AND day >= ? GROUP BY day, app ORDER BY day`,
     )
     .bind(userId, addDays(isoDay(new Date()), -377))
-    .all<{ day: string; app: string; tokens: number }>();
+    .all<{ day: string; app: string; tokens: number; answers: number }>();
   return results;
 }
 
@@ -150,17 +171,17 @@ app.get("/api/leaderboard", async (c) => {
   }
   if (by !== "tokens") return c.json({ error: "by 只能是 tokens / wealth" }, 400);
   const range = c.req.query("range") ?? "7d";
-  if (!(range in RANGES)) return c.json({ error: "range 只能是 today / 7d / 30d / all" }, 400);
+  if (!(range in RANGES)) return c.json({ error: "range 只能是 yesterday / 7d / 30d / all" }, 400);
   // 燃烧 token 榜可以按 token 数排，也可以按这些 token 的花费排
   const sort = c.req.query("sort") === "cost" ? "cost" : "tokens";
-  const start = rangeStart(range);
+  const { start, end } = rangeDays(range);
   const { results } = await c.env.DB.prepare(
     `WITH per AS (
        SELECT d.user_id, d.app, d.model,
          SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens) AS tokens,
          SUM(d.cost_micro) AS cost_micro
        FROM daily_usage d JOIN users u ON u.id = d.user_id
-       WHERE u.show_on_board = 1 AND d.day >= ?
+       WHERE u.show_on_board = 1 AND d.day BETWEEN ? AND ?
        GROUP BY d.user_id, d.app, d.model
      )
      SELECT u.login, u.name, u.avatar_url, u.badges, SUM(per.tokens) AS tokens, SUM(per.cost_micro) AS cost_micro,
@@ -170,7 +191,7 @@ app.get("/api/leaderboard", async (c) => {
      GROUP BY per.user_id HAVING tokens > 0
      ORDER BY ${sort === "cost" ? "cost_micro DESC, tokens DESC" : "tokens DESC, cost_micro DESC"} LIMIT 100`,
   )
-    .bind(start ?? "0000-00-00")
+    .bind(start ?? "0000-00-00", end)
     .all<{ login: string; name: string | null; avatar_url: string | null; badges: string; tokens: number; cost_micro: number; top_model: string; top_app: string }>();
   return c.json({
     by,
@@ -198,14 +219,15 @@ app.get("/api/users/:login", async (c) => {
     .bind(c.req.param("login"))
     .first<{ id: number; login: string; name: string | null; avatar_url: string | null; created_at: string }>();
   if (!user) return c.json({ error: "没有这个用户，或对方未公开" }, 404);
-  const [totals, series, models, points, activity] = await Promise.all([
+  const [totals, series, models, modelsAll, points, activity] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
+    modelTotals(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
     activityOf(c.env.DB, user.id),
   ]);
-  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at }, totals, series, models, points, activity });
+  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at }, totals, series, models, modelsAll, points, activity });
 });
 
 // ---------- 网页登录后的接口 ----------
@@ -213,26 +235,19 @@ app.get("/api/users/:login", async (c) => {
 app.get("/api/me", async (c) => {
   const user = await sessionUser(c);
   if (!user) return c.json({ user: null });
-  // 先检查成就（第一次登录、连续天数…），新解锁的奖励要算进下面的余额
+  // 先检查成就（第一次登录、连续天数…）：新解锁的等用户自己去成就页领，顶栏奖杯旁边提醒
   await syncAchievements(c.env.DB, user.id);
-  const [totals, series, models, points, activity, uploads, items, emotes] = await Promise.all([
+  const [totals, series, models, modelsAll, points, activity, uploads, items, emotes, achievementsReady] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
+    modelTotals(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
     activityOf(c.env.DB, user.id),
-    // 上传记录：最近收到的 30 天，每天什么时候传上来的、多少 token、多少花费
-    c.env.DB.prepare(
-      `SELECT u.day, u.uploaded_at,
-         COALESCE(SUM(d.input_tokens + d.output_tokens + d.cache_read_tokens + d.cache_creation_tokens), 0) AS tokens,
-         COALESCE(SUM(d.cost_micro), 0) AS cost_micro
-       FROM usage_uploads u LEFT JOIN daily_usage d ON d.user_id = u.user_id AND d.day = u.day
-       WHERE u.user_id = ? GROUP BY u.day ORDER BY u.day DESC LIMIT 30`,
-    )
-      .bind(user.id)
-      .all(),
+    uploadHistory(c.env.DB, user.id),
     itemsOf(c.env.DB, user.id),
     emotesOf(c.env.DB, user.id),
+    readyCount(c.env.DB, user.id),
   ]);
   return c.json({
     user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at },
@@ -244,12 +259,14 @@ app.get("/api/me", async (c) => {
     },
     items,
     emotes,
+    achievementsReady,
     totals,
     series,
     models,
+    modelsAll,
     points,
     activity,
-    uploads: uploads.results,
+    uploads,
   });
 });
 
@@ -324,8 +341,11 @@ v1.use("*", requireApiToken);
 
 v1.get("/whoami", (c) => c.json({ user: publicUser(c.get("user")) }));
 
-/** 已经上传过的日期：App 连上后拿它补上本地的「已上传」标记，之后只传没标记的天。 */
-v1.get("/usage/days", async (c) => c.json({ days: await uploadedDays(c.env.DB, c.get("user").id) }));
+/** 已经上传过的（日期, 服务）：App 连上后拿它补上本地的「已上传」标记，之后只传没标记的。days 是去重后的日期（旧版 App 用）。 */
+v1.get("/usage/days", async (c) => {
+  const uploads = await uploadedPairs(c.env.DB, c.get("user").id);
+  return c.json({ days: [...new Set(uploads.map((u) => u.day))], uploads });
+});
 
 v1.post("/usage", async (c) => {
   let body: unknown;
@@ -351,6 +371,9 @@ app.route("/api/tables", tableRoutes);
 app.route("/api/shop", shopRoutes);
 
 app.route("/api/achievements", achievementRoutes);
+
+/** 服务端的模型价格表：上传的花费按它算，「总花费」旁边的问号点开看的就是这个 */
+app.get("/api/prices", async (c) => c.json({ prices: await loadPrices(c.env.DB) }));
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 

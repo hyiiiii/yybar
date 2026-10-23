@@ -7,7 +7,7 @@ import type { ClientMsg, ServerMsg } from "../shared/poker/types";
 import type { Env } from "./types";
 import { DEFAULT_EMOTES, findItem, THROW_PRICE, type ItemId, type ThrowItem } from "../shared/cosmetics";
 import { spendItem } from "./shop";
-import { grantAchievement } from "./achievements";
+import { unlockAchievement } from "./achievements";
 
 /** 连接附带的身份：未登录的旁观者 userId 为 0。emotes 是这个人有的表情。 */
 interface Attachment extends Player {
@@ -19,6 +19,7 @@ const CASHOUT_RETRY_MS = 5_000;
 export class PokerTable extends DurableObject<Env> {
   private room: TableRoom | null = null;
   private reportedSeated = -1;
+  private reportedOnline = -1;
   /** 上次写进 poker_seats 的在座真人，变了才重写 */
   private reportedHumans: string | null = null;
 
@@ -78,6 +79,7 @@ export class PokerTable extends DurableObject<Env> {
     else if (msg.t === "item") err = await this.useItem(user, msg.item);
     else if (msg.t === "emote") err = room.emote(user.userId, String(msg.id), user.emotes ?? DEFAULT_EMOTES, now);
     else if (msg.t === "throw") err = await this.throwAt(user, msg.item, msg.seat, msg.n);
+    else if (msg.t === "roll") err = room.roll(user, now);
     else if (msg.t === "act") err = room.act(user.userId, msg.action, msg.amount, now);
     else return;
     if (err) fail(err);
@@ -85,11 +87,11 @@ export class PokerTable extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket) {
-    this.disconnected(ws);
+    await this.disconnected(ws);
   }
 
   async webSocketError(ws: WebSocket) {
-    this.disconnected(ws);
+    await this.disconnected(ws);
   }
 
   async alarm() {
@@ -101,8 +103,9 @@ export class PokerTable extends DurableObject<Env> {
 
   private async disconnected(ws: WebSocket) {
     const user = ws.deserializeAttachment() as Attachment;
-    // 没登录的旁观者走了不用存档：机器人桌最后一个人走了，下一次闹钟时发现没人看，机器人就停手
-    if (!this.room || !user.userId) return;
+    if (!this.room) return;
+    // 没登录的旁观者走了不用存档，只把布告栏的在线人数改掉：机器人桌最后一个人走了，下一次闹钟时发现没人看，机器人就停手
+    if (!user.userId) return this.reportCounts(ws);
     const still = this.ctx.getWebSockets().some((w) => w !== ws && (w.deserializeAttachment() as Attachment).userId === user.userId);
     if (!still) this.room.setAway(user.userId, true, Date.now());
     await this.commit(ws);
@@ -180,7 +183,7 @@ export class PokerTable extends DurableObject<Env> {
     await this.flushStats();
     for (const u of [...(room.s.unlocks ?? [])]) {
       try {
-        await grantAchievement(this.env.DB, u.userId, u.id);
+        await unlockAchievement(this.env.DB, u.userId, u.id);
         room.ackUnlock(u.userId, u.id);
       } catch {
         // 留着下次再写
@@ -209,15 +212,36 @@ export class PokerTable extends DurableObject<Env> {
     }
 
     await this.reportHumans();
+    await this.reportCounts(gone);
+  }
+
+  /** 在座人数和在线人数变了就写回 poker_tables（大厅、布告栏用）。gone 是正在断开的连接 */
+  private async reportCounts(gone?: WebSocket) {
+    const room = this.room;
+    if (!room) return;
     const seated = room.seated();
-    if (seated !== this.reportedSeated) {
-      try {
-        await this.env.DB.prepare("UPDATE poker_tables SET seated = ? WHERE no = ?").bind(seated, room.s.config.no).run();
-        this.reportedSeated = seated;
-      } catch {
-        // 大厅人数只是展示，下次再报
-      }
+    const online = this.online(gone);
+    if (seated === this.reportedSeated && online === this.reportedOnline) return;
+    try {
+      await this.env.DB.prepare("UPDATE poker_tables SET seated = ?, online = ? WHERE no = ?").bind(seated, online, room.s.config.no).run();
+      this.reportedSeated = seated;
+      this.reportedOnline = online;
+    } catch {
+      // 大厅人数只是展示，下次再报
     }
+  }
+
+  /** 连着这张桌的真人有几个：在座的、旁观的都算，同一个账号开几个页面算一个，没登录的每个连接算一个。gone 是正在断开的连接 */
+  private online(gone?: WebSocket): number {
+    const users = new Set<number>();
+    let guests = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === gone) continue;
+      const user = ws.deserializeAttachment() as Attachment;
+      if (user.userId) users.add(user.userId);
+      else guests++;
+    }
+    return users.size + guests;
   }
 
   /** 把在座的真人写进 poker_seats，大厅靠它知道一个人坐在哪几张桌。只是提醒用，失败下次再写。 */

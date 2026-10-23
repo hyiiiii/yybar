@@ -38,7 +38,7 @@ describe("parseUpload", () => {
     expect(r.days).toEqual(["2026-10-16"]);
     expect(r.rows).toHaveLength(2);
     const claude = r.rows.find((x) => x.app === "claude")!;
-    expect(claude.costMicro).toBe(2_000_000);
+    expect(claude.clientCostMicro).toBe(2_000_000);
     expect(claude.inputTokens).toBe(20);
   });
   it("accepts today (UTC) but not tomorrow", () => {
@@ -53,7 +53,8 @@ describe("parseUpload", () => {
     ["bad date", { days: [{ day: "2026-02-30", entries: [] }] }],
     ["future", { days: [{ day: "2026-10-19", entries: [] }] }],
     ["duplicate day", { days: [{ day: "2026-10-16", entries: [] }, { day: "2026-10-16", entries: [] }] }],
-    ["unknown app", { days: [{ day: "2026-10-16", entries: [entry({ app: "gemini" })] }] }],
+    ["unknown app", { days: [{ day: "2026-10-16", entries: [entry({ app: "copilot" })] }] }],
+    ["negative answers", { days: [{ day: "2026-10-16", entries: [entry({ app: "gemini", answers: -1 })] }] }],
     ["negative tokens", { days: [{ day: "2026-10-16", entries: [entry({ outputTokens: -1 })] }] }],
     ["float tokens", { days: [{ day: "2026-10-16", entries: [entry({ outputTokens: 1.5 })] }] }],
     ["cost cap", { days: [{ day: "2026-10-16", entries: [entry({ costUSD: "5000.01" })] }] }],

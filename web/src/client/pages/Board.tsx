@@ -6,7 +6,7 @@ import { CoinsIcon, FlameIcon } from "../icons";
 import { tr, useLang, useT } from "../i18n";
 
 const RANGES = [
-  { key: "today", label: ["今天", "Today"] },
+  { key: "yesterday", label: ["昨天", "Yesterday"] },
   { key: "7d", label: ["7 天", "7 days"] },
   { key: "30d", label: ["30 天", "30 days"] },
   { key: "all", label: ["总榜", "All time"] },

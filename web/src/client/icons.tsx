@@ -124,6 +124,16 @@ export const SpeakerIcon = ({ muted }: { muted?: boolean }) => (
   </Icon>
 );
 
+/** 骰子：牌桌顶上掷骰子的按钮、座位上冒出来的点数；rolling 时翻滚一下 */
+export const DiceIcon = ({ rolling }: { rolling?: boolean }) => (
+  <svg className={`icon${rolling ? " dice-rolling" : ""}`} viewBox="0 0 24 24" aria-hidden>
+    <rect x="4.5" y="4.5" width="15" height="15" rx="3.5" />
+    {[[9, 9], [15, 9], [12, 12], [9, 15], [15, 15]].map(([x, y]) => (
+      <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" fill="currentColor" stroke="none" />
+    ))}
+  </svg>
+);
+
 /** 机器人：机器人桌的桌号、机器人的头像 */
 export const RobotIcon = ({ label }: { label?: string }) => (
   <Icon label={label}>

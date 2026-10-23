@@ -4,7 +4,7 @@ import { api, fmtInt } from "../api";
 import { Badges, FeltTable, MarqueeSign, PlayingCard, StatLine, fmtMoney, type CardSpec, type Seat } from "../components";
 import type { PokerStats } from "../api";
 import { Dealer, EmoteSprite } from "../Dealer";
-import { EyeIcon, RobotIcon, RunoutIcon, SmileIcon, SpeakerIcon, TimeIcon } from "../icons";
+import { DiceIcon, EyeIcon, RobotIcon, RunoutIcon, SmileIcon, SpeakerIcon, TimeIcon } from "../icons";
 import { setMuted, sfx, useMuted } from "../sound";
 import { nameOf, pick, tr, useLang, useT, type Lang } from "../i18n";
 import type { Suit } from "../suits";
@@ -35,7 +35,7 @@ type T = (zh: string, en: string) => string;
 
 const ITEM_ICON: Record<ItemId, () => React.JSX.Element> = { timecard: TimeIcon, peek: EyeIcon, runout: RunoutIcon };
 
-type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number; temporary?: boolean };
+type TableEntry = { no: number; id: string; blinds: [number, number]; bots?: boolean; seated: number; online?: number; temporary?: boolean };
 
 /** 底部面板：入座选带入，或者开桌选盲注和带入 */
 type Panel = { kind: "sit"; seat: number } | { kind: "open" };
@@ -115,9 +115,9 @@ function greeting(name: string, lang: Lang) {
 const ROTATE_STEP_MS = 360;
 
 /**
- * 大厅就是一张牌桌：招牌左边切桌、右边铃铛和开桌，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
+ * 大厅就是一张牌桌：招牌左边切桌、右边骰子、音效和开桌，点空位先占座再选带入。牌局在服务端跑（每张桌一个 Durable Object），
  * 这里只显示自己能看到的部分，再把弃牌、跟注、加注发回去。可以同时坐几张桌：坐着的其他桌在后台连着，
- * 轮到你行动时铃铛会响（手机上震动），点铃铛回到那张桌。
+ * 用来知道自己还坐在哪几张桌（坐着时不能开新桌）。
  */
 export function LobbyPage() {
   const { id } = useParams();
@@ -148,6 +148,8 @@ export function LobbyPage() {
   /** 占座的面板开着时，服务端是否已经确认占到了 */
   const holdSeen = useRef(false);
 
+  /** 布告栏的人数要等服务端的实时数据来了才显示（预览版用本地的） */
+  const [tablesLive, setTablesLive] = useState(DEMO);
   const loadTables = () =>
     DEMO
       ? Promise.resolve()
@@ -155,12 +157,24 @@ export function LobbyPage() {
           (r) => {
             if (r.tables.length) setTables(r.tables.map((t) => ({ ...t, id: String(t.no) })));
             if (r.mine?.length) setMySeats((m) => new Set([...m, ...r.mine!]));
+            setTablesLive(true);
           },
           () => {},
         );
   useEffect(() => {
     loadTables();
   }, [!!me?.user]);
+  // 布告栏：页面开着时每 30 秒刷新一次桌子和人数，切回这个标签页时马上刷新
+  useEffect(() => {
+    if (DEMO) return;
+    const tick = () => document.visibilityState === "visible" && loadTables();
+    const id = setInterval(tick, 30_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
   useEffect(() => {
     setNote(flash.current);
     flash.current = null;
@@ -251,20 +265,10 @@ export function LobbyPage() {
     const left = [...watched].filter(([, v]) => v.you === null).map(([no]) => no);
     if (left.length) setMySeats((m) => new Set([...m].filter((no) => !left.includes(no))));
   }, [watched]);
-  /** 别的桌里轮到自己行动的 */
-  const turnElsewhere = [...watched].filter(([, v]) => v.legal).map(([no]) => no);
-  const myTurnKey = [...turnElsewhere, ...(view?.legal ? [table.no] : [])].join();
-  const [ring, setRing] = useState(0);
-  // 新轮到自己时震动，铃铛晃一下
-  const lastTurns = useRef("");
+  // 轮到自己时手机震一下
   useEffect(() => {
-    const before = new Set(lastTurns.current.split(",").filter(Boolean));
-    lastTurns.current = myTurnKey;
-    if (myTurnKey.split(",").some((no) => no && !before.has(no))) {
-      navigator.vibrate?.([120, 60, 120]);
-      setRing((r) => r + 1);
-    }
-  }, [myTurnKey]);
+    if (view?.legal) navigator.vibrate?.([120, 60, 120]);
+  }, [!!view?.legal]);
 
   // 在这桌输光了：服务端替你占着座位 10 秒，有余额就弹出买入面板，没余额直接放开
   const rebuyFor = useRef("");
@@ -314,6 +318,11 @@ export function LobbyPage() {
     const prev = prevView.current;
     prevView.current = view;
     if (!view || !prev || prev.no !== view.no) return;
+    // 有人入座 / 离座：自己的大声一点，别人的小声一点
+    view.seats.forEach((x, i) => {
+      if (x && !prev.seats[i]) sfx.sit(i === view.you ? 1 : 0.5);
+      else if (!x && prev.seats[i]) sfx.leave(i === prev.you ? 1 : 0.5);
+    });
     if (view.handNo !== prev.handNo && view.street === "preflop") {
       const dealt = view.seats.filter((x) => x?.inHand).length * 2;
       for (let k = 0; k < Math.min(dealt, 12); k++) sfx.deal(k * 0.06);
@@ -333,7 +342,7 @@ export function LobbyPage() {
   }, [view]);
 
   // 桌面事件：表情在那个人头上冒一下；偷偷看、发发看由发牌员告诉全桌；自己用了道具刷新库存
-  const [emotes, setEmotes] = useState<Record<number, { id: string; key: number }>>({});
+  const [emotes, setEmotes] = useState<Record<number, { id: string; key: number; roll?: number }>>({});
   const handled = useRef(new Set<string>());
   const throwLayer = useRef<Thrower>(null);
   useEffect(() => {
@@ -352,6 +361,18 @@ export function LobbyPage() {
         sfx.pop();
         setEmotes((m) => ({ ...m, [e.seat]: { id: e.what, key: e.id } }));
         setTimeout(() => setEmotes((m) => (m[e.seat]?.key === e.id ? (({ [e.seat]: _, ...rest }) => rest)(m) : m)), 2800);
+      } else if (e.kind === "roll") {
+        // 自己掷的在点的时候已经响过了
+        if (e.login !== me?.user?.login) sfx.dice();
+        const n = Number(e.what);
+        if (e.seat >= 0 && view.seats[e.seat]) {
+          // 坐着的：数从头像上冒出来
+          setEmotes((m) => ({ ...m, [e.seat]: { id: "roll", key: e.id, roll: n } }));
+          setTimeout(() => setEmotes((m) => (m[e.seat]?.key === e.id ? (({ [e.seat]: _, ...rest }) => rest)(m) : m)), 2800);
+        } else {
+          const who = e.login === me?.user?.login ? t("你", "You") : nameOf(e.login, lang);
+          setSay({ text: t(`${who}掷出了 ${n} 点`, `${who} rolled ${n}`), key: e.id });
+        }
       } else {
         if (e.seat === view.you) notifyMeChanged();
         const item = findItem(e.what);
@@ -608,15 +629,14 @@ export function LobbyPage() {
     setQuery("");
   };
 
-  /** 铃铛：先去轮到你行动的那张桌，没有就去你坐着的另一张桌。 */
-  const ringBell = () => {
-    const target = turnElsewhere[0] ?? [...mySeats].find((no) => no !== table.no);
-    if (target !== undefined) goTo(target);
-    else {
-      setNote(mySeats.has(table.no)
-        ? t("你只坐了这一张桌，轮到你时铃铛会响", "You're only at this table — the bell rings when it's your turn")
-        : t("坐下后，轮到你行动时铃铛会响", "Take a seat; the bell rings when it's your turn"));
-    }
+  /** 骰子：掷一个 0–100 的数。登录了由服务端出数、全桌都看得到；没登录只在自己这里掷 */
+  const [rolled, setRolled] = useState(0);
+  const rollDice = () => {
+    setRolled((r) => r + 1);
+    sfx.dice();
+    if (signedIn) return conn.send({ t: "roll" });
+    const n = Math.floor(Math.random() * 101);
+    setSay({ text: t(`你掷出了 ${n} 点（登录后全桌都看得到）`, `You rolled ${n} (sign in to roll for the table)`), key: Date.now() });
   };
 
   /** 先登录：线上跳 GitHub，预览版直接切成已登录。返回 false 表示正在跳走。 */
@@ -770,7 +790,7 @@ export function LobbyPage() {
 
   return (
     <div className="lobby">
-      {/* 招牌两边放牌桌的控件：左边切桌、找桌，右边铃铛、音效、开桌，都在桌子上方，不用往下滚 */}
+      {/* 招牌两边放牌桌的控件：左边切桌、找桌，右边骰子、音效、开桌，都在桌子上方，不用往下滚 */}
       <div className="lobby-head">
         <div className="table-nav">
           <button className="icon-btn" onClick={() => switchTable(-1)} aria-label={t("上一张桌", "Previous table")}>
@@ -804,16 +824,12 @@ export function LobbyPage() {
         <MarqueeSign text="yybar" />
         <div className="table-tools">
           <button
-            key={ring}
-            className={`icon-btn icon-btn-bell${turnElsewhere.length ? " ringing" : ""}${ring ? " rang" : ""}`}
-            onClick={ringBell}
-            aria-label={turnElsewhere.length ? t(`轮到你了：#${turnElsewhere.join("、#")}`, `Your turn at #${turnElsewhere.join(", #")}`) : t("回到我坐着的桌", "Back to my table")}
-            title={turnElsewhere.length ? t(`#${turnElsewhere[0]} 轮到你了`, `Your turn at #${turnElsewhere[0]}`) : t("轮到你行动时会响，点一下回到你坐着的桌", "Rings on your turn; tap to go back to your table")}
+            className="icon-btn icon-btn-dice"
+            onClick={rollDice}
+            aria-label={t("掷骰子（0–100）", "Roll a die (0–100)")}
+            title={t("掷骰子（0–100）", "Roll a die (0–100)")}
           >
-            <svg viewBox="0 0 12 12" aria-hidden className="stroke">
-              <path d="M3 8.6V5.4a3 3 0 0 1 6 0v3.2l.9 1H2.1z" />
-              <path d="M5 10.6a1.1 1.1 0 0 0 2 0" />
-            </svg>
+            <DiceIcon key={rolled} rolling={rolled > 0} />
           </button>
           <button
             className="icon-btn"
@@ -909,6 +925,49 @@ export function LobbyPage() {
         </div>
         {(note ?? status) && <p className="note" role="status">{note ?? status}</p>}
       </div>
+      {tablesLive && <TableBoard tables={tables} current={table.no} onPick={goTo} />}
     </div>
+  );
+}
+
+/**
+ * 布告栏（标题写 Notice Board）：现在开着的桌（机器人桌用机器人标）、盲注、桌上几个人（机器人也算，比如 3/6），点一行去那张桌。
+ * 宽屏挂在牌桌左边的空白里，像酒馆墙上钉的一张告示；窄屏排成一行放在操作区下面。
+ */
+function TableBoard({ tables, current, onPick }: { tables: TableEntry[]; current: number; onPick: (no: number) => void }) {
+  const t = useT();
+  return (
+    <aside className="table-board" aria-label={t("布告栏", "Notice board")}>
+      <h3>Notice Board</h3>
+      <div className="table-board-head" aria-hidden>
+        <span>{t("桌", "Table")}</span>
+        <span>{t("盲注", "Blinds")}</span>
+        <span>{t("在线", "Online")}</span>
+      </div>
+      <ul>
+        {tables.map((tb) => {
+          const online = tb.online ?? 0;
+          const full = tb.seated >= 6;
+          const label = tb.bots ? t(`机器人桌 #${tb.no}`, `Bot table #${tb.no}`) : t(`#${tb.no} 桌`, `Table #${tb.no}`);
+          return (
+            <li key={tb.no}>
+              <button
+                className={tb.no === current ? "on" : undefined}
+                aria-current={tb.no === current ? "true" : undefined}
+                onClick={() => onPick(tb.no)}
+                title={t(`${label}：盲注 ${fmtMoney(tb.blinds[0])}/${fmtMoney(tb.blinds[1])}，桌上 ${tb.seated}/6${online ? `，${online} 人连着` : ""}`, `${label}: blinds ${fmtMoney(tb.blinds[0])}/${fmtMoney(tb.blinds[1])}, ${tb.seated}/6 seated${online ? `, ${online} connected` : ""}`)}
+              >
+                <span className="tb-no">{tb.bots ? <RobotIcon label={t("机器人桌", "Bot table")} /> : `#${tb.no}`}</span>
+                <span className="tb-blinds">{fmtMoney(tb.blinds[0])}/{fmtMoney(tb.blinds[1])}</span>
+                <span className={`tb-online${tb.seated ? " live" : ""}${full ? " full" : ""}`}>
+                  <i aria-hidden />
+                  {tb.seated}/6
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
   );
 }

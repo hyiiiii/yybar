@@ -2,7 +2,7 @@
 // 纯逻辑，不碰网络和存储：服务端的 Durable Object 和预览版的本地牌桌都包一层用它。
 // 状态是普通 JSON，可以直接存进 Durable Object 的存储。
 
-import { bestScore, handName, newDeck, shuffle, type Card } from "./cards";
+import { bestScore, handName, newDeck, randomInt, shuffle, type Card } from "./cards";
 import { botDecide } from "./bot";
 import { SEATS, type Legal, type SeatView, type Street, type TableEvent, type TableView } from "./types";
 import { TIME_CARD_MS, type ItemId } from "../cosmetics";
@@ -142,6 +142,8 @@ export interface RoomState {
   eventSeq?: number;
   /** 每个人上次扔番茄、送玫瑰的时刻（按 userId），防刷屏 */
   throwAt?: Record<number, number>;
+  /** 每个人上次掷骰子的时间 */
+  rollAt?: Record<number, number>;
 }
 
 /** 入座带入：自己选 40～200 个大盲，默认 100 个。 */
@@ -157,6 +159,8 @@ const EVENT_MS = 8_000;
 const EMOTE_GAP_MS = 1_500;
 /** 同一个人两次扔番茄 / 送玫瑰至少隔多久（五连发自己要飞一秒多） */
 const THROW_GAP_MS = 2_000;
+/** 同一个人两次掷骰子至少隔多久 */
+const ROLL_GAP_MS = 2_000;
 /** 点了空位选带入时占座多久 */
 export const HOLD_MS = 10_000;
 /** 玩家开的桌没有真人超过这么久就收掉 */
@@ -179,8 +183,8 @@ export const BOT_BUY_IN_BB = 50;
 export const BOT_CASH_OUT_BB = 100;
 /** 补打时最多真打几手（几十毫秒）；停得再久，多出来的只把手数往前加，筹码早就打乱了 */
 export const CATCH_UP_HANDS = 500;
-/** 机器人桌一手大约多久，算停手期间错过了几手 */
-const BOT_HAND_MS = 40_000;
+/** 机器人桌一手大约多久，算停手期间错过了几手（机器人每次想 1.5～3 秒，模拟下来平均 29 秒一手） */
+const BOT_HAND_MS = 29_000;
 /** 摊牌亮出这些牌型解锁对应成就 */
 const HAND_UNLOCKS: Record<string, "full_house" | "quads" | "straight_flush"> = { 葫芦: "full_house", 四条: "quads", 同花顺: "straight_flush", 皇家同花顺: "straight_flush" };
 
@@ -444,6 +448,15 @@ export class TableRoom {
     this.s.throwAt = { ...Object.fromEntries(Object.entries(this.s.throwAt ?? {}).filter(([, t]) => now - t < THROW_GAP_MS)), [thrower.userId]: now };
     const from = this.seatOf(thrower.userId);
     this.event({ kind: "throw", seat: target, login: thrower.login, what: `${item}:${n}`, from: from >= 0 ? from : null }, now);
+    return null;
+  }
+
+  /** 掷骰子：0–100 的随机数，坐着的、旁观的都能掷，全桌都看得到。数在服务端出，谁也改不了 */
+  roll(user: { userId: number; login: string }, now: number, rand: (n: number) => number = randomInt): string | null {
+    const last = this.s.rollAt?.[user.userId];
+    if (last && now - last < ROLL_GAP_MS) return "慢一点";
+    this.s.rollAt = { ...Object.fromEntries(Object.entries(this.s.rollAt ?? {}).filter(([, t]) => now - t < ROLL_GAP_MS)), [user.userId]: now };
+    this.event({ kind: "roll", seat: this.seatOf(user.userId), login: user.login, what: String(rand(101)) }, now);
     return null;
   }
 
@@ -864,7 +877,7 @@ export class TableRoom {
     this.s.turnStart = now;
     seat.extended = false;
     // 取整毫秒：宿主按这个时刻排闹钟，带小数的话闹钟会在差零点几毫秒时响，什么都做不了
-    this.s.deadline = now + (seat.bot ? Math.round(2_500 + Math.random() * 2_500) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
+    this.s.deadline = now + (seat.bot ? Math.round(1_500 + Math.random() * 1_500) : seat.away !== null ? AWAY_TURN_MS : TURN_MS);
   }
 
   private apply(i: number, action: "fold" | "check" | "call" | "raise", amount: number | undefined, now: number): string | null {

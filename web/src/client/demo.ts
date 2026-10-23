@@ -1,7 +1,8 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
-import type { ActivityPoint, MeResponse, ModelRow, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
+import type { ActivityPoint, MeResponse, ModelRow, ModelTotalRow, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
 import { localBalance, spendLocal } from "./localTable";
 import { ACHIEVEMENTS } from "../shared/achievements";
+import type { ModelPrice } from "../shared/pricing";
 import { COSMETICS, DEFAULT_BACK, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type CosmeticKind, type ItemId } from "../shared/cosmetics";
 
 const PEOPLE = [
@@ -15,7 +16,20 @@ const PEOPLE = [
   { login: "grokker", name: "Grokker", cost: 132.44, tokens: 71_000_000 },
 ];
 
-const SCALE: Record<string, number> = { today: 0.035, "7d": 0.24, "30d": 0.82, all: 1 };
+/** 预览里的模型价格表（线上的在 D1 的 model_prices，见迁移 0012） */
+const DEMO_PRICES: ModelPrice[] = [
+  { model: "claude-opus-5-5", vendor: "anthropic", input: 4, output: 20, cache_read: 0.2, cache_write: 5, billed: 0 },
+  { model: "claude-sonnet-5-5", vendor: "anthropic", input: 2, output: 10, cache_read: 0.1, cache_write: 2.5, billed: 0 },
+  { model: "claude-haiku-4-5", vendor: "anthropic", input: 1, output: 5, cache_read: 0.1, cache_write: 1.25, billed: 0 },
+  { model: "gpt-6-sol", vendor: "openai", input: 2, output: 10, cache_read: 0.2, cache_write: 2.5, billed: 0 },
+  { model: "gpt-5.6-sol", vendor: "openai", input: 4, output: 20, cache_read: 0.4, cache_write: 5, billed: 0 },
+  { model: "gpt-5-codex", vendor: "openai", input: 1.25, output: 10, cache_read: 0.125, cache_write: 0, billed: 0 },
+  { model: "gemini-3.1-pro", vendor: "google", input: 2, output: 12, cache_read: 0.2, cache_write: 0, billed: 0 },
+  { model: "gemini-3-flash", vendor: "google", input: 0.5, output: 3, cache_read: 0.05, cache_write: 0, billed: 0 },
+  { model: "grok-*", vendor: "xai", input: 3, output: 15, cache_read: 0.75, cache_write: 0, billed: 1 },
+];
+
+const SCALE: Record<string, number> = { yesterday: 0.035, today: 0.035, "7d": 0.24, "30d": 0.82, all: 1 };
 
 const TOP: [TokenRow["topApp"], string][] = [
   ["claude", "claude-opus-4.5"], ["codex", "gpt-5-codex"], ["claude", "claude-sonnet-4.5"], ["claude", "claude-opus-4.5"],
@@ -62,11 +76,13 @@ function series(seed: number): SeriesPoint[] {
   const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
   for (let i = 0; i < 30; i++) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i)).toISOString().slice(0, 10);
-    for (const app of ["codex", "claude", "grok"] as const) {
-      if (rnd() < 0.25) continue;
-      const usd = (app === "claude" ? 40 : app === "codex" ? 18 : 8) * (0.3 + rnd());
+    for (const app of ["codex", "claude", "grok", "grokBot", "agy"] as const) {
+      if (rnd() < (app === "grokBot" || app === "agy" ? 0.5 : 0.25)) continue;
+      const usd = { claude: 40, codex: 18, grok: 8, grokBot: 4, agy: 6 }[app] * (0.3 + rnd());
       out.push({ day: d, app, tokens: Math.round(usd * 480_000), cost_micro: Math.round(usd * 1e6) });
     }
+    // Gemini 只有回答次数
+    if (rnd() < 0.6) out.push({ day: d, app: "gemini", tokens: 0, cost_micro: 0, answers: Math.round(2 + rnd() * 14) });
   }
   return out;
 }
@@ -77,9 +93,15 @@ function demoModels(points: SeriesPoint[]): ModelRow[] {
     claude: [["claude-opus-4.5", 0.75], ["claude-sonnet-4.5", 0.25]],
     codex: [["gpt-5-codex", 1]],
     grok: [["grok-4", 1]],
+    grokBot: [["grok-code-fast", 1]],
+    agy: [["gemini-3-pro", 0.7], ["claude-sonnet-4.5", 0.3]],
+    gemini: [["gemini-3-pro", 0.8], ["gemini-3-flash", 0.2]],
   };
   return points.flatMap((p) =>
     split[p.app].map(([model, share]) => {
+      if (p.app === "gemini") {
+        return { day: p.day, app: p.app, model, cost_micro: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, answers: Math.round((p.answers ?? 0) * share) };
+      }
       const tokens = p.tokens * share;
       return {
         day: p.day, app: p.app, model, cost_micro: Math.round(p.cost_micro * share),
@@ -88,6 +110,22 @@ function demoModels(points: SeriesPoint[]): ModelRow[] {
       };
     }),
   );
+}
+
+/** 预览用的「全部」：把近 30 天每个模型加起来再放大几倍，当成以前也一直在用 */
+function demoModelTotals(rows: ModelRow[], k: number): ModelTotalRow[] {
+  const out = new Map<string, ModelTotalRow>();
+  for (const { day: _, ...r } of rows) {
+    const m = out.get(`${r.app}/${r.model}`) ?? { ...r, input: 0, output: 0, cache_read: 0, cache_write: 0, cost_micro: 0, answers: 0 };
+    m.input += r.input * k;
+    m.output += r.output * k;
+    m.cache_read += r.cache_read * k;
+    m.cache_write += r.cache_write * k;
+    m.cost_micro += r.cost_micro * k;
+    m.answers = (m.answers ?? 0) + (r.answers ?? 0) * k;
+    out.set(`${r.app}/${r.model}`, m);
+  }
+  return [...out.values()];
 }
 
 /** 预览用的 Token 活动：最近 378 天，越近用得越多，周末少一点，偶尔歇一天；按 Claude / Codex / Grok 大概六三一分 */
@@ -104,6 +142,9 @@ function activity(seed: number, total: number): ActivityPoint[] {
     const tokens = Math.round((total / 160) * weekend * (0.2 + rnd() * 1.6) * (1.4 - i / 300));
     out.push({ day, app: "claude", tokens: Math.round(tokens * 0.6) }, { day, app: "codex", tokens: Math.round(tokens * 0.3) });
     if (rnd() < 0.4) out.push({ day, app: "grok", tokens: Math.round(tokens * 0.1) });
+    if (rnd() < 0.3) out.push({ day, app: "grokBot", tokens: Math.round(tokens * 0.05) });
+    if (rnd() < 0.35) out.push({ day, app: "agy", tokens: Math.round(tokens * 0.08) });
+    if (rnd() < 0.5) out.push({ day, app: "gemini", tokens: 0, answers: Math.round(2 + rnd() * 14) });
   }
   return out;
 }
@@ -123,6 +164,7 @@ function profile(login: string): Profile {
     },
     series: series(p.login.length * 7),
     models: demoModels(series(p.login.length * 7)),
+    modelsAll: demoModelTotals(demoModels(series(p.login.length * 7)), 6),
     activity: activity(p.login.length * 13, p.tokens),
     points: { earned: Math.floor(p.cost * 100), balance: Math.floor(p.cost * 100) - 23_650 },
   };
@@ -137,6 +179,9 @@ const stock: Record<ItemId, number> = { timecard: 2, peek: 1, runout: 1 };
 
 /** 预览里的成就：这几个算已经解锁 */
 const demoUnlocked: Record<string, string> = { first_login: "2026-09-02", streak_7: "2026-09-20", tokens_100m: "2026-09-28", top_today: "2026-10-12", spend_1k: "2026-10-15" };
+/** 预览里已经领过的成就；剩下解锁了的等着点「领取」 */
+const demoClaimed = new Set<string>(["first_login", "streak_7", "top_today"]);
+const demoReady = () => Object.keys(demoUnlocked).filter((id) => !demoClaimed.has(id));
 let badges: string[] = ["top_today", "streak_7"];
 /** 预览里每日礼盒今天领过没有 */
 let dailyClaimed = false;
@@ -170,16 +215,33 @@ export function demoSpend(item: ItemId) {
 
 export function demoApi(path: string, method: string, _json?: unknown): unknown {
   const url = new URL(path, "https://demo.local");
+  if (url.pathname === "/api/prices") return { prices: DEMO_PRICES };
   if (url.pathname === "/api/leaderboard") {
     return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard(url.searchParams.get("sort") ?? "balance") } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d", url.searchParams.get("sort") ?? "tokens") };
   }
   if (url.pathname === "/api/achievements") {
-    if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null })), progress: null, badge: null };
+    if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null, claimedAt: null })), progress: null, badge: null };
     return {
-      achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: demoUnlocked[a.id] ? `${demoUnlocked[a.id]}T08:00:00Z` : null })),
+      achievements: ACHIEVEMENTS.map((a) => {
+        const at = demoUnlocked[a.id] ? `${demoUnlocked[a.id]}T08:00:00Z` : null;
+        return { ...a, unlockedAt: at, claimedAt: demoClaimed.has(a.id) ? at : null };
+      }),
       progress: { streak: 23, tokens: 912_000_000, spend: 1_842 },
       badges,
     };
+  }
+  if (url.pathname === "/api/achievements/claim") {
+    const { id } = (_json ?? {}) as { id?: string };
+    const ids = id ? [id] : demoReady();
+    let amount = 0;
+    for (const x of ids) {
+      if (!demoUnlocked[x] || demoClaimed.has(x)) continue;
+      demoClaimed.add(x);
+      amount += ACHIEVEMENTS.find((a) => a.id === x)?.reward ?? 0;
+    }
+    if (id && !amount) throw new Error(demoUnlocked[id] ? "已经领过了" : "还没解锁这个成就");
+    spendLocal(-amount);
+    return { ok: true, amount };
   }
   if (url.pathname === "/api/achievements/wear") {
     const { id, on } = (_json ?? {}) as { id: string; on: boolean };
@@ -240,10 +302,11 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
       look: { ...look },
       items: { ...stock },
       emotes: demoEmotes(),
+      achievementsReady: demoReady().length,
       // 余额跟着预览牌桌的带入、离桌变
       points: { ...p.points, balance: localBalance() },
-      // 上传记录：近 30 天里有用量的日子，第二天早上传上来
-      uploads: [...new Set(p.series.map((x) => x.day))].sort().reverse().map((day) => {
+      // 上传记录：最近 10 个有用量的日子，第二天早上传上来
+      uploads: [...new Set(p.series.map((x) => x.day))].sort().reverse().slice(0, 10).map((day) => {
         const rows = p.series.filter((x) => x.day === day);
         const next = new Date(`${day}T00:00:00Z`);
         next.setUTCDate(next.getUTCDate() + 1);

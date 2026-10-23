@@ -99,6 +99,8 @@ const EXACT: Record<string, string> = {
   慢一点: "Slow down",
   未登录: "Not signed in",
   还没解锁这个成就: "You haven't unlocked that yet",
+  已经领过了: "Already claimed",
+  先领了这个成就再戴: "Claim this achievement before wearing its badge",
   "最多戴 3 个徽章": "You can wear up to 3 badges",
   没有这个成就: "No such achievement",
 };

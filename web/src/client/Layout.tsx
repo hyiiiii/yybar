@@ -136,8 +136,14 @@ export function Layout() {
           <NavLink to="/board" className="nav-icon" aria-label={t("排行榜", "Leaderboard")} title={t("排行榜", "Leaderboard")}>
             <PodiumIcon />
           </NavLink>
-          <NavLink to="/achievements" className="nav-icon" aria-label={t("成就", "Achievements")} title={t("成就", "Achievements")}>
+          <NavLink
+            to="/achievements"
+            className="nav-icon"
+            aria-label={me?.achievementsReady ? t(`成就：${me.achievementsReady} 个可以领取`, `Achievements: ${me.achievementsReady} to claim`) : t("成就", "Achievements")}
+            title={me?.achievementsReady ? t(`有 ${me.achievementsReady} 个成就可以领取`, `${me.achievementsReady} achievements to claim`) : t("成就", "Achievements")}
+          >
             <TrophyIcon />
+            {!!me?.achievementsReady && <span key={me.achievementsReady} className="nav-badge">{me.achievementsReady}</span>}
           </NavLink>
           {user ? (
             <NavLink to="/me" className="me-link">

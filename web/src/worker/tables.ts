@@ -11,6 +11,7 @@ interface TableRow {
   bb: number;
   bots: number;
   seated: number;
+  online: number;
   created_by: number | null;
   created_at: string;
 }
@@ -20,14 +21,14 @@ const MAX_OWN_TABLES = 3;
 
 export const tableRoutes = new Hono<AppEnv>();
 
-const listed = (t: TableRow) => ({ no: t.no, blinds: [t.sb, t.bb], bots: !!t.bots, seated: t.seated, temporary: t.created_by !== null });
+const listed = (t: TableRow) => ({ no: t.no, blinds: [t.sb, t.bb], bots: !!t.bots, seated: t.seated, online: t.online ?? 0, temporary: t.created_by !== null });
 
 tableRoutes.get("/", async (c) => {
   // 玩家开的桌没人坐会自己收掉；开了却一直没人连上去的，在这里顺手清掉
   await c.env.DB.prepare(
     "DELETE FROM poker_tables WHERE created_by IS NOT NULL AND seated = 0 AND created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 minutes')",
   ).run();
-  const { results } = await c.env.DB.prepare("SELECT no, sb, bb, bots, seated, created_by FROM poker_tables ORDER BY no").all<TableRow>();
+  const { results } = await c.env.DB.prepare("SELECT no, sb, bb, bots, seated, online, created_by FROM poker_tables ORDER BY no").all<TableRow>();
   // 登录了顺带告诉你坐在哪几张桌，前端在后台连着它们，轮到你时提醒
   const user = await sessionUser(c);
   const mine = user
@@ -52,7 +53,7 @@ tableRoutes.post("/", requireSession, async (c) => {
   const row = await c.env.DB.prepare(
     `INSERT INTO poker_tables (no, sb, bb, bots, created_by)
      SELECT COALESCE(MAX(no), 1000) + 1, ?, ?, 0, ? FROM poker_tables
-     RETURNING no, sb, bb, bots, seated, created_by`,
+     RETURNING no, sb, bb, bots, seated, online, created_by`,
   )
     .bind(blinds[0], blinds[1], user.id)
     .first<TableRow>();

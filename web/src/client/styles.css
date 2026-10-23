@@ -29,7 +29,9 @@
   --codex: #6c6c70;
   --claude: #d97757;
   --grok: #1d1d1f;
+  --grokBot: #636366;
   --gemini: #3b7bf6;
+  --agy: #8a6fd0;
   --chip: #c96442;
 
   --card: #fffdf8;
@@ -63,6 +65,9 @@
     --codex: #98989d;
     --claude: #e68a6e;
     --grok: #e5e5ea;
+    --grokBot: #aeaeb2;
+    --gemini: #6a9ef0;
+    --agy: #a58ee6;
     --chip: #d97757;
     --card-back: #4a4844;
     --card-back-line: #5a5853;
@@ -90,6 +95,9 @@
   --codex: #98989d;
   --claude: #e68a6e;
   --grok: #e5e5ea;
+  --grokBot: #aeaeb2;
+  --gemini: #6a9ef0;
+  --agy: #a58ee6;
   --chip: #d97757;
   --card-back: #4a4844;
   --card-back-line: #5a5853;
@@ -120,7 +128,9 @@ nav a { text-decoration: none; padding: 6px 12px; border-radius: 8px; color: var
 nav a:hover { background: var(--fill); }
 nav a.active { color: var(--label); background: var(--fill); }
 /* 顶栏三个入口只用图标 */
-.nav-icon { display: inline-grid; place-items: center; padding: 7px 11px; }
+.nav-icon { position: relative; display: inline-grid; place-items: center; padding: 7px 11px; }
+/* 奖杯旁边：有成就解锁了还没领 */
+.nav-badge { position: absolute; top: 1px; right: 3px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; box-shadow: 0 0 0 1.5px var(--bg); }
 .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; display: block; }
 .me-link { display: inline-flex; align-items: center; gap: 8px; }
 .chip-count { font-weight: 600; color: var(--label); }
@@ -150,13 +160,38 @@ main { min-height: 60vh; }
   --felt-w: min(860px, calc(100% - 96px), max(560px, calc((100dvh - 420px) * 2.55)));
   display: flex; flex-direction: column; align-items: center; padding-block: 4px 0;
 }
-/* 招牌在中间，左边切桌、找桌，右边铃铛、音效、开桌 */
+/* 招牌在中间，左边切桌、找桌，右边骰子、音效、开桌 */
 .lobby-head { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-areas: "nav sign tools"; align-items: end; column-gap: 12px; }
 .lobby-head .sign { grid-area: sign; }
 .table-nav, .table-tools { display: flex; align-items: center; gap: 6px; }
 .table-nav { grid-area: nav; justify-self: start; }
 .table-tools { grid-area: tools; justify-self: end; }
 .dock { position: sticky; bottom: 0; z-index: 8; width: 100%; display: flex; flex-direction: column; align-items: center; padding-block: 8px 14px; background: var(--bg); }
+/* 布告栏：开着的桌、盲注、在线人数。窄屏是操作区下面的一张小告示；宽屏钉在牌桌左边的空白里，顶上一颗图钉 */
+.table-board { position: relative; width: min(340px, 100%); margin: 6px 0 22px; padding: 16px 14px 10px; border-radius: 12px; background: var(--panel); box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
+.table-board::before { content: ""; position: absolute; top: -5px; left: 50%; width: 11px; height: 11px; margin-left: -5.5px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f3a184, var(--accent) 55%, #8a3b22); box-shadow: 0 2px 3px rgb(0 0 0 / .28); }
+.table-board h3 { margin: 0 0 10px; text-align: center; font-size: 11px; font-weight: 600; letter-spacing: .22em; text-indent: .22em; text-transform: uppercase; color: var(--label-2); }
+.table-board-head, .table-board button { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; align-items: center; column-gap: 10px; }
+.table-board-head { padding: 0 8px 6px; font-size: 10.5px; color: var(--label-3); border-bottom: 1px dashed var(--separator); }
+.table-board ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.table-board li + li { border-top: 1px dashed color-mix(in srgb, var(--separator) 60%, transparent); }
+.table-board button { width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: none; color: var(--label); font: inherit; font-size: 13px; text-align: left; cursor: pointer; font-variant-numeric: tabular-nums; transition: background-color .2s, color .2s; }
+.table-board button:hover { background: var(--fill); }
+.table-board button.on { background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--accent); font-weight: 600; }
+.tb-no { display: inline-flex; align-items: center; }
+.tb-no .icon { width: 17px; height: 17px; stroke-width: 1.7; }
+.tb-blinds { color: var(--label-2); }
+.table-board button.on .tb-blinds { color: inherit; }
+.tb-online { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 2.6em; }
+.tb-online i { width: 6px; height: 6px; border-radius: 50%; background: var(--label-3); opacity: .45; }
+.tb-online.live i { background: #3aa65b; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #3aa65b 18%, transparent); }
+/* 坐满了：点换成橙色 */
+.tb-online.full i { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+@media (min-width: 1400px) {
+  /* 右边缘停在牌桌左边缘再往外 56px（两边的座位会伸出桌边一点） */
+  .lobby { position: relative; }
+  .table-board { position: absolute; top: 150px; right: calc(50% + var(--felt-w) / 2 + 56px); width: 200px; margin: 0; }
+}
 .sign { position: relative; overflow: hidden; border-radius: 14px; width: min(300px, 80vw, max(200px, 30dvh)); container-type: inline-size; }
 .sign-svg { display: block; width: 100%; height: auto; }
 .sign-bulbs { position: absolute; inset: 0; }
@@ -352,15 +387,10 @@ main { min-height: 60vh; }
   @keyframes slide-next { from { translate: 90px 0; opacity: 0; } }
   @keyframes slide-prev { from { translate: -90px 0; opacity: 0; } }
 }
-/* 铃铛：别的桌轮到你时晃、亮小红点 */
-.icon-btn-bell { position: relative; }
-.icon-btn-bell svg.stroke { stroke-width: 1.3; stroke-linejoin: round; transform-origin: 50% 10%; }
-.icon-btn-bell.ringing { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.icon-btn-bell.ringing::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 1.5px var(--panel); }
+/* 骰子：点一下翻滚着掷出去 */
 @media (prefers-reduced-motion: no-preference) {
-  .icon-btn-bell.rang svg { animation: bell .9s ease-in-out; }
-  .icon-btn-bell.ringing svg { animation: bell 1.4s ease-in-out infinite; }
-  @keyframes bell { 0%, 70%, 100% { rotate: 0deg; } 10% { rotate: 18deg; } 25% { rotate: -16deg; } 40% { rotate: 11deg; } 55% { rotate: -6deg; } }
+  .dice-rolling { animation: dice-roll .55s cubic-bezier(.3, .7, .3, 1); }
+  @keyframes dice-roll { 30% { transform: translateY(-4px) rotate(200deg) scale(.85); } 70% { transform: rotate(380deg) scale(1.05); } 100% { transform: rotate(360deg); } }
 }
 
 .corner-label { min-width: 92px; text-align: center; font-size: 13px; color: var(--label); white-space: nowrap; }
@@ -545,6 +575,15 @@ main { min-height: 60vh; }
 .emote-picker button:hover { background: var(--fill); }
 /* 有人发表情：在他头上冒出来，停一会儿淡掉 */
 .seat-emote { position: absolute; left: 50%; bottom: calc(100% + 14px); translate: -50% 0; z-index: 6; pointer-events: none; filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.15)); }
+/* 掷骰子：点数从头像上冒出来，先乱跳再停住 */
+.seat-roll { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px 5px 8px; border-radius: 999px; background: var(--panel); color: var(--label); box-shadow: inset 0 0 0 1px var(--separator); white-space: nowrap; }
+.seat-roll .icon { width: 18px; height: 18px; }
+.seat-roll b { min-width: 3ch; text-align: center; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.seat-roll b.landed { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .seat-roll b.landed { animation: roll-land .3s ease; }
+  @keyframes roll-land { 40% { scale: 1.3; } }
+}
 @media (prefers-reduced-motion: no-preference) {
   .seat-emote { animation: emote-pop 2.8s ease both; }
   @keyframes emote-pop { 0% { scale: .3; opacity: 0; } 12% { scale: 1.15; opacity: 1; } 22% { scale: 1; } 82% { opacity: 1; translate: -50% 0; } 100% { opacity: 0; translate: -50% -10px; } }
@@ -570,7 +609,14 @@ main { min-height: 60vh; }
 .badge-ink { background: linear-gradient(180deg, #3b3b40, #141416); color: #f6d36b; }
 .plate-name .badge { margin-left: 3px; }
 /* 成就页 */
-.ach-summary { margin: 0 0 14px; }
+.ach-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+.ach-summary p { margin: 0; }
+/* 领取：和奖励数字同一个金色 */
+.btn-claim { flex: none; background: #c88a0e; color: #fff; }
+.ach.ready { box-shadow: var(--shadow), 0 0 0 1.5px #c88a0e; }
+.ach.ready::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.ach-reward { position: relative; }
+.ach-reward-pop { position: absolute; left: 0; bottom: 100%; font-style: normal; white-space: nowrap; pointer-events: none; opacity: 0; }
 .ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .ach { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--panel); box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
 .ach:not(.done) .ach-badge { filter: grayscale(1); opacity: 0.45; }
@@ -701,12 +747,27 @@ main { min-height: 60vh; }
 .card-box.notice { color: var(--label-2); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 .stat { background: var(--panel); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
-.stat-label { color: var(--label-2); font-size: 12px; }
+.stat-label { display: flex; align-items: center; gap: 5px; color: var(--label-2); font-size: 12px; }
+/* 「总花费」旁边的小问号：点开看服务端的模型价格表 */
+.stat-help { display: inline-grid; place-items: center; width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%; background: var(--fill); color: var(--label-2); font: inherit; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
+.stat-help:hover { background: var(--accent); color: #fff; }
+.price-modal h2 { margin-bottom: 8px; }
+.price-notes { margin: 0 0 14px; padding-left: 18px; font-size: 13px; color: var(--label-2); }
+.price-notes li + li { margin-top: 3px; }
+.price-table { font-size: 13px; font-variant-numeric: tabular-nums; }
+.price-table .price-group th { padding-top: 14px; font-size: 12px; font-weight: 600; color: var(--label); text-align: left; }
+.price-table tbody:first-of-type .price-group th { padding-top: 4px; }
+.price-cap { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--fill); font-size: 10px; color: var(--label-2); }
+.price-unit { margin: 10px 0 0; font-size: 11px; }
 .stat-value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
 .stat-hint { color: var(--label-3); font-size: 11px; }
 .fill-codex { fill: var(--codex); background: var(--codex); }
 .fill-claude { fill: var(--claude); background: var(--claude); }
 .fill-grok { fill: var(--grok); background: var(--grok); }
+.fill-grokBot { fill: var(--grokBot); background: var(--grokBot); }
+.fill-gemini { fill: var(--gemini); background: var(--gemini); }
+/* Antigravity 的标是彩虹像素 A：柱子也用一道彩虹 */
+.fill-agy { fill: var(--agy); background: linear-gradient(180deg, #e8613c, #d9b13c 30%, #5db37a 60%, #4a86e8); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--label-2); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
 .table-scroll { overflow-x: auto; }
@@ -894,6 +955,13 @@ main { min-height: 60vh; }
   /* 戴上徽章：弹一下 */
   .badge-wear { display: inline-block; animation: wear-pop .55s cubic-bezier(.2, 1.6, .4, 1) both; }
   @keyframes wear-pop { from { scale: .4; rotate: -12deg; } }
+  /* 解锁了没领：金边一圈一圈往外亮；领了奖励数字往上飘 */
+  .ach.ready::after { animation: ach-ready 1.8s ease-in-out infinite; }
+  @keyframes ach-ready { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, #c88a0e 20%, transparent); } }
+  .ach-reward-pop { animation: reward-pop 1.1s ease-out both; }
+  @keyframes reward-pop { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 -24px; } }
+  .nav-badge { animation: nav-badge-in .4s cubic-bezier(.2, 1.6, .4, 1) both; }
+  @keyframes nav-badge-in { from { scale: .2; } }
   .modal { animation: modal-in .35s cubic-bezier(.2, .9, .3, 1.1) both; }
   .modal-back { animation: fade-in .25s ease-out both; }
   @keyframes modal-in { from { scale: .92; translate: 0 10px; opacity: 0; } }
@@ -953,6 +1021,25 @@ main { min-height: 60vh; }
 .svc-codex { color: var(--codex); }
 .svc-claude { color: var(--claude); }
 .svc-grok { color: var(--grok); }
+.svc-grokBot { color: var(--grok); }
+.svc-gemini { color: var(--gemini); }
+/* 合并的一组：两个标挨着，后一个稍微压住前一个 */
+.unit-logo { display: inline-flex; align-items: center; }
+.unit-pair .svc-logo + .svc-logo { margin-left: -3px; }
+/* 一组后面的拆开 / 合并：只有图标，不带边框 */
+.svc-filter .svc-pair { padding: 0; width: 24px; justify-content: center; margin: 0 -4px; border-color: transparent; background: none; color: var(--label-2); }
+.svc-filter .svc-pair:hover { color: var(--label); background: var(--fill); }
+.svc-pair-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: no-preference) {
+  .svc-pair-icon.to-merge { animation: pair-icon-in .38s cubic-bezier(.2, .8, .2, 1); }
+  .svc-pair-icon.to-split { animation: pair-icon-in-back .38s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes pair-icon-in { from { rotate: -180deg; scale: .4; opacity: 0; } }
+  @keyframes pair-icon-in-back { from { rotate: 180deg; scale: .4; opacity: 0; } }
+  /* 柱子里合并的两段换颜色时渐变过去 */
+  .daily-stack i { transition: background-color .38s ease, flex-grow .38s ease; }
+}
+.usage-unit { font-size: 12px; color: var(--label-2); }
+.daily-tip em small { font-size: 10.5px; color: var(--label-2); }
 /* 每日用量（近 30 天：按服务叠起来的柱 + 日均虚线 + 悬停浮层） */
 .usage-title { display: flex; align-items: baseline; gap: 12px; }
 .usage-avg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label-2); font-variant-numeric: tabular-nums; }
@@ -1029,6 +1116,9 @@ main { min-height: 60vh; }
 .act-tint-codex { --tint: var(--codex); }
 .act-tint-claude { --tint: var(--claude); }
 .act-tint-grok { --tint: var(--grok); }
+.act-tint-grokBot { --tint: var(--grokBot); }
+.act-tint-gemini { --tint: var(--gemini); }
+.act-tint-agy { --tint: var(--agy); }
 .act-tint .act-l1 { background: color-mix(in srgb, var(--tint) 22%, transparent); }
 .act-tint .act-l2 { background: color-mix(in srgb, var(--tint) 45%, transparent); }
 .act-tint .act-l3 { background: color-mix(in srgb, var(--tint) 72%, transparent); }
