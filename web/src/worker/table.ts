@@ -133,7 +133,7 @@ export class PokerTable extends DurableObject<Env> {
     const res = await this.env.DB.prepare(
       `INSERT INTO points_ledger (user_id, delta, reason, ref)
        SELECT ?1, -?2, 'tomato', ?3
-       WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 10000 FROM daily_usage WHERE user_id = ?1)
+       WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 1000000 FROM daily_usage WHERE user_id = ?1)
            + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) >= ?2`,
     )
       .bind(user.userId, price, ref)
@@ -157,7 +157,7 @@ export class PokerTable extends DurableObject<Env> {
     const res = await this.env.DB.prepare(
       `INSERT INTO points_ledger (user_id, delta, reason, ref)
        SELECT ?1, -?2, 'buyin', ?3
-       WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 10000 FROM daily_usage WHERE user_id = ?1)
+       WHERE (SELECT COALESCE(SUM(cost_micro), 0) / 1000000 FROM daily_usage WHERE user_id = ?1)
            + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) >= ?2`,
     )
       .bind(user.userId, amount, ref)
@@ -325,7 +325,7 @@ function send(ws: WebSocket, msg: ServerMsg) {
 async function balanceOf(db: D1Database, userId: number): Promise<number> {
   const row = await db
     .prepare(
-      `SELECT (SELECT COALESCE(SUM(cost_micro), 0) / 10000 FROM daily_usage WHERE user_id = ?1)
+      `SELECT (SELECT COALESCE(SUM(cost_micro), 0) / 1000000 FROM daily_usage WHERE user_id = ?1)
             + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE user_id = ?1) AS balance`,
     )
     .bind(userId)

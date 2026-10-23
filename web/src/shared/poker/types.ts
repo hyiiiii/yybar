@@ -53,6 +53,8 @@ export interface SeatView {
   /** 本手赢到的筹码（摊牌后） */
   won: number;
   hand: string | null;
+  /** 机器人今天（UTC 日期）一共赢了（正）或输了（负）多少；真人是 null */
+  today: number | null;
 }
 
 export interface Legal {

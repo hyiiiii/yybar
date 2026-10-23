@@ -415,7 +415,7 @@ export function LobbyPage() {
     </>
   );
 
-  // 点头像看这个人的统计（手数、胜率、VPIP、PFR、3B），再点一下或点别处收起
+  // 点头像看这个人的统计（手数、胜率、VPIP、PFR、3B），再点一下或点别处收起；机器人看它今天赢了或输了多少
   const [info, setInfo] = useState<{ seat: number; login: string; stats: PokerStats | null; error?: boolean } | null>(null);
   const showInfo = (seat: number, login: string) => {
     if (info?.seat === seat) return setInfo(null);
@@ -440,8 +440,13 @@ export function LobbyPage() {
         <b>{nameOf(info.login, lang)}</b>
         <Badges ids={infoSeat?.badges} />
       </div>
-      {info.login.startsWith("bot-") ? (
-        <span className="muted small">{t("练习桌的机器人，不记统计。", "Practice bot — no stats.")}</span>
+      {info.login.startsWith("bot-") && infoSeat ? (
+        <span className="bot-today">
+          {t("今天", "Today")}{" "}
+          <b className={(infoSeat.today ?? 0) > 0 ? "up" : (infoSeat.today ?? 0) < 0 ? "down" : ""}>
+            {(infoSeat.today ?? 0) > 0 ? "+" : (infoSeat.today ?? 0) < 0 ? "−" : ""}{fmtMoney(Math.abs(infoSeat.today ?? 0))}
+          </b>
+        </span>
       ) : info.stats ? (
         <StatLine stats={info.stats} />
       ) : (

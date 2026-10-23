@@ -476,7 +476,7 @@ describe("table flow", () => {
 
   it("a bot that had to sit elsewhere moves back to its own seat once it frees up", () => {
     const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
-    // 2 号座位当时被人占着，bot-002 坐到了 1 号，挨着 bot-001
+    // 座位 2 当时被人占着，bot-G 坐到了座位 1，挨着 bot-C
     room.s.seats[1] = room.s.seats[2];
     room.s.seats[2] = null;
     room.tick(room.s.nextHandAt!);
@@ -514,6 +514,27 @@ describe("table flow", () => {
     const fresh = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
     fresh.resume(10_000);
     expect(fresh.s.handNo).toBe(0);
+  });
+
+  it("keeps each bot's win/loss for today, adding up to zero among bots", () => {
+    const room = TableRoom.create({ no: 1000, sb: 1, bb: 2, bots: true });
+    const day1 = Date.UTC(2026, 9, 22, 12);
+    let now = day1;
+    room.tick((now = room.s.nextHandAt! + day1));
+    for (let n = 0; n < 2000 && room.s.handNo < 30; n++) room.tick((now = room.nextWake()!));
+    // 等这一手打完再看
+    for (let n = 0; n < 200 && room.s.street !== "showdown"; n++) room.tick((now = room.nextWake()!));
+    // 只有机器人在打：一个赢的就是另外两个输的（歇着的机器人也在账上）
+    const net = room.s.botDay!.net;
+    expect(Object.values(net).reduce((a, b) => a + b, 0)).toBe(0);
+    expect(Object.values(net).some((x) => x !== 0)).toBe(true);
+    // 坐着的机器人头像上看到的就是账上的数
+    for (const x of room.view(null, now).seats) if (x?.bot) expect(x.today).toBe(net[x.login] ?? 0);
+    // 过了 UTC 零点还没打完一手：今天从 0 算起
+    expect(room.view(null, Date.UTC(2026, 9, 23, 0, 1)).seats.filter((x) => x?.bot).every((x) => x!.today === 0)).toBe(true);
+    // 真人没有这一项
+    room.sit({ userId: 1, login: "u1", avatarUrl: null }, 1, 200, now);
+    expect(room.view(1, now).seats[1]!.today).toBeNull();
   });
 
   it("sends bots away when a bot table becomes a regular one", () => {

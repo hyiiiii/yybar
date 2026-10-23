@@ -7,6 +7,7 @@ import { pick, useLang, useT } from "./i18n";
 import { findAchievement } from "../shared/achievements";
 import { loginHref, notifyMeChanged } from "./useMe";
 import { RobotIcon } from "./icons";
+import { BOT_FACES } from "./bots";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
 
@@ -129,8 +130,9 @@ export interface Seat {
   labels?: { join: string; buying: string; you: string };
 }
 
-/** 座位圆盘里的头像：GitHub 头像，没有就用名字首字母；机器人画个机器人。 */
+/** 座位圆盘里的头像：GitHub 头像，没有就用名字首字母；机器人桌的机器人用它们的 Q 版头像，别的机器人画个机器人。 */
 function SeatFace({ login, avatarUrl, bot }: { login: string; avatarUrl?: string | null; bot?: boolean }) {
+  if (bot && BOT_FACES[login]) return <img className="seat-face" src={BOT_FACES[login]} alt="" draggable={false} />;
   if (bot) {
     return (
       <span className="seat-face seat-face-bot" aria-hidden>
@@ -174,7 +176,7 @@ export function FeltTable({
       {order.map(({ s, d }) => (
         <div
           key={s.id}
-          className={`seat pos-${d}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}${s.held ? " seat-held" : ""}${s.win ? " seat-win" : ""}`}
+          className={`seat pos-${d}${s.you ? " seat-you" : ""}${s.login ? "" : " seat-empty"}${s.folded ? " seat-folded" : ""}${s.acting ? " seat-acting" : ""}${s.held ? " seat-held" : ""}${s.win ? " seat-win" : ""}${s.info ? " seat-info-open" : ""}`}
         >
           {s.login ? (
             <>

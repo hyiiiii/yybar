@@ -6,7 +6,7 @@ import { ITEMS } from "../shared/cosmetics";
 import { emotesOf, itemsOf, lookOf, shopRoutes } from "./shop";
 import { tableRoutes } from "./tables";
 import type { AppEnv } from "./types";
-import { parseUpload, saveUpload, UploadError } from "./usage";
+import { parseUpload, saveUpload, uploadedDays, UploadError } from "./usage";
 import { addDays, isoDay, pointsFromMicro, randomToken, sha256 } from "./util";
 
 const app = new Hono<AppEnv>();
@@ -119,7 +119,7 @@ app.get("/api/leaderboard", async (c) => {
          SELECT u.login, u.name, u.avatar_url, u.badges,
            s.hands, s.wins, s.vpip, s.pfr, s.threebet_opp, s.threebet,
            COALESCE(pd.net, 0) AS today, COALESCE(pd.hands, 0) AS today_hands,
-           (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 10000
+           (SELECT COALESCE(SUM(cost_micro), 0) FROM daily_usage d WHERE d.user_id = u.id) / 1000000
              + (SELECT COALESCE(SUM(delta), 0) FROM points_ledger l WHERE l.user_id = u.id) AS balance
          FROM users u
            LEFT JOIN poker_stats s ON s.user_id = u.id
@@ -303,6 +303,9 @@ v1.use("*", requireApiToken);
 
 v1.get("/whoami", (c) => c.json({ user: publicUser(c.get("user")) }));
 
+/** 已经上传过的日期：App 连上后拿它补上本地的「已上传」标记，之后只传没标记的天。 */
+v1.get("/usage/days", async (c) => c.json({ days: await uploadedDays(c.env.DB, c.get("user").id) }));
+
 v1.post("/usage", async (c) => {
   let body: unknown;
   try {
@@ -312,8 +315,8 @@ v1.post("/usage", async (c) => {
   }
   try {
     const upload = parseUpload(body);
-    await saveUpload(c.env.DB, c.get("user").id, upload);
-    return c.json({ ok: true, days: upload.days.length, rows: upload.rows.length });
+    const { accepted, skipped } = await saveUpload(c.env.DB, c.get("user").id, upload);
+    return c.json({ ok: true, accepted, skipped });
   } catch (e) {
     if (e instanceof UploadError) return c.json({ error: e.message }, 422);
     throw e;

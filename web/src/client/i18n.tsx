@@ -123,5 +123,5 @@ export function tr(text: string, lang: Lang): string {
   return text;
 }
 
-/** 名字：机器人按编号叫（bot-001），和真人一样原样显示；中文名的机器人再翻一下 */
+/** 名字：机器人桌的机器人（bot-C）和真人一样原样显示；中文名的机器人再翻一下 */
 export const nameOf = (login: string, lang: Lang) => (login.startsWith("bot-") ? tr(login, lang) : login);
