@@ -1,9 +1,21 @@
-export type App = "codex" | "claude" | "grok";
+/** 和 yybar App 的 UsageApp 一致；Gemini 没有 token 和花费，只有回答次数 */
+export type App = "codex" | "claude" | "grok" | "grokBot" | "gemini" | "agy";
 
 export interface PublicUser {
   login: string;
   name: string | null;
   avatarUrl: string | null;
+  /** 戴在名字后面的成就徽章（最多 3 个） */
+  badges?: string[];
+}
+
+/** 德州统计：手数和几个比率（0～1，没打过是 null） */
+export interface PokerStats {
+  hands: number;
+  winRate: number | null;
+  vpip: number | null;
+  pfr: number | null;
+  threeBet: number | null;
 }
 
 export interface Totals {
@@ -20,13 +32,32 @@ export interface SeriesPoint {
   app: App;
   tokens: number;
   cost_micro: number;
+  /** 回答次数（Gemini） */
+  answers?: number;
 }
 
+/** 模型明细的原始行：某一天某个模型的用量（最近 30 天） */
 export interface ModelRow {
+  day: string;
   app: App;
   model: string;
-  tokens: number;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
   cost_micro: number;
+  answers?: number;
+}
+
+/** 模型明细「全部」：所有日子每个模型的合计 */
+export type ModelTotalRow = Omit<ModelRow, "day">;
+
+/** Token 活动：某一天某个服务的 token 合计（含缓存） */
+export interface ActivityPoint {
+  day: string;
+  app: App;
+  tokens: number;
+  answers?: number;
 }
 
 export interface Points {
@@ -39,18 +70,52 @@ export interface Profile {
   totals: Totals;
   series: SeriesPoint[];
   models: ModelRow[];
+  /** 所有日子每个模型的合计（模型明细选「全部」时用） */
+  modelsAll?: ModelTotalRow[];
   points: Points;
+  /** 最近 378 天每天的 token，画 Token 活动热力图 */
+  activity: ActivityPoint[];
+}
+
+/** 商场里换上的牌背、牌面 */
+export interface Look {
+  back: string;
+  face: string;
 }
 
 export interface MeResponse extends Partial<Omit<Profile, "user">> {
   user: (PublicUser & { joinedAt: string; showOnBoard: boolean }) | null;
-  tokens?: { id: number; label: string; created_at: string; last_used_at: string | null }[];
+  look?: Look;
+  /** 道具库存 */
+  items?: Record<"timecard" | "peek" | "runout", number>;
+  /** 自己有的表情 */
+  emotes?: string[];
+  /** 每日礼盒：今天领过没有、给多少 */
+  daily?: { claimed: boolean; amount: number };
+  /** 解锁了还没领的成就有几个（顶栏奖杯旁边提醒） */
+  achievementsReady?: number;
+  /** 上传记录：最近收到的 10 天（每天每个服务只收第一次） */
+  uploads?: { day: string; uploaded_at: string; tokens: number; cost_micro: number }[];
 }
 
-export interface LeaderboardRow extends PublicUser {
+/** 燃烧 token 榜的一行：token 数和最常用的模型 */
+export interface TokenRow extends PublicUser {
   rank: number;
-  costMicro: number;
   tokens: number;
+  /** 这些 token 的花费（微美元） */
+  costMicro: number;
+  topModel: string;
+  topApp: App;
+}
+
+/** 财富榜的一行：筹码余额 */
+export interface WealthRow extends PublicUser {
+  rank: number;
+  balance: number;
+  /** 今天（UTC）在牌桌上的输赢，和今天打了几手 */
+  today: number;
+  todayHands: number;
+  stats: PokerStats;
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -68,7 +133,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   return data as T;
 }
 
-export const APP_LABEL: Record<App, string> = { codex: "Codex", claude: "Claude Code", grok: "Grok" };
+export const APP_LABEL: Record<App, string> = { codex: "Codex", claude: "Claude Code", grok: "Grok", grokBot: "Grok Bot", gemini: "Gemini", agy: "Antigravity" };
 
 export function fmtUSD(micro: number): string {
   const usd = micro / 1_000_000;

@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  /** 每张德州牌桌一个 Durable Object，按桌号取 */
+  TABLES: DurableObjectNamespace<import("./table").PokerTable>;
   APP_URL: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
@@ -16,6 +18,11 @@ export interface UserRow {
   avatar_url: string | null;
   show_on_board: number;
   created_at: string;
+  /** 商场里换上的牌背、牌面 */
+  card_back: string;
+  card_face: string;
+  /** 戴在名字后面的成就徽章（JSON 数组，最多 3 个） */
+  badges: string;
 }
 
 export type AppEnv = { Bindings: Env; Variables: { user: UserRow } };

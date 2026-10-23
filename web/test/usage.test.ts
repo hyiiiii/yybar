@@ -24,9 +24,10 @@ describe("parseCostMicro", () => {
   it("rejects bad input", () => {
     for (const v of ["-1", "1e3", "abc", "", null, undefined, "1.2.3"]) expect(parseCostMicro(v)).toBeNull();
   });
-  it("$1 = 100 points, rounded down", () => {
-    expect(pointsFromMicro(1_000_000)).toBe(100);
-    expect(pointsFromMicro(19_999)).toBe(1);
+  it("$1 = 1 chip, rounded down", () => {
+    expect(pointsFromMicro(1_000_000)).toBe(1);
+    expect(pointsFromMicro(999_999)).toBe(0);
+    expect(pointsFromMicro(3_499_110_000)).toBe(3499);
   });
 });
 
@@ -37,10 +38,14 @@ describe("parseUpload", () => {
     expect(r.days).toEqual(["2026-10-16"]);
     expect(r.rows).toHaveLength(2);
     const claude = r.rows.find((x) => x.app === "claude")!;
-    expect(claude.costMicro).toBe(2_000_000);
+    expect(claude.clientCostMicro).toBe(2_000_000);
     expect(claude.inputTokens).toBe(20);
   });
-  it("allows an empty day (clears it)", () => {
+  it("accepts today (UTC) but not tomorrow", () => {
+    expect(parseUpload({ days: [{ day: today, entries: [] }] }, today).days).toEqual([today]);
+    expect(() => parseUpload({ days: [{ day: "2026-10-18", entries: [] }] }, today)).toThrow(UploadError);
+  });
+  it("allows an empty day", () => {
     expect(parseUpload({ days: [{ day: "2026-10-16", entries: [] }] }, today).rows).toEqual([]);
   });
   const bad: [string, unknown][] = [
@@ -48,7 +53,8 @@ describe("parseUpload", () => {
     ["bad date", { days: [{ day: "2026-02-30", entries: [] }] }],
     ["future", { days: [{ day: "2026-10-19", entries: [] }] }],
     ["duplicate day", { days: [{ day: "2026-10-16", entries: [] }, { day: "2026-10-16", entries: [] }] }],
-    ["unknown app", { days: [{ day: "2026-10-16", entries: [entry({ app: "gemini" })] }] }],
+    ["unknown app", { days: [{ day: "2026-10-16", entries: [entry({ app: "copilot" })] }] }],
+    ["negative answers", { days: [{ day: "2026-10-16", entries: [entry({ app: "gemini", answers: -1 })] }] }],
     ["negative tokens", { days: [{ day: "2026-10-16", entries: [entry({ outputTokens: -1 })] }] }],
     ["float tokens", { days: [{ day: "2026-10-16", entries: [entry({ outputTokens: 1.5 })] }] }],
     ["cost cap", { days: [{ day: "2026-10-16", entries: [entry({ costUSD: "5000.01" })] }] }],
