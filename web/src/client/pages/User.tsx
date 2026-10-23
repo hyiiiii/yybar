@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
-import { Avatar, Badges, DailyChart, ModelTable, Stat } from "../components";
+import { Avatar, Badges, Stat } from "../components";
+import { DailyUsage, ModelDetail, TokenActivity } from "../UsageCharts";
 import { tr, useLang, useT } from "../i18n";
 
 export function ProfileView({ profile }: { profile: Profile }) {
@@ -15,14 +16,9 @@ export function ProfileView({ profile }: { profile: Profile }) {
         <Stat label={t("总 Token", "Total tokens")} value={fmtTokens(tokens)} hint={t(`输出 ${fmtTokens(totals.output_tokens)}`, `${fmtTokens(totals.output_tokens)} output`)} />
         <Stat label={t("筹码", "Chips")} value={fmtInt(points.balance)} hint={t(`累计换得 ${fmtInt(points.earned)}`, `${fmtInt(points.earned)} earned in total`)} />
       </div>
-      <section className="card-box">
-        <h2>{t("近 30 天", "Last 30 days")}</h2>
-        <DailyChart series={profile.series} />
-      </section>
-      <section className="card-box">
-        <h2>{t("花费最多的模型", "Top models by spend")}</h2>
-        <ModelTable models={profile.models} />
-      </section>
+      <DailyUsage series={profile.series} />
+      <ModelDetail models={profile.models} />
+      <TokenActivity activity={profile.activity ?? []} />
     </>
   );
 }

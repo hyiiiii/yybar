@@ -85,6 +85,14 @@ npm test && npm run typecheck
 - 燃烧 token（火苗）：按时间段（今天 / 7 天 / 30 天 / 总榜）内的 token 数排名，每行带最常用的模型和这些 token 的花费；第一名最右边的小按钮切换按 token 数还是按花费排。`GET /api/leaderboard?by=tokens&range=7d&sort=tokens|cost`。
 - 财富（筹码）：按筹码余额排名（坐在桌上的筹码不算，离桌退回后才算）。每行还有「今日输赢」：今天（UTC）每手「赢到的 − 投进去的」加起来，赢绿输红，今天没打是一道横线；记在 `poker_daily`（迁移 `0008_poker_daily.sql`，每手结束和手数统计一起写）。第一名右边的小按钮在按余额排和按今日输赢排之间切换（今天打过的排前面）。`GET /api/leaderboard?by=wealth&sort=balance|today`。
 
+## 个人主页
+
+- 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片，下面三块照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
+- 近 30 天：每天一根细柱，按 Codex / Claude Code / Grok 叠起来，虚线是日均，右上角在费用 / Tokens 之间切换，悬停看当天每个服务多少。
+- 模型明细：每个模型的输入、输出、缓存读取、缓存写入、合计、费用（全部时间），点表头排序，默认按合计；合计最多的模型后面一团蹦着的小火苗。Codex / Grok 不单独记缓存写入，显示「—」。
+- Token 活动：上面四格汇总（累计 Token 数、单日峰值、最长连续天数、当前连续天数），下面最近 53 周的格子，每列一周（周一开头）。每天 = 热力格，按这段时间有用量的日子的 25% / 50% / 75% 分位分四档暖色；每周 / 累计总量 = 每列从下往上按比例填。悬停有深色浮层。
+- `GET /api/me`、`GET /api/users/<login>` 的 `models` 带每个模型的 `input / output / cache_read / cache_write / tokens / cost_micro`，`activity` 是最近 378 天每天的 token 合计。
+
 ## 商场
 
 - 用筹码买东西，款式、价格、中英文名都在 `src/shared/cosmetics.ts`。名字都是一眼看得出在玩哪副牌的梗（Bicyle、Tally-Hoo、Purr、Daybrake），不是正版；牌背中英文界面都用英文名。

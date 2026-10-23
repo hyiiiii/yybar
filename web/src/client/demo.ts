@@ -1,5 +1,5 @@
 // 预览版用的示例数据：VITE_DEMO=1 构建时，api() 不请求后端，改从这里取。
-import type { MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
+import type { ActivityPoint, MeResponse, Profile, SeriesPoint, TokenRow, WealthRow } from "./api";
 import { localBalance, spendLocal } from "./localTable";
 import { ACHIEVEMENTS } from "../shared/achievements";
 import { COSMETICS, DEFAULT_BACK, DEFAULT_FACE, findCosmetic, findItem, ITEMS, type CosmeticKind, type ItemId } from "../shared/cosmetics";
@@ -71,6 +71,21 @@ function series(seed: number): SeriesPoint[] {
   return out;
 }
 
+/** 预览用的 Token 活动：最近 378 天，越近用得越多，周末少一点，偶尔歇一天 */
+function activity(seed: number, total: number): ActivityPoint[] {
+  const out: ActivityPoint[] = [];
+  const today = new Date();
+  let x = seed;
+  const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
+  for (let i = 377; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    if (i > 240 || rnd() < 0.18) continue;
+    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0.45 : 1;
+    out.push({ day: d.toISOString().slice(0, 10), tokens: Math.round((total / 160) * weekend * (0.2 + rnd() * 1.6) * (1.4 - i / 300)) });
+  }
+  return out;
+}
+
 function profile(login: string): Profile {
   const p = PEOPLE.find((x) => x.login === login) ?? PEOPLE[0];
   const cost = Math.round(p.cost * 1e6);
@@ -85,12 +100,22 @@ function profile(login: string): Profile {
       cost_micro: cost,
     },
     series: series(p.login.length * 7),
-    models: [
-      { app: "claude", model: "claude-opus-4.5", tokens: Math.round(p.tokens * 0.46), cost_micro: Math.round(cost * 0.52) },
-      { app: "codex", model: "gpt-5-codex", tokens: Math.round(p.tokens * 0.31), cost_micro: Math.round(cost * 0.27) },
-      { app: "claude", model: "claude-sonnet-4.5", tokens: Math.round(p.tokens * 0.15), cost_micro: Math.round(cost * 0.14) },
-      { app: "grok", model: "grok-4", tokens: Math.round(p.tokens * 0.08), cost_micro: Math.round(cost * 0.07) },
-    ],
+    models: (
+      [
+        ["claude", "claude-opus-4.5", 0.46, 0.52],
+        ["codex", "gpt-5-codex", 0.31, 0.27],
+        ["claude", "claude-sonnet-4.5", 0.15, 0.14],
+        ["grok", "grok-4", 0.08, 0.07],
+      ] as const
+    ).map(([app, model, share, spend]) => {
+      const tokens = Math.round(p.tokens * share);
+      return {
+        app, model, tokens, cost_micro: Math.round(cost * spend),
+        input: Math.round(tokens * 0.04), output: Math.round(tokens * 0.03), cache_read: Math.round(tokens * 0.88),
+        cache_write: app === "claude" ? tokens - Math.round(tokens * 0.04) - Math.round(tokens * 0.03) - Math.round(tokens * 0.88) : 0,
+      };
+    }),
+    activity: activity(p.login.length * 13, p.tokens),
     points: { earned: Math.floor(p.cost * 100), balance: Math.floor(p.cost * 100) - 23_650 },
   };
 }

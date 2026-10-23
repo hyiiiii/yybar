@@ -36,8 +36,19 @@ export interface SeriesPoint {
 export interface ModelRow {
   app: App;
   model: string;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  /** 合计（含缓存） */
   tokens: number;
   cost_micro: number;
+}
+
+/** Token 活动：某一天的 token 合计（含缓存） */
+export interface ActivityPoint {
+  day: string;
+  tokens: number;
 }
 
 export interface Points {
@@ -51,6 +62,8 @@ export interface Profile {
   series: SeriesPoint[];
   models: ModelRow[];
   points: Points;
+  /** 最近 378 天每天的 token，画 Token 活动热力图 */
+  activity: ActivityPoint[];
 }
 
 /** 商场里换上的牌背、牌面 */

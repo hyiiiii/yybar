@@ -66,15 +66,30 @@ async function totalsOf(db: D1Database, userId: number) {
     .first();
 }
 
+/** 模型明细：每个模型的输入、输出、缓存读取、缓存写入、合计和花费（全部时间），按合计 token 排 */
 async function topModels(db: D1Database, userId: number) {
   const { results } = await db
     .prepare(
-      `SELECT app, model, SUM(cost_micro) AS cost_micro,
-         SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens
-       FROM daily_usage WHERE user_id = ? GROUP BY app, model ORDER BY cost_micro DESC LIMIT 10`,
+      `SELECT app, model, SUM(input_tokens) AS input, SUM(output_tokens) AS output,
+         SUM(cache_read_tokens) AS cache_read, SUM(cache_creation_tokens) AS cache_write,
+         SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens,
+         SUM(cost_micro) AS cost_micro
+       FROM daily_usage WHERE user_id = ? GROUP BY app, model ORDER BY tokens DESC LIMIT 60`,
     )
     .bind(userId)
     .all();
+  return results;
+}
+
+/** Token 活动：最近 53 周多一点（378 天）每天的 token 合计（含缓存），画热力图 */
+async function activityOf(db: D1Database, userId: number) {
+  const { results } = await db
+    .prepare(
+      `SELECT day, SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens
+       FROM daily_usage WHERE user_id = ? AND day >= ? GROUP BY day ORDER BY day`,
+    )
+    .bind(userId, addDays(isoDay(new Date()), -377))
+    .all<{ day: string; tokens: number }>();
   return results;
 }
 
@@ -185,13 +200,14 @@ app.get("/api/users/:login", async (c) => {
     .bind(c.req.param("login"))
     .first<{ id: number; login: string; name: string | null; avatar_url: string | null; created_at: string }>();
   if (!user) return c.json({ error: "没有这个用户，或对方未公开" }, 404);
-  const [totals, series, models, points] = await Promise.all([
+  const [totals, series, models, points, activity] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
+    activityOf(c.env.DB, user.id),
   ]);
-  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at }, totals, series, models, points });
+  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at }, totals, series, models, points, activity });
 });
 
 // ---------- 网页登录后的接口 ----------
@@ -201,11 +217,12 @@ app.get("/api/me", async (c) => {
   if (!user) return c.json({ user: null });
   // 先检查成就（第一次登录、连续天数…），新解锁的奖励要算进下面的余额
   await syncAchievements(c.env.DB, user.id);
-  const [totals, series, models, points, tokens, items, emotes] = await Promise.all([
+  const [totals, series, models, points, activity, tokens, items, emotes] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
+    activityOf(c.env.DB, user.id),
     c.env.DB.prepare(
       "SELECT id, label, created_at, last_used_at FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY id DESC",
     )
@@ -228,6 +245,7 @@ app.get("/api/me", async (c) => {
     series,
     models,
     points,
+    activity,
     tokens: tokens.results,
   });
 });

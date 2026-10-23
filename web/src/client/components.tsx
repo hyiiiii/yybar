@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { APP_LABEL, fmtInt, fmtTokens, fmtUSD, type App, type ModelRow, type SeriesPoint } from "./api";
+import { fmtInt } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { DEFAULT_BACK, DEFAULT_FACE } from "../shared/cosmetics";
 import { EmoteSprite } from "./Dealer";
@@ -358,85 +358,3 @@ export function Stat({ label, value, hint }: { label: string; value: string; hin
   );
 }
 
-const APPS: App[] = ["codex", "claude", "grok"];
-
-/** 近 30 天每日花费，按 App 堆叠。 */
-export function DailyChart({ series, days = 30 }: { series: SeriesPoint[]; days?: number }) {
-  const t = useT();
-  const today = new Date();
-  const dayList: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
-    dayList.push(d.toISOString().slice(0, 10));
-  }
-  const byDay = new Map<string, Partial<Record<App, number>>>();
-  for (const p of series) {
-    const m = byDay.get(p.day) ?? {};
-    m[p.app] = (m[p.app] ?? 0) + p.cost_micro;
-    byDay.set(p.day, m);
-  }
-  const totals = dayList.map((d) => APPS.reduce((s, a) => s + (byDay.get(d)?.[a] ?? 0), 0));
-  const max = Math.max(...totals, 1);
-  const W = 600, H = 150, gap = 3;
-  const bw = (W - gap * (days - 1)) / days;
-
-  return (
-    <figure className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t("近 30 天每日花费", "Daily spend, last 30 days")}>
-        {dayList.map((d, i) => {
-          let y = H;
-          return (
-            <g key={d}>
-              <title>{`${d}  ${fmtUSD(totals[i])}`}</title>
-              <rect x={i * (bw + gap)} y={0} width={bw} height={H} className="chart-hit" />
-              {APPS.map((a) => {
-                const v = byDay.get(d)?.[a] ?? 0;
-                if (!v) return null;
-                const h = Math.max((v / max) * (H - 4), 1.5);
-                y -= h;
-                return <rect key={a} x={i * (bw + gap)} y={y} width={bw} height={h} rx={1.5} className={`fill-${a}`} />;
-              })}
-            </g>
-          );
-        })}
-      </svg>
-      <figcaption className="legend">
-        {APPS.map((a) => (
-          <span key={a}>
-            <i className={`dot fill-${a}`} /> {APP_LABEL[a]}
-          </span>
-        ))}
-        <span className="legend-max">{t("最高单日", "Peak day")} {fmtUSD(max === 1 ? 0 : max)}</span>
-      </figcaption>
-    </figure>
-  );
-}
-
-export function ModelTable({ models }: { models: ModelRow[] }) {
-  const t = useT();
-  if (!models.length) return <p className="empty">{t("还没有数据。", "No data yet.")}</p>;
-  return (
-    <div className="table-scroll">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>{t("模型", "Model")}</th>
-            <th className="num">Token</th>
-            <th className="num">{t("花费", "Cost")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((m) => (
-            <tr key={`${m.app}/${m.model}`}>
-              <td>
-                <i className={`dot fill-${m.app}`} /> {m.model}
-              </td>
-              <td className="num">{fmtTokens(m.tokens)}</td>
-              <td className="num">{fmtUSD(m.cost_micro)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
