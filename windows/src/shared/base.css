@@ -1,0 +1,475 @@
+/* 设计令牌与通用控件（对应 docs/设计风格.md：识别色、4 档状态色、卡片背景 / 描边、字号、间距）。
+   字体用 Windows 的 Segoe UI Variable；数字一律 tabular。深浅色跟随系统。 */
+
+:root {
+  color-scheme: light dark;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --text: #1d1d1f;
+  --text-secondary: rgba(60, 60, 67, 0.62);
+  --text-tertiary: rgba(60, 60, 67, 0.38);
+  --separator: rgba(60, 60, 67, 0.13);
+  --fill: rgba(120, 120, 128, 0.08);
+  --fill-strong: rgba(120, 120, 128, 0.2);
+  --track: rgba(120, 120, 128, 0.18);
+  --window-bg: #f3f3f3;
+  --sidebar-bg: rgba(0, 0, 0, 0.025);
+  --panel-bg: #ffffff;
+  --panel-stroke: rgba(0, 0, 0, 0.07);
+  --popover-bg: rgba(249, 249, 249, 0.97);
+  --popover-bg-translucent: rgba(249, 249, 249, 0.72);
+  --tooltip-bg: rgba(20, 20, 22, 0.9);
+  --accent: #007aff;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --warning-ink: #fff;
+
+  --accent-codex: #6c6c70;
+  --accent-claude: #d97757;
+  --accent-grok: #1d1d1f;
+  --accent-google: #4a86e8;
+
+  --q-normal: #6c6c70;
+  --q-warning: #f6c343;
+  --q-low: #ff7a2f;
+  --q-empty: #ff4d6d;
+
+  --sys-green: #30a14e;
+  --sys-yellow: #e5b200;
+  --sys-orange: #f08400;
+  --sys-red: #e5383b;
+  --sys-blue: #007aff;
+  --sys-purple: #8e44ad;
+  --sys-teal: #1f9e9e;
+
+  --heat-1: #ffd9a1;
+  --heat-2: #ffa94d;
+  --heat-3: #ff6a13;
+  --heat-4: #e3341c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f5f5f7;
+    --text-secondary: rgba(235, 235, 245, 0.62);
+    --text-tertiary: rgba(235, 235, 245, 0.35);
+    --separator: rgba(255, 255, 255, 0.1);
+    --fill: rgba(120, 120, 128, 0.16);
+    --fill-strong: rgba(120, 120, 128, 0.32);
+    --track: rgba(120, 120, 128, 0.3);
+    --window-bg: #202020;
+    --sidebar-bg: rgba(255, 255, 255, 0.025);
+    --panel-bg: rgba(60, 60, 63, 0.4);
+    --panel-stroke: rgba(255, 255, 255, 0.07);
+    --popover-bg: rgba(40, 40, 42, 0.97);
+    --popover-bg-translucent: rgba(36, 36, 38, 0.66);
+    --accent: #0a84ff;
+    --accent-soft: rgba(10, 132, 255, 0.18);
+    --warning-ink: #1d1d1f;
+
+    --accent-codex: #98989d;
+    --accent-claude: #e68a6e;
+    --accent-grok: #e5e5ea;
+    --accent-google: #6a9ef0;
+
+    --q-normal: #98989d;
+    --q-warning: #ffe27a;
+    --q-low: #ffa15f;
+    --q-empty: #ff7a90;
+
+    --sys-green: #30d158;
+    --sys-yellow: #ffd60a;
+    --sys-orange: #ff9f0a;
+    --sys-red: #ff453a;
+    --sys-blue: #0a84ff;
+    --sys-purple: #bf5af2;
+    --sys-teal: #40c8e0;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.secondary {
+  color: var(--text-secondary);
+}
+
+.tertiary {
+  color: var(--text-tertiary);
+}
+
+/* ---------- 卡片 ---------- */
+
+.panel {
+  background: var(--panel-bg);
+  border: 0.5px solid var(--panel-stroke);
+  border-radius: 12px;
+}
+
+/* ---------- 服务 tile / logo ---------- */
+
+.service-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  position: relative;
+}
+
+.service-tile .logo,
+.service-logo {
+  display: inline-flex;
+  flex: none;
+}
+
+.service-tile .logo svg,
+.service-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tile-codex {
+  background: #fff;
+  color: #000;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+.tile-claude {
+  background: #d97757;
+  color: #fff;
+}
+
+.tile-grok {
+  background: #1d1d1f;
+  color: #fff;
+}
+
+.tile-agy {
+  background: #fff;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tile-grok {
+    box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
+  }
+}
+
+.logo-codex {
+  color: var(--accent-codex);
+}
+
+.logo-claude {
+  color: var(--accent-claude);
+}
+
+.logo-grok {
+  color: var(--accent-grok);
+}
+
+/* ---------- 状态点 / 进度条 ---------- */
+
+.status-dot {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+}
+
+.progress {
+  position: relative;
+  flex: 1;
+  min-width: 20px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  transition: width 0.25s ease-out, background-color 0.25s;
+}
+
+.limit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.limit-label {
+  font-size: 12px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.limit-percent {
+  width: 38px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 600;
+  flex: none;
+}
+
+.limit-reset {
+  width: 56px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  flex: none;
+  white-space: nowrap;
+}
+
+.reset-text {
+  padding: 4px 8px;
+  margin: -4px -8px;
+}
+
+/* ---------- 控件 ---------- */
+
+.toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--text-tertiary);
+  background: transparent;
+  padding: 0;
+  flex: none;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.toggle .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15), background 0.18s, width 0.12s;
+}
+
+.toggle.on {
+  background: var(--sys-green);
+  border-color: var(--sys-green);
+}
+
+.toggle.on .knob {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.toggle.small {
+  width: 30px;
+  height: 17px;
+}
+
+.toggle.small .knob {
+  width: 9px;
+  height: 9px;
+}
+
+.toggle.small.on .knob {
+  transform: translateX(13px);
+}
+
+.toggle:disabled,
+.checkbox:disabled {
+  opacity: 0.35;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--text-tertiary);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #fff;
+}
+
+.checkbox.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.segmented {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 1px;
+  flex: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .segmented {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.segmented button {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  padding: 3px 11px;
+  border-radius: 5px;
+  color: var(--text);
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.segmented button.active {
+  background: #fff;
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  .segmented button.active {
+    background: rgba(120, 120, 128, 0.55);
+  }
+}
+
+.segmented.small button {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.select {
+  appearance: none;
+  border: 0.5px solid var(--separator);
+  background: var(--panel-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 6 4.5 4.5L12.5 6' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border-radius: 6px;
+  padding: 4px 26px 4px 10px;
+  font-size: 12px;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.08);
+}
+
+.select option {
+  background: var(--window-bg);
+}
+
+.icon-button {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--fill);
+}
+
+.spin {
+  transition: transform 0.7s ease-in-out;
+}
+
+.button {
+  border: 0.5px solid var(--separator);
+  background: var(--panel-bg);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--fill);
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.pill-tag {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.hot-flame {
+  display: inline-block;
+  font-size: 11px;
+  animation: flame-hop 1.6s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+@keyframes flame-hop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  20% {
+    transform: translateY(-2px) scale(1.08, 0.95);
+  }
+  40% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  60% {
+    transform: rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hot-flame {
+    animation: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fill-strong);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}

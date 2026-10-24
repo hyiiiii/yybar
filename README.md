@@ -18,7 +18,7 @@
 
 yybar 是一个常驻 macOS 菜单栏的小工具(不占 Dock),基于 [nanvon/cc-bar](https://github.com/nanvon/cc-bar) 二次开发。
 
-Windows 版在 [`windows/`](windows/) 目录(托盘图标 + 弹出面板 + 悬浮条),说明见 [docs/Windows版.md](docs/Windows版.md)。
+Windows 版在 [`windows/`](windows/) 目录,流程和界面对照 Mac 版重做(每个服务一个托盘图标 + 额度弹出窗口 + 统计 / 设置主窗口 + 悬浮窗 + 首次引导),说明见 [docs/Windows版.md](docs/Windows版.md)。
 
 ## 功能
 

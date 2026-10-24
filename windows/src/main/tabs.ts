@@ -1,0 +1,43 @@
+// 主窗口的部分（对应 Mac `MainTab`）。统计、设置共用一个侧边栏，各是一个可滚动的大页。
+
+import { tr } from "../shared/l10n";
+
+export type MainTab = "overview" | "quota" | "models" | "activity" | "services" | "display" | "refresh" | "general";
+
+export const STATS_PAGES: MainTab[] = ["overview", "quota", "models", "activity"];
+export const SETTINGS_PAGES: MainTab[] = ["services", "display", "refresh", "general"];
+export const ALL_TABS: MainTab[] = [...STATS_PAGES, ...SETTINGS_PAGES];
+
+export const isStats = (t: MainTab) => STATS_PAGES.includes(t);
+
+export function tabTitle(t: MainTab): string {
+  switch (t) {
+    case "overview":
+      return tr("Overview", "概览");
+    case "quota":
+      return tr("Quota changes", "额度变化");
+    case "models":
+      return tr("Models", "模型明细");
+    case "activity":
+      return tr("Token activity", "Token 活动");
+    case "services":
+      return tr("Services", "服务");
+    case "display":
+      return tr("Display", "显示");
+    case "refresh":
+      return tr("Refresh", "刷新");
+    case "general":
+      return tr("General", "通用");
+  }
+}
+
+export const tabIcon: Record<MainTab, string> = {
+  overview: "pie",
+  quota: "line",
+  models: "cpu",
+  activity: "grid",
+  services: "plug",
+  display: "taskbar",
+  refresh: "refresh",
+  general: "gear",
+};

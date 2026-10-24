@@ -1,0 +1,52 @@
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+#root {
+  display: inline-block;
+}
+
+.hud {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 168px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--popover-bg-translucent);
+  border: 0.5px solid var(--separator);
+  backdrop-filter: blur(20px) saturate(1.8);
+}
+
+@media (prefers-color-scheme: light) {
+  .hud {
+    background: rgba(255, 255, 255, 0.86);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .hud {
+    background: rgba(28, 28, 30, 0.86);
+  }
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-row .progress {
+  min-width: 56px;
+}
+
+.hud-percent {
+  min-width: 34px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}

@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "windows/**"
+      - "Resources/Logos/**"
       - ".github/workflows/windows.yml"
   pull_request:
     paths:
       - "windows/**"
+      - "Resources/Logos/**"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
 
@@ -32,7 +34,7 @@ jobs:
       - run: npm run build
       - name: Rust 单元测试
         working-directory: windows/src-tauri
-        run: cargo test
+        run: cargo test --workspace
       - name: 打包安装程序
         run: npx tauri build
       - uses: actions/upload-artifact@v4

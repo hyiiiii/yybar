@@ -11,7 +11,7 @@
 | [设计风格.md](设计风格.md) | 视觉规范:材质 / 字体 / 颜色 / 圆角 / 间距 / 状态色 / 双语词表 / 组件尺寸 |
 | [界面布局.md](界面布局.md) | 每个界面的尺寸、字段、控件位置、空状态;按 Popover / 悬浮窗 / 主窗口 / 设置 / 引导 分章 |
 | [打包发布.md](打包发布.md) | Xcode Archive、Developer ID 导出、命令行归档与常见打包问题 |
-| [Windows版.md](Windows版.md) | Windows 托盘版(Tauri,代码在 `windows/`):显示形式、数据来源、和 Mac 版的差距 |
+| [Windows版.md](Windows版.md) | Windows 版(Tauri,代码在 `windows/`):和 Mac 版的模块对照、界面、数据与存储、和 Mac 版的差别、构建 |
 
 阅读顺序:先看产品需求(知道有什么),再看技术实现(知道怎么搭),做 UI 时配合设计风格 + 界面布局。
 
