@@ -1,4 +1,5 @@
 //! 前端可调用的命令。
+//! 会新建窗口（直接或间接）的命令都写成 async：Windows 上在同步命令里建 WebView2 窗口会卡死（见 windows.rs 文件头）。
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -55,7 +56,7 @@ async fn refresh_now(app: AppHandle) {
 
 /// 合并前端传来的部分设置（只改传了的字段，悬浮窗位置等不会被旧值覆盖），并按变化做相应处理。
 #[tauri::command]
-fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
+async fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (before, after) = {
         let mut g = state.inner.lock().unwrap();
@@ -118,17 +119,17 @@ fn set_custom_price(app: AppHandle, key: String, price: Option<ModelPrice>) {
 }
 
 #[tauri::command]
-fn remove_local_account(app: AppHandle, service: UsageApp) {
+async fn remove_local_account(app: AppHandle, service: UsageApp) {
     app_state::remove_local_account(&app, service);
 }
 
 #[tauri::command]
-fn restore_removed_accounts(app: AppHandle) {
+async fn restore_removed_accounts(app: AppHandle) {
     app_state::restore_removed_accounts(&app);
 }
 
 #[tauri::command]
-fn open_main(app: AppHandle, tab: Option<String>) {
+async fn open_main(app: AppHandle, tab: Option<String>) {
     windows::open_main(&app, tab.as_deref());
 }
 
@@ -165,7 +166,7 @@ fn fit_floating(app: AppHandle, width: f64, height: f64) {
 
 /// 引导完成：记下来，关掉引导窗口，可直接打开统计。
 #[tauri::command]
-fn finish_onboarding(app: AppHandle, open_stats: bool) {
+async fn finish_onboarding(app: AppHandle, open_stats: bool) {
     {
         let state = app.state::<AppState>();
         let mut g = state.inner.lock().unwrap();

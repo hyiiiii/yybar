@@ -4,7 +4,11 @@
 //! - `main`：主窗口（统计 / 设置共用侧边栏）。关窗即销毁释放内存，再打开时回到关窗前的部分（界面选择存在 AppState）。
 //! - `floating`：桌面悬浮窗，置顶、不抢焦点、可拖动；拖到离屏幕边 20 像素内自动吸附；位置记住，屏幕外时回到右上角。
 //! - `onboarding`：首次启动的 4 步引导。
+//!
+//! Windows 上 WebView2 在同步命令或事件回调（托盘菜单、单实例唤起等）里新建窗口会卡死（窗口框出来了、页面一直白屏），
+//! 所以新建主窗口 / 引导 / 悬浮窗一律交给后台任务做（`build_later`），调用方从哪里调都安全。
 
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -32,6 +36,22 @@ pub struct WindowState {
     floating_moved_at: Mutex<Option<Instant>>,
     /// 主窗口要打开的部分（窗口还没建好时先记下，页面加载后来取）
     pub pending_tab: Mutex<Option<String>>,
+    /// 正在后台新建的窗口（连点两下不会建出两个）
+    building: Mutex<HashSet<&'static str>>,
+}
+
+/// 在后台任务里新建窗口（见文件头：避免 WebView2 在同步命令 / 事件回调里卡死）。同一个窗口正在建时忽略。
+fn build_later(app: &AppHandle, label: &'static str, build: impl FnOnce(&AppHandle) + Send + 'static) {
+    if !app.state::<WindowState>().building.lock().unwrap().insert(label) {
+        return;
+    }
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if h.get_webview_window(label).is_none() {
+            build(&h);
+        }
+        h.state::<WindowState>().building.lock().unwrap().remove(label);
+    });
 }
 
 // ---------- 弹出浮窗 ----------
@@ -151,19 +171,21 @@ pub fn open_main(app: &AppHandle, tab: Option<&str>) {
         return;
     }
     *app.state::<WindowState>().pending_tab.lock().unwrap() = tab.map(str::to_string);
-    let result = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("main.html".into()))
-        .title("yybar")
-        .inner_size(1080.0, 720.0)
-        .min_inner_size(760.0, 560.0)
-        .center()
-        .visible(true)
-        .build();
-    match result {
-        Ok(w) => {
-            let _ = w.set_focus();
+    build_later(app, MAIN, |app| {
+        let result = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("main.html".into()))
+            .title("yybar")
+            .inner_size(1080.0, 720.0)
+            .min_inner_size(760.0, 560.0)
+            .center()
+            .visible(true)
+            .build();
+        match result {
+            Ok(w) => {
+                let _ = w.set_focus();
+            }
+            Err(e) => log::warn!("open main window: {e}"),
         }
-        Err(e) => log::warn!("open main window: {e}"),
-    }
+    });
 }
 
 // ---------- 引导 ----------
@@ -174,17 +196,19 @@ pub fn open_onboarding(app: &AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let result = WebviewWindowBuilder::new(app, ONBOARDING, WebviewUrl::App("onboarding.html".into()))
-        .title(tr("Welcome to yybar", "欢迎使用 yybar"))
-        .inner_size(620.0, 520.0)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .center()
-        .build();
-    if let Err(e) = result {
-        log::warn!("open onboarding: {e}");
-    }
+    build_later(app, ONBOARDING, |app| {
+        let result = WebviewWindowBuilder::new(app, ONBOARDING, WebviewUrl::App("onboarding.html".into()))
+            .title(tr("Welcome to yybar", "欢迎使用 yybar"))
+            .inner_size(620.0, 520.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .center()
+            .build();
+        if let Err(e) = result {
+            log::warn!("open onboarding: {e}");
+        }
+    });
 }
 
 pub fn close_onboarding(app: &AppHandle) {
@@ -202,11 +226,15 @@ pub fn sync_floating(app: &AppHandle) {
         (true, Some(w)) => {
             let _ = w.show();
         }
-        (true, None) => {
+        (true, None) => build_later(app, FLOATING, |app| {
+            // 排队期间用户可能又关掉了悬浮窗
+            if !app.state::<AppState>().settings().floating_enabled {
+                return;
+            }
             if let Err(e) = create_floating(app) {
                 log::warn!("floating window: {e}");
             }
-        }
+        }),
         (false, Some(w)) => {
             let _ = w.close();
         }

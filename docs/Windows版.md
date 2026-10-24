@@ -27,6 +27,8 @@
 
 `core` 是不依赖 Tauri 的独立 crate，`cargo test` 在 Linux / macOS 上也能跑。
 
+开发注意：Windows 上 WebView2 在同步命令或事件回调（托盘菜单、单实例唤起等）里新建窗口会卡死（窗口框出来、页面一直白屏）。新建窗口一律走 `windows.rs` 的 `build_later`（后台任务里建），会间接建窗口的前端命令写成 `async`。
+
 ## 2. 界面
 
 ### 2.1 托盘（对应 Mac 菜单栏）
