@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yybar-web",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yybar",
+      // 部署前用 `npx wrangler d1 create yybar` 创建，把返回的 id 填到这里
+      "database_id": "a57358a3-097e-4c51-a497-f0d433c0ec3c",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "TABLES", "class_name": "PokerTable" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PokerTable"] }],
+  "vars": {
+    "APP_URL": "https://yybar-web.hyi030618.workers.dev"
+  }
+  // 机密用 `npx wrangler secret put` 设置：GITHUB_CLIENT_ID、GITHUB_CLIENT_SECRET
+}

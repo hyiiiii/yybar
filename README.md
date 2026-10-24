@@ -126,6 +126,7 @@ Grok Bot 需要已登录桌面 App。Gemini 需要 Chrome 当前个人资料登�
 | `Core/` | 凭据、额度请求、刷新调度、日志扫描、本地存储 |
 | `Tests/` | 日志扫描回归测试 |
 | `scripts/` | 构建安装、签名证书、生成 App 图标 |
+| `web/` | yybar 网站：GitHub 登录、用量上传、排行榜、积分（Cloudflare Workers + D1），见 [web/README.md](web/README.md) |
 
 产品需求、技术实现、设计风格、界面布局等文档见 [docs/](docs/README.md)。
 
