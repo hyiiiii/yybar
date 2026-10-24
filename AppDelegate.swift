@@ -25,11 +25,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await appState.bootstrap()
             FloatingPanelController.shared.attach(appState: appState)
             FloatingPanelController.shared.sync()
+            // hook 脚本随 App 更新;开着「用 hook 驱动呼吸」时每次启动重写一遍。
+            if SettingsStore.shared.activityHooksEnabled { try? ActivityHooks.writeScript() }
             UsageActivityMonitor.shared.start()
             if appState.shouldShowOnboarding {
                 appState.shouldShowOnboarding = false
                 WindowCoordinator.shared.showOnboarding()
             }
+        }
+    }
+
+    /// yybar://connect?token=…&state=…:网站授权后跳回来，保存上传令牌，打开 bar 页。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where appState.webAccount.handle(url: url) {
+            WindowCoordinator.shared.showMain(.bar)
         }
     }
 

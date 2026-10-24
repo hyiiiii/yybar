@@ -19,31 +19,29 @@ struct FloatingContentView: View {
         let window: QuotaWindow?
     }
 
-    /// 每个服务本机账号在前、其他账号在后;Codex → Claude → Grok。
+    /// 每个服务本机账号在前、其他账号在后;Codex → Claude → Grok → Grok Bot → Gemini → agy。
+    /// Grok / Grok Bot 显示周期额度，其余显示 5H。
     private var rows: [Row] {
         var rows: [Row] = []
         for app in UsageApp.allCases {
-            let local: Bool
-            switch app {
-            case .codex: local = settings.effectiveFloatingShowCodex
-            case .claude: local = settings.effectiveFloatingShowClaude
-            case .grok: local = settings.effectiveFloatingShowGrok
-            }
-            if local {
-                let snapshot: QuotaSnapshot?
+            if settings.effectiveFloatingShow(app) {
+                let snapshot = appState.localQuota(for: app)
                 let email: String?
                 switch app {
-                case .codex: (snapshot, email) = (appState.codexQuota, appState.codexAccount?.email)
-                case .claude: (snapshot, email) = (appState.claudeQuota, appState.claudeAccount?.email)
-                case .grok: (snapshot, email) = (appState.grokQuota, appState.grokAccount?.email)
+                case .codex: email = appState.codexAccount?.email
+                case .claude: email = appState.claudeAccount?.email
+                case .grok: email = appState.grokAccount?.email
+                case .grokBot: email = appState.grokBotEmail
+                case .gemini: email = appState.geminiAppEmail
+                case .agy: email = appState.googleEmail
                 }
                 rows.append(Row(id: "local:\(app.rawValue)", app: app,
-                                name: email.map { $0.components(separatedBy: "@").first ?? $0 } ?? app.rawValue.capitalized,
-                                window: app == .grok ? snapshot?.primary : snapshot?.fiveHour))
+                                name: email.map { $0.components(separatedBy: "@").first ?? $0 } ?? app.displayName,
+                                window: app.hasSinglePeriod ? snapshot?.primary : snapshot?.fiveHour))
             }
             for other in appState.otherAccountsShown(for: app, inMenuBar: false) {
                 rows.append(Row(id: other.id, app: app, name: other.name,
-                                window: app == .grok ? other.snapshot?.primary : other.snapshot?.fiveHour))
+                                window: app.hasSinglePeriod ? other.snapshot?.primary : other.snapshot?.fiveHour))
             }
         }
         return rows
@@ -58,8 +56,8 @@ struct FloatingContentView: View {
             ForEach(rows) { row in
                 FloatingRow(
                     logoName: row.app.rawValue,
-                    fallback: row.app == .codex ? "C" : (row.app == .claude ? "K" : "G"),
-                    tint: row.app == .codex ? .codexAccent : (row.app == .claude ? .claudeAccent : .grokAccent),
+                    fallback: row.app.fallbackLetter,
+                    tint: row.app.accent,
                     window: row.window,
                     name: showNames ? row.name : nil
                 )

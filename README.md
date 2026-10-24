@@ -29,13 +29,14 @@ yybar 是一个常驻 macOS 菜单栏的小工具(不占 Dock),基于 [nanvon/cc
 ### 额度
 
 - 5 小时与周窗口的剩余额度和重置时间;Grok 显示云端当前计费周期
+- Grok Bot 读取桌面 App 当前账号的周额度；Gemini App 复用 Chrome 当前 Google 账号读取 App 额度；Antigravity 的两个池子独立展示
 - 默认每 2 分钟刷新(1–10 分钟可调);同一服务至少间隔 60 秒，遇到限流(429)自动退避 10 分钟
 - 网络失败时保留上次的数据;登录快过期时自动续期
 - 显示三家官方状态页的当前状态
 
 ### 统计
 
-- 时间范围：今天 / 7 天 / 30 天 / 本月 / 全部 / 自定义，可按服务筛选
+- 时间范围：今天 / 昨日 / 7 天 / 30 天 / 全部 / 自定义，可按服务筛选
 - **概览**:估算费用、Token、缓存读取，以及环比;每日用量图;按服务占比;「今天」可对比昨日 / 7 日均 / 30 日均，今天用得越多，标题旁的火苗烧得越旺
 - **额度变化**:今天各账号剩余额度的变化曲线和变动记录
 - **模型明细**:按模型列出输入 / 输出 / 缓存 / 费用，可排序
@@ -95,10 +96,17 @@ Codex 会把旧会话压缩成 `.jsonl.zst`,需要本机有 `zstd` 命令(`brew 
 **Codex / Grok 的缓存写入为什么是「—」?**
 这两家的日志不单独记录缓存写入，无法统计，不是漏算。
 
+**Grok Bot / Gemini App 如何显示额度？**
+Grok Bot 需要已登录桌面 App。Gemini 需要 Chrome 当前个人资料登录与 Gemini App 相同的 Google 账号，并能打开 gemini.google.com。首次可能需要在 macOS 钥匙串窗口允许 yybar 读取对应 Safe Storage 条目。两项不发送推理请求。Gemini 额外读取最多 3 个近期会话各 2 轮回答的模型字段，显示「近期会话：Argon」等名称；只保存模型名、采样数量和更新时间，不保存正文或会话 ID，暂无 token / 费用明细。Google 网页验证与登录过期分别提示；验证期间保留上次额度并暂停请求 10 分钟。Grok Bot 可读取按天、模型分类的总 token；接口未返回的模型成本显示「—」，不能由总 token 或额度比例推算。
+
+**额度在掉，统计里却没有对应的用量?**
+本机 CLI 和 Claude 桌面 App 的 Cowork 会话从日志统计。Claude 桌面端「项目（测试）」可在「设置 → 刷新 → Claude 云端项目」开启同步，复用本机 Claude Code 登录，首次回补昨天起的记录。普通网页 / App 对话仍未接入。云端按每轮结束日期归档，跨午夜任务计入结束当天；与本机重复的消息会扣除，关闭同步保留历史。
+
 ## 数据与隐私
 
-- 用量统计只读本机日志:`~/.codex/sessions`、`~/.codex/archived_sessions`、`~/.claude/projects`、`~/.grok/sessions`。
-- 网络请求只发往各服务自己的接口(查询额度、续期登录)和官方状态页，没有任何统计或上报。
+- 本地用量读取日志:`~/.codex/sessions`、`~/.codex/archived_sessions`、`~/.claude/projects`(以及 Claude 桌面 App Cowork 会话的日志)、`~/.grok/sessions`。Claude 云端 Projects 可额外开启同步；普通网页对话未接入。
+- Gemini App 只读取 Chrome 的 Google 会话 Cookie（`__Secure-1PSID` / `__Secure-1PSIDTS`）；解密密钥与 Cookie 仅驻留内存，仅发送至 `https://gemini.google.com`。不读取其他网站数据。
+- 网络请求只发往各服务自己的接口(查询额度、云端用量与近期模型元数据、续期登录)和官方状态页，没有任何统计或上报。
 - 本地数据位置：
   - `~/Library/Application Support/yybar/`:额度缓存、用量汇总、其他账号的 token(`account-tokens/`,只有本用户可读)
   - `~/Library/Caches/yybar/`:日志扫描进度
@@ -126,6 +134,8 @@ Codex 会把旧会话压缩成 `.jsonl.zst`,需要本机有 `zstd` 命令(`brew 
 - [cc-switch](https://github.com/farion1231/cc-switch) —— 多 Provider 账号切换器，启发了多账号管理与导入流程
 - [cockpit-tools](https://github.com/jlcodes99/cockpit-tools) —— 多平台 AI 编码助手仪表盘，在额度与刷新策略上提供了参考
 - [CodexBar](https://github.com/steipete/CodexBar) —— macOS 菜单栏 AI 用量监控，在菜单栏交互与本地解析思路上多有借鉴
+
+- [TokenYou](https://github.com/diegoparras/tokenyou) / [Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) —— Gemini Apps 网页额度协议参考
 
 ## 许可
 

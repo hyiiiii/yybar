@@ -17,6 +17,15 @@ struct QuotaCachePayload: Sendable, Equatable, Codable {
     var importedCodex: [String: QuotaCacheRecord]?
     /// 额外 Claude / Grok 账号配额缓存,key = ExtraAccount.id。字段缺失时为 nil,旧缓存兼容。
     var extra: [String: QuotaCacheRecord]?
+    /// Gemini / agy(Google 账号的两个额度池，来自 `agy -p /usage`)。字段缺失时为 nil,旧缓存兼容。
+    var gemini: QuotaCacheRecord?
+    var agy: QuotaCacheRecord?
+    /// Grok Bot 每周额度。字段缺失时为 nil,旧缓存兼容。
+    var grokBot: QuotaCacheRecord?
+    /// Gemini Apps 网页额度，绝不能用旧 gemini 字段(agy 池)填充。
+    var geminiApp: QuotaCacheRecord?
+    var geminiAppEmail: String?
+    var geminiRecentModels: GeminiRecentModels?
 }
 
 enum QuotaCache {

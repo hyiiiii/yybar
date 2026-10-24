@@ -50,6 +50,51 @@ extension Color {
         light: (red: 29, green: 29, blue: 31),    // #1D1D1F
         dark: (red: 229, green: 229, blue: 234)   // #E5E5EA
     )
+
+    /// Gemini 与 agy 共用的 Google 蓝(额度都挂在同一个 Google 账号上)。
+    static let googleAccent = quotaAdaptiveColor(
+        light: (red: 74, green: 134, blue: 232),  // #4A86E8
+        dark: (red: 106, green: 158, blue: 240)   // #6A9EF0
+    )
+}
+
+extension UsageApp {
+    /// 服务识别色。Grok Bot 与 Grok 同为黑(深色模式近白),Gemini 与 agy 同为 Google 蓝。
+    var accent: Color {
+        switch self {
+        case .codex: return .codexAccent
+        case .claude: return .claudeAccent
+        case .grok, .grokBot: return .grokAccent
+        case .gemini, .agy: return .googleAccent
+        }
+    }
+
+    /// 界面上的服务名。
+    var displayName: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude Code"
+        case .grok: return "Grok"
+        case .grokBot: return "Grok Bot"
+        case .gemini: return "Gemini"
+        case .agy: return "Antigravity"
+        }
+    }
+
+    /// logo 加载失败时 tile 上的字母。
+    var fallbackLetter: String {
+        switch self {
+        case .codex: return "C"
+        case .claude: return "K"
+        case .grok: return "G"
+        case .grokBot: return "B"
+        case .gemini: return "G"
+        case .agy: return "A"
+        }
+    }
+
+    /// 只有一个(周期)额度窗口的服务：Grok / Grok Bot。
+    var hasSinglePeriod: Bool { self == .grok || self == .grokBot }
 }
 
 private func quotaAdaptiveColor(
@@ -191,13 +236,17 @@ struct ServiceTile: View {
 
     /// Codex 的 tile 还原 OpenAI 官方品牌图标:白底黑 logo + 极细边框。
     /// 其余地方(文字色、环形、图表)的 `Color.codexAccent` 仍是石墨灰,不受影响。
-    private var isOpenAIBrand: Bool { logoName == "codex" }
+    /// Grok Bot(黑色圆球 + 镂空眼睛)同样白底黑 logo:黑底会吃掉圆球。
+    private var isOpenAIBrand: Bool { logoName == "codex" || logoName == "grokBot" }
 
     /// Grok 的 tile 固定黑底:深色模式下 `grokAccent` 是近白，直接拿来当底色会吃掉白色 logo。
     private var isGrokBrand: Bool { logoName == "grok" }
 
+    /// 有彩色版 logo 的服务(Antigravity):白底 + 原色 logo,和 OpenAI 的做法一样。
+    private var colorLogo: NSImage? { LogoCache.colorImage(named: logoName) }
+
     private var background: Color {
-        if isOpenAIBrand { return .white }
+        if isOpenAIBrand || colorLogo != nil { return .white }
         if isGrokBrand { return Color(red: 29 / 255, green: 29 / 255, blue: 31 / 255) }
         return tint
     }
@@ -208,7 +257,7 @@ struct ServiceTile: View {
             .fill(background)
             .frame(width: size, height: size)
             .overlay {
-                if isOpenAIBrand {
+                if isOpenAIBrand || colorLogo != nil {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
                 }
@@ -218,7 +267,11 @@ struct ServiceTile: View {
 
     @ViewBuilder
     private var logoView: some View {
-        if let nsImage = LogoCache.image(named: logoName) {
+        if let colorLogo {
+            Image(nsImage: colorLogo)
+                .resizable()
+                .frame(width: logoSize, height: logoSize)
+        } else if let nsImage = LogoCache.image(named: logoName) {
             Image(nsImage: nsImage)
                 .resizable()
                 .renderingMode(.template)
@@ -239,7 +292,13 @@ struct ServiceLogoImage: View {
     var size: CGFloat = 14
 
     var body: some View {
-        if let image = LogoCache.image(named: logoName) {
+        if let color = LogoCache.colorImage(named: logoName) {
+            // 有彩色版(如 Antigravity 的像素彩虹 A)时直接用原色，不染识别色。
+            Image(nsImage: color)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else if let image = LogoCache.image(named: logoName) {
             Image(nsImage: image)
                 .resizable()
                 .renderingMode(.template)
@@ -254,6 +313,21 @@ struct ServiceLogoImage: View {
 
 private enum LogoCache {
     private static let cache = NSCache<NSString, NSImage>()
+    private static let colorCache = NSCache<NSString, NSImage>()
+    private static var missingColor: Set<String> = []
+
+    /// `<name>-color.svg`(彩色版 logo,非模板图);没有时返回 nil。
+    static func colorImage(named name: String) -> NSImage? {
+        if let cached = colorCache.object(forKey: name as NSString) { return cached }
+        guard !missingColor.contains(name) else { return nil }
+        guard let url = Bundle.main.url(forResource: name + "-color", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            missingColor.insert(name)
+            return nil
+        }
+        colorCache.setObject(image, forKey: name as NSString)
+        return image
+    }
 
     static func image(named name: String) -> NSImage? {
         if let cached = cache.object(forKey: name as NSString) { return cached }

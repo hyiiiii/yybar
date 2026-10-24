@@ -48,6 +48,13 @@ nonisolated final class CustomModelPrices: @unchecked Sendable {
 }
 
 enum Pricing {
+    /// Grok Bot 只返回合计 token，不能按 API 单价推导模型费用。
+    /// 旧汇总把接口未返回的金额存为 0；这类行应显示未知，不能因模型恰有公开价格而显示 $0。
+    nonisolated static func hasDisplayableCost(app: UsageApp, model: String, cost: Decimal) -> Bool {
+        if app == .grokBot { return cost > 0 }
+        return app == .grok || cost > 0 || hasPrice(model: model)
+    }
+
     /// 价格表与 cc-switch `seed_model_pricing` / CodexBar `CostUsagePricing` 对齐（2026 上半年价位）。
     /// 命中不到时返回 nil。键为归一化后的模型名（剥 `openai/` 前缀和末尾 `-YYYYMMDD` / `-YYYY-MM-DD` 日期段）。
     nonisolated static let table: [String: ModelPrice] = [
@@ -99,6 +106,21 @@ enum Pricing {
         "gpt-6.1-sol":       .init(input: 2,    output: 10,  cacheRead: 0.10, cacheCreation: 2.5),
         "gpt-6-sol":         .init(input: 2,    output: 10,  cacheRead: 0.20, cacheCreation: 2.5),
         "gpt-6-luna":        .init(input: 0.10, output: 0.50, cacheRead: 0.01, cacheCreation: 0.125),
+        // —— Gemini(agy 会话库;Gemini Developer API 标准档，ai.google.dev/gemini-api/docs/pricing,2026-10-19 查)。
+        // agy 库里没有缓存 token,cacheRead 只是照抄官方缓存价;cacheCreation 无此计费项记 0。
+        // 3.8 / 3.6 Flash 为 2026 年内价格(2027-01-01 起翻倍,届时需更新)。
+        "gemini-4-argon":         .init(input: 2,    output: 10,   cacheRead: 0.10,  cacheCreation: 0),
+        "gemini-3.8-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),
+        "gemini-3.6-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),
+        "gemini-3.5-flash-lite":  .init(input: 0.30, output: 2.50, cacheRead: 0.03,  cacheCreation: 0),
+        "gemini-3.1-pro-preview": .init(input: 2,    output: 12,   cacheRead: 0.20,  cacheCreation: 0),
+        "gemini-3.1-pro":         .init(input: 2,    output: 12,   cacheRead: 0.20,  cacheCreation: 0),
+        "gemini-3.1-flash-lite":  .init(input: 0.25, output: 1.50, cacheRead: 0.025, cacheCreation: 0),
+        "gemini-3-flash-preview": .init(input: 0.50, output: 3,    cacheRead: 0.05,  cacheCreation: 0),
+        "gemini-3-flash":         .init(input: 0.50, output: 3,    cacheRead: 0.05,  cacheCreation: 0),
+        "gemini-2.5-pro":         .init(input: 1.25, output: 10,   cacheRead: 0.125, cacheCreation: 0),
+        "gemini-2.5-flash":       .init(input: 0.30, output: 2.50, cacheRead: 0.03,  cacheCreation: 0),
+        // GPT-OSS(agy 的 Claude + GPT 池):Google / OpenAI 都没有公开按 token 的官方价，不入表 → 费用 0,token 照记。
         "codex-mini-latest": .init(input: 1.50, output: 6,   cacheRead: 0.375, cacheCreation: 0)
         // codex-auto-review 内部 review，官方未公开计费；不入表 → cost=0，token 仍记录
     ]

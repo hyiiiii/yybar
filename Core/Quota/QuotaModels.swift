@@ -4,18 +4,24 @@ enum QuotaApp: String, Sendable, Codable {
     case codex
     case claude
     case grok
+    case grokBot
+    case gemini
+    case agy
 }
 
 enum QuotaSnapshotSource: String, Sendable, Codable {
     case api
     case cache
     case cliFallback
+    /// `agy -p /usage`(Gemini / agy 额度)。
+    case agyCLI
 
     var displayName: String {
         switch self {
         case .api: return "API"
         case .cache: return "缓存"
         case .cliFallback: return "Claude CLI"
+        case .agyCLI: return "agy CLI"
         }
     }
 }
@@ -58,10 +64,37 @@ struct QuotaSnapshot: Sendable, Equatable, Codable {
     /// Server-defined primary period for services with billing cycles other than 5h.
     var primary: QuotaWindow? = nil
     var primaryLabel: String? = nil
+    /// 一个格子包含多个额度池时(Antigravity = agy 的 Gemini 池 + Claude·GPT 池)逐池列出;
+    /// 此时 fiveHour / weekly 是各池里剩余最少的那个，供菜单栏 / 悬浮窗等只有一个数字的地方用。
+    var pools: [QuotaPool]? = nil
+}
+
+struct QuotaPool: Sendable, Equatable, Codable {
+    /// 行首短标签，如 "Gemini"、"Claude·GPT"。
+    var label: String
+    var fiveHour: QuotaWindow?
+    var weekly: QuotaWindow?
+
+    /// Antigravity 的展示快照:agy 两个池子合在一起(按工具归属，2026-10-20)。两个池都没有时返回 nil。
+    static func antigravity(gemini: QuotaSnapshot?, thirdParty: QuotaSnapshot?) -> QuotaSnapshot? {
+        guard gemini != nil || thirdParty != nil else { return nil }
+        let pools = [
+            QuotaPool(label: "Gemini", fiveHour: gemini?.fiveHour, weekly: gemini?.weekly),
+            QuotaPool(label: "Claude·GPT", fiveHour: thirdParty?.fiveHour, weekly: thirdParty?.weekly)
+        ]
+        func tightest(_ windows: [QuotaWindow?]) -> QuotaWindow? {
+            windows.compactMap { $0 }.max { $0.usedPercent < $1.usedPercent }
+        }
+        let fetched = [gemini?.fetchedAt, thirdParty?.fetchedAt].compactMap { $0 }.max() ?? Date()
+        return QuotaSnapshot(app: .agy, fiveHour: tightest(pools.map(\.fiveHour)), weekly: tightest(pools.map(\.weekly)),
+                             weeklyOpus: nil, weeklySonnet: nil, planType: nil, fetchedAt: fetched, pools: pools)
+    }
 }
 
 enum QuotaError: Error, CustomStringConvertible {
     case missingToken
+    /// Google 网页验证 / 异常流量拦截，与登录凭据是否有效无关。
+    case webVerificationRequired
     case http(Int, String)
     case transport(String)
     case decode(String)
@@ -74,6 +107,7 @@ enum QuotaError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .missingToken: return "missing access token"
+        case .webVerificationRequired: return "Google 要求网页验证，请在 Chrome 打开 Gemini 检查后重试"
         case .http(let code, let msg): return "http \(code): \(msg)"
         case .transport(let msg): return "transport: \(msg)"
         case .decode(let msg): return "decode: \(msg)"
@@ -90,6 +124,11 @@ enum QuotaError: Error, CustomStringConvertible {
 
     var isRateLimited: Bool {
         httpStatusCode == 429
+    }
+
+    var requiresBrowserVerification: Bool {
+        if case .webVerificationRequired = self { return true }
+        return false
     }
 
     var isAuthFailure: Bool {

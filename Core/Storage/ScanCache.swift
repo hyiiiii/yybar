@@ -13,13 +13,17 @@ struct ScanFileState: Sendable, Equatable, Codable {
 struct ScanState: Sendable, Equatable, Codable {
     /// version 管「结构变更」（字段增减导致解码不兼容时 bump）；价格变更由 pricingFingerprint 接管。
     /// v5: Codex 累计去重及 Grok 扫描；重建历史聚合。
-    static let currentVersion: Int = 5
+    /// v6: 新增 agy 会话库扫描(Gemini / Antigravity)。
+    /// v7: agy 用量改为全部记到 Antigravity(重建时旧的 Gemini 桶并入 Antigravity,见 UsageService.mergePreservingHistory)。
+    static let currentVersion: Int = 7
     var version: Int = ScanState.currentVersion
     /// 写盘时记录的价格表指纹；load 时与当前 `Pricing.fingerprint` 不一致即视为缓存失效、全量重扫重算。
     var pricingFingerprint: String = ""
     var claude: [String: ScanFileState] = [:]
     var codex: [String: ScanFileState] = [:]
     var grok: [String: ScanFileState] = [:]
+    /// agy 会话库(键为 .db 路径;offset 存库 + WAL 大小，seenTurnIds 存已记过的 step idx)。
+    var agy: [String: ScanFileState] = [:]
     /// 跨文件的 Claude message.id 去重集合（同一条 assistant 消息可能被 sidechain / subagent 在多个 jsonl 里重复引用）。
     var claudeSeenMessageIds: [String] = []
 }

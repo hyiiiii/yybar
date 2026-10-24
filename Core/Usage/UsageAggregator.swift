@@ -28,6 +28,18 @@ final class UsageAggregator {
         }
     }
 
+    /// 用接口返回的当天合计覆盖这一格。再刷到同一数字不会累加。
+    func setDailyTotals(app: UsageApp, rows: [APIUsageTotal]) {
+        guard !rows.isEmpty else { return }
+        version += 1
+        for row in rows {
+            let key = BucketKey(day: row.day, app: app, model: row.model)
+            buckets[key] = UsageBucket(app: app, model: row.model, day: row.day,
+                                       inputTokens: row.inputTokens, outputTokens: 0,
+                                       cacheReadTokens: 0, cacheCreationTokens: 0, costUSD: row.costUSD)
+        }
+    }
+
     func ingest(_ entries: [UsageEntry]) {
         if !entries.isEmpty { version += 1 }
         for e in entries {

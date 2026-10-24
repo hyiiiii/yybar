@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 主窗口页面。统计与设置共用一个侧边栏(见 docs/界面布局.md §3)。
+/// 主窗口页面。统计、设置和 bar 共用一个侧边栏(见 docs/界面布局.md §3)。
 enum MainTab: Hashable, CaseIterable {
     // 统计
     case overview
@@ -12,6 +12,8 @@ enum MainTab: Hashable, CaseIterable {
     case display
     case refresh
     case general
+    // bar:德州小酒馆入口，独立的一页
+    case bar
 
     /// 兼容旧调用:`.stats` 打开统计概览,`.settings` 打开设置首页。
     static var stats: MainTab { .overview }
@@ -20,7 +22,7 @@ enum MainTab: Hashable, CaseIterable {
     var isStats: Bool {
         switch self {
         case .overview, .activity, .quota, .models: return true
-        case .services, .display, .refresh, .general: return false
+        case .services, .display, .refresh, .general, .bar: return false
         }
     }
 
@@ -34,6 +36,7 @@ enum MainTab: Hashable, CaseIterable {
         case .display: return tr("Display", "显示")
         case .refresh: return tr("Refresh", "刷新")
         case .general: return tr("General", "通用")
+        case .bar: return "bar"
         }
     }
 
@@ -47,6 +50,8 @@ enum MainTab: Hashable, CaseIterable {
         case .display: return "menubar.rectangle"
         case .refresh: return "arrow.clockwise"
         case .general: return "gearshape"
+        // 侧边栏实际画的是 PlayingCardsIcon,这里是别处要 SF Symbol 时的替代
+        case .bar: return "rectangle.portrait.on.rectangle.portrait.angled"
         }
     }
 
@@ -72,7 +77,9 @@ struct MainWindowRootView: View {
             }
 
             Group {
-                if appState.mainTab.isStats {
+                if appState.mainTab == .bar {
+                    BarView()
+                } else if appState.mainTab.isStats {
                     StatsView()
                 } else {
                     SettingsRootView()
@@ -87,8 +94,10 @@ struct MainWindowRootView: View {
         VStack(alignment: .leading, spacing: 16) {
             sidebarGroup(title: tr("Statistics", "统计"), pages: MainTab.statsPages)
             sidebarGroup(title: tr("Settings", "设置"), pages: MainTab.settingsPages)
+            // bar 不属于统计也不属于设置，单独一组、不带组名，排在通用下面
+            sidebarGroup(title: nil, pages: [.bar])
             Spacer()
-            refreshFooter
+            footer
         }
         // 点击或滚动改变选中项时，高亮背景平滑滑过去。
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.mainTab)
@@ -98,15 +107,24 @@ struct MainWindowRootView: View {
         .background(.regularMaterial)
     }
 
-    /// 原 Popover 顶部的刷新按钮和「x 前已刷新」挪到这里。
-    private var refreshFooter: some View {
+    /// 侧边栏最下面一行：左边是连上 yybar 网站后的 GitHub 头像和用户名(点一下去 bar 页，没连接时空着),右边刷新按钮。
+    private var footer: some View {
         HStack(spacing: 6) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(refreshedText(now: context.date))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
+            if let profile = appState.webAccount.profile, appState.webAccount.isConnected {
+                Button { appState.select(.bar) } label: {
+                    HStack(spacing: 7) {
+                        WebAvatar(profile: profile, size: 20)
+                        Text("@\(profile.login)")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(tr("Connected to the yybar website — open the bar", "已连接 yybar 网站，点一下去 bar"))
             }
             Spacer(minLength: 4)
             Button {
@@ -125,21 +143,15 @@ struct MainWindowRootView: View {
         .padding(.horizontal, 8)
     }
 
-    private func refreshedText(now: Date) -> String {
-        let latest = [appState.codexRefreshState.lastSuccessAt, appState.claudeRefreshState.lastSuccessAt,
-                      appState.grokRefreshState.lastSuccessAt].compactMap { $0 }.max()
-        guard let latest else { return tr("Waiting for data", "等待数据") }
-        let age = RelativeTime.short(from: latest, now: now)
-        return tr("Refreshed \(age) ago", "\(age) 前已刷新")
-    }
-
-    private func sidebarGroup(title: String, pages: [MainTab]) -> some View {
+    private func sidebarGroup(title: String?, pages: [MainTab]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 4)
+            if let title {
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 4)
+            }
             ForEach(pages, id: \.self) { page in
                 sidebarItem(page)
             }
@@ -152,10 +164,16 @@ struct MainWindowRootView: View {
             appState.select(page)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: page.icon)
-                    .font(.system(size: 12))
-                    .frame(width: 16)
-                    .foregroundStyle(active ? Color.white : Color.secondary)
+                Group {
+                    if page == .bar {
+                        PlayingCardsIcon(size: 12)
+                    } else {
+                        Image(systemName: page.icon)
+                            .font(.system(size: 12))
+                    }
+                }
+                .frame(width: 16)
+                .foregroundStyle(active ? Color.white : Color.secondary)
                 Text(page.title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(active ? Color.white : Color.primary)

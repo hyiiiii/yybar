@@ -128,8 +128,29 @@ struct UsageScannerRegression {
                 preconditionFailure("Missing/invalid period accepted as full quota")
             } catch {}
         }
+        // Claude:CLI 日志和 Cowork 会话(隐藏的 .claude 目录)都要扫到;不是 local_ 开头的目录不算;同一 message.id 只计一次。
+        let home = root.appendingPathComponent("home")
+        let sessions = home.appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions")
+        let cliProject = home.appendingPathComponent(".claude/projects/-Users-test")
+        let coworkProject = sessions.appendingPathComponent("acct/org/local_abc/.claude/projects/-sessions-outputs")
+        let pluginProject = sessions.appendingPathComponent("skills-plugin/org/acct/.claude/projects/p")
+        for dir in [cliProject, coworkProject, pluginProject] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        func assistant(_ id: String) -> String {
+            #"{"type":"assistant","timestamp":"2026-06-11T08:00:00Z","message":{"id":""# + id
+                + #"","model":"claude-opus-4-8","stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20}}}"#
+        }
+        try write(assistant("msg_cli") + "\n", to: cliProject.appendingPathComponent("s1.jsonl"))
+        try write(assistant("msg_cowork") + "\n" + assistant("msg_cli") + "\n", to: coworkProject.appendingPathComponent("s2.jsonl"))
+        try write(assistant("msg_plugin") + "\n", to: pluginProject.appendingPathComponent("s3.jsonl"))
+        let claudeRoots = ClaudeJSONLScanner.logRoots(home: home)
+        precondition(claudeRoots.count == 2, "Cowork session log folder not found")
+        let claude = ClaudeJSONLScanner.scan(previous: [:], seenMessageIds: [], roots: claudeRoots)
+        precondition(claude.entries.count == 2 && claude.newState.count == 2, "Cowork logs missed or counted twice")
+        precondition(ClaudeJSONLScanner.scan(previous: claude.newState, seenMessageIds: claude.newSeenIds, roots: claudeRoots).entries.isEmpty)
         let live = GrokJSONLScanner.scan(previous: [:])
-        print("PASS: repeated notifications, cache arithmetic, incremental resume, partial lines, counter reset, archive move, long lines, zstd streaming, Grok clone deduplication, cost units, cloud billing parse, current model prices.")
+        print("PASS: repeated notifications, cache arithmetic, incremental resume, partial lines, counter reset, archive move, long lines, zstd streaming, Grok clone deduplication, Claude Cowork logs, cost units, cloud billing parse, current model prices.")
         print("Local Grok: \(live.entries.count) model entries, \(live.entries.reduce(0) { $0 + $1.inputTokens + $1.outputTokens + $1.cacheReadTokens + $1.cacheCreationTokens }) tokens, $\(live.entries.reduce(Decimal.zero) { $0 + $1.costUSD })")
     }
 }

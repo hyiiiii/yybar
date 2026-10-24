@@ -11,6 +11,11 @@ struct SettingsRootView: View {
     @State private var launchAtLoginError: String?
     /// 待确认删除的本机账号。
     @State private var localDeleteTarget: AccountProvider?
+    @State private var quotaOnlyDeleteTarget: UsageApp?
+    /// hook 安装 / 卸载结果(已挂上的 CLI、失败原因)。
+    @State private var hookStatus: String?
+    @State private var hookError: String?
+    @State private var hookWorking = false
 
     var body: some View {
         @Bindable var settings = SettingsStore.shared
@@ -33,8 +38,8 @@ struct SettingsRootView: View {
                 PrefsGroup(
                     title: "Model prices",
                     chinese: "模型价格",
-                    desc: appState.isRepricing ? "Recalculating costs with the new prices…" : "USD per million tokens. Models come from Models in Statistics; Grok costs come from its own logs. Press Return or leave a field to save; past costs are recalculated.",
-                    chineseDesc: appState.isRepricing ? "正在按新价格重算历史费用…" : "美元 / 百万 Token。模型取自统计 · 模型明细(Grok 的费用直接取自其日志，不在此列)。回车或离开输入框即保存，历史费用会按新价格重算"
+                    desc: appState.isRepricing ? "Recalculating costs with the new prices…" : "USD per million tokens, for the Codex, Claude Code and Antigravity models in Statistics › Models. Grok and Grok Bot costs come from their own logs and bills, and Gemini Apps only reports answers, so they aren't listed. Press Return or leave a field to save; past costs are recalculated.",
+                    chineseDesc: appState.isRepricing ? "正在按新价格重算历史费用…" : "美元 / 百万 Token。列出统计 · 模型明细里出现过的 Codex、Claude Code、Antigravity 模型;Grok 和 Grok Bot 的费用直接取自它们的日志和账单，Gemini App 只有回答次数，都不在此列。回车或离开输入框即保存，历史费用会按新价格重算"
                 ) {
                     ModelPriceRows()
                 }
@@ -98,7 +103,20 @@ struct SettingsRootView: View {
                     if showLocal { localRow(provider, settings: settings) }
                     OtherAccountRows(provider: provider, leadingDivider: showLocal)
                 }
+                // Grok Bot 紧跟 Grok;Gemini / agy 排在最后(和菜单栏顺序一致)。
+                if provider == .grok, !appState.isQuotaOnlyRemoved(.grokBot) {
+                    Divider()
+                    quotaOnlyRow(.grokBot, settings: settings)
+                }
             }
+            ForEach([UsageApp.gemini, .agy], id: \.self) { app in
+                if !appState.isQuotaOnlyRemoved(app) {
+                    Divider()
+                    quotaOnlyRow(app, settings: settings)
+                }
+            }
+            // 其他 Google 账号(Gemini · Antigravity 两个池子一起)。
+            OtherAccountRows(provider: .claude, extraProvider: .google)
             Divider()
             AddAccountButton()
             if appState.hasRemovedLocalAccounts {
@@ -141,6 +159,24 @@ struct SettingsRootView: View {
         } message: {
             Text(tr("yybar stops showing and refreshing it. The \(localDeleteTarget?.title ?? "") CLI stays signed in. It comes back if the CLI signs in to another account, or use \u{201C}Restore\u{201D} below.",
                     "yybar 将不再显示和刷新它，本机 \(localDeleteTarget?.title ?? "") CLI 的登录不受影响。CLI 换成其他账号后会重新出现，也可以在下方「恢复」。"))
+        }
+        .confirmationDialog(
+            tr("Remove this account from yybar?", "从 yybar 中删除这个账号？"),
+            isPresented: Binding(get: { quotaOnlyDeleteTarget != nil }, set: { if !$0 { quotaOnlyDeleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = quotaOnlyDeleteTarget {
+                Button(tr("Remove", "删除"), role: .destructive) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.88)) {
+                        appState.removeQuotaOnlyAccount(target)
+                    }
+                    quotaOnlyDeleteTarget = nil
+                }
+                Button(tr("Cancel", "取消"), role: .cancel) { quotaOnlyDeleteTarget = nil }
+            }
+        } message: {
+            Text(tr("yybar stops showing and refreshing it. \(quotaOnlyDeleteTarget?.displayName ?? "") on this Mac stays signed in. Use \u{201C}Restore\u{201D} below to bring it back.",
+                    "yybar 将不再显示和刷新它，本机 \(quotaOnlyDeleteTarget?.displayName ?? "") 的登录不受影响。可以在下方「恢复」。"))
         }
     }
 
@@ -208,6 +244,60 @@ struct SettingsRootView: View {
         }
     }
 
+    /// Grok Bot / Gemini / agy:只有本机账号(读本机 App / CLI 的登录),没有其他账号和切换。
+    /// 和 Codex / Claude 本机行同一组件、同样字段:服务名 + 套餐标签 + 邮箱 + 开关 + 查看额度 + 删除。
+    /// 本机没装对应 App / CLI 时整行禁用(显示「未识别」)。
+    private func quotaOnlyRow(_ app: UsageApp, settings: SettingsStore) -> some View {
+        let detected: Bool
+        let email: String?
+        let plan: String?
+        let enabled: Binding<Bool>
+        let menuBar: Binding<Bool>
+        let floating: Binding<Bool>
+        switch app {
+        case .grokBot:
+            detected = GrokBotQuotaClient.isInstalled
+            email = appState.grokBotEmail
+            plan = appState.grokBotQuota?.planType
+            enabled = Binding(get: { settings.showGrokBot }, set: { settings.showGrokBot = $0 })
+            menuBar = Binding(get: { settings.menuBarShowGrokBot }, set: { settings.menuBarShowGrokBot = $0 })
+            floating = floatingBinding(get: { settings.floatingShowGrokBot }, set: { settings.floatingShowGrokBot = $0 })
+        case .gemini:
+            detected = GoogleQuotaClient.isGeminiInstalled
+            email = appState.geminiAppEmail
+            plan = appState.geminiAppQuota?.planType
+            enabled = Binding(get: { settings.showGemini }, set: {
+                settings.showGemini = $0
+                if $0 { Task { await appState.loadGeminiAppQuota(reason: .userInitiated) } }
+            })
+            menuBar = Binding(get: { settings.menuBarShowGemini }, set: { settings.menuBarShowGemini = $0 })
+            floating = floatingBinding(get: { settings.floatingShowGemini }, set: { settings.floatingShowGemini = $0 })
+        default:
+            detected = GoogleQuotaClient.isAgyInstalled
+            email = appState.googleEmail
+            plan = appState.googlePlan
+            enabled = Binding(get: { settings.showAgy }, set: {
+                settings.showAgy = $0
+                if $0 { Task { await appState.loadGoogleQuota(reason: .userInitiated) } }
+            })
+            menuBar = Binding(get: { settings.menuBarShowAgy }, set: { settings.menuBarShowAgy = $0 })
+            floating = floatingBinding(get: { settings.floatingShowAgy }, set: { settings.floatingShowAgy = $0 })
+        }
+        return ServiceMatrixRow(
+            title: app.displayName, logoName: app.rawValue, fallback: app.fallbackLetter, tint: app.accent,
+            email: email,
+            plan: plan,
+            switchState: detected ? .inUse : .none,
+            detected: detected,
+            enabled: enabled,
+            menuBar: menuBar,
+            floating: floating,
+            floatingAvailable: settings.floatingEnabled,
+            quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState)),
+            onDelete: { quotaOnlyDeleteTarget = app }
+        )
+    }
+
     private func floatingBinding(get: @escaping () -> Bool, set: @escaping (Bool) -> Void) -> Binding<Bool> {
         Binding(get: get, set: { newValue in
             set(newValue)
@@ -256,7 +346,85 @@ struct SettingsRootView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
             }
+            Divider()
+            PrefsRow(
+                label: "Drive breathing with CLI hooks",
+                chinese: "用 hook 驱动呼吸",
+                desc: "Adds yybar's own hooks to Codex, Claude Code, Grok and agy so the icon reacts the moment a prompt, tool call, approval or reply happens. Your existing hooks are left alone; turning this off removes only yybar's.",
+                chineseDesc: "给 Codex、Claude Code、Grok、agy 挂上 yybar 自己的 hook:提问、调用工具、请求审批、回答结束时图标立刻响应。不动你已有的 hook,关掉只删 yybar 的"
+            ) {
+                HStack(spacing: 6) {
+                    if hookWorking { ProgressView().controlSize(.small) }
+                    Toggle("", isOn: Binding(
+                        get: { settings.activityHooksEnabled },
+                        set: { setActivityHooks($0, settings: settings) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(hookWorking)
+                }
+            }
+            if let hookStatus {
+                Text(hookStatus)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
+            if let hookError {
+                Text(hookError)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
         }
+        .onAppear { refreshHookStatus(settings: settings) }
+    }
+
+    private func setActivityHooks(_ enabled: Bool, settings: SettingsStore) {
+        hookWorking = true
+        hookError = nil
+        Task {
+            let report = await Task.detached {
+                enabled ? ActivityHooks.install() : ActivityHooks.uninstall()
+            }.value
+            UsageActivityMonitor.shared.reloadHookStates()
+            if enabled, report.changed.isEmpty {
+                // 一个都没装上：开关退回关闭。
+                settings.activityHooksEnabled = false
+            } else {
+                settings.activityHooksEnabled = enabled
+            }
+            if !report.failed.isEmpty {
+                hookError = report.failed.map { "\($0.app.displayName):\($0.message)" }.joined(separator: "\n")
+            } else if enabled, report.changed.isEmpty {
+                hookError = tr("No supported CLI found on this Mac.", "本机没有找到支持的 CLI")
+            }
+            refreshHookStatus(settings: settings)
+            hookWorking = false
+        }
+    }
+
+    private func refreshHookStatus(settings: SettingsStore) {
+        let installed = ActivityHooks.installedApps()
+        guard settings.activityHooksEnabled || !installed.isEmpty else {
+            hookStatus = nil
+            return
+        }
+        if installed.isEmpty {
+            hookStatus = tr("No hooks installed.", "还没有挂上任何 hook")
+            return
+        }
+        let names = installed.map(\.displayName).joined(separator: "、")
+        var text = tr("Installed for: ", "已挂上：") + names
+        if installed.contains(.codex) {
+            text += tr(". Codex runs new hooks only after you trust them in its /hooks.",
+                       "。Codex 要在它的 /hooks 里信任新 hook 后才会执行")
+        }
+        hookStatus = text
     }
 
     /// 原「弹出窗口」分组：弹出窗口已取消，这两项现在作用于统计页。
@@ -283,8 +451,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Service status dot",
                 chinese: "服务状态圆点",
-                desc: "Show OpenAI / Anthropic / xAI status on the service filter buttons in Statistics.",
-                chineseDesc: "在统计页的服务筛选按钮上显示 OpenAI / Anthropic / xAI 官方状态"
+                desc: "Show OpenAI / Anthropic / xAI / Cursor / Google status on the service filter buttons in Statistics.",
+                chineseDesc: "在统计页的服务筛选按钮上显示 OpenAI / Anthropic / xAI / Cursor / Google 官方状态"
             ) {
                 Toggle("", isOn: Binding(get: { settings.showServiceStatus }, set: { settings.showServiceStatus = $0 }))
                     .labelsHidden()
@@ -369,6 +537,29 @@ struct SettingsRootView: View {
                 }
             }
 
+            PrefsGroup(title: "Claude Projects", chinese: "Claude 云端项目") {
+                PrefsRow(
+                    label: "Sync cloud usage", chinese: "同步云端用量",
+                    desc: "Uses the local Claude Code account. First sync starts yesterday; checks at least 5 minutes apart.",
+                    chineseDesc: "使用本机 Claude Code 账号。首次回补昨天起的记录，至少间隔 5 分钟同步"
+                ) {
+                    Toggle("", isOn: Binding(
+                        get: { settings.claudeCloudUsageEnabled },
+                        set: { enabled in
+                            settings.claudeCloudUsageEnabled = enabled
+                            if enabled { Task { await appState.usageService.scanNow() } }
+                        }
+                    )).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                }
+                Text(tr("Usage is assigned to each turn's completion date. Disabling sync keeps recovered history.",
+                        "按每轮结束日期统计，跨午夜任务计入结束当天；关闭同步会保留已恢复的历史。"))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                if settings.claudeCloudUsageEnabled {
+                    Text(appState.usageService.cloudStatus)
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+
             PrefsGroup(title: "Status", chinese: "状态") {
                 PrefsRow(label: "Last refresh", chinese: "上次刷新") {
                     HStack(spacing: 10) {
@@ -442,8 +633,8 @@ struct SettingsRootView: View {
     }
 
     private var footer: some View {
-        Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code and Grok",
-                "yybar \(appVersion) · Codex、Claude Code 和 Grok 的额度与本地用量"))
+        Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code, Grok, Grok Bot, Gemini and Antigravity",
+                "yybar \(appVersion) · Codex、Claude Code、Grok、Grok Bot、Gemini 和 Antigravity 的额度与用量"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)

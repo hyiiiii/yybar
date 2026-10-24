@@ -4,7 +4,7 @@
 
 ## 项目概况
 
-yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / SwiftUI 实现，用于展示 Codex、Claude Code 和 Grok 的额度、刷新状态、本地用量统计和桌面悬浮窗。
+yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / SwiftUI 实现，用于展示 Codex、Claude Code、Grok(以及只显示额度的 Grok Bot、Gemini、Antigravity / agy)的额度、刷新状态、本地用量统计和桌面悬浮窗。
 
 项目主体功能已开发完成，后续以新需求和迭代为主，不再按初始里程碑推进。
 
@@ -48,12 +48,12 @@ yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / Swift
 
 - UI 优先使用 SwiftUI / AppKit 系统默认控件和 macOS 原生风格。
 - 视觉规则以 `docs/设计风格.md` 为准：
-  - Codex 使用石墨灰识别色，Claude Code 使用桃橙识别色，Grok 使用黑色识别色(深色模式近白)；识别色仅用于 tile / logo 等品牌识别，不再用于额度状态着色。
+  - Codex 使用石墨灰识别色，Claude Code 使用桃橙识别色，Grok 与 Grok Bot 使用黑色识别色(深色模式近白)，Gemini 与 agy 共用 Google 蓝；识别色仅用于 tile / logo 等品牌识别，不再用于额度状态着色。
   - 额度状态色按剩余比例分 4 档交通灯（统一走 `statusColor`）：剩余 `>50%` 绿、`20%~50%` 黄、`<20%` 橙、`=0` 红。
   - 数字使用 `.monospacedDigit()`。
   - 图标优先使用 SF Symbols。
 - 不自造大面积背景、玻璃阴影、Web 风格控件或无关装饰。
-- 菜单栏和 Popover 中 Codex 永远排在 Claude 前，Grok 排在 Claude 后。
+- 菜单栏和 Popover 中 Codex 永远排在 Claude 前，Grok 排在 Claude 后;整体顺序 Codex → Claude → Grok → Grok Bot → Gemini → agy(即 `UsageApp` 声明顺序)。
 - 网络请求失败时保留已有快照，不要清空可展示数据。
 - 429 后必须遵守现有退避策略，不要为了手动刷新绕过限流。
 

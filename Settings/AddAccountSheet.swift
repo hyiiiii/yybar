@@ -4,7 +4,9 @@ import AppKit
 // MARK: - AddAccountSheet
 //
 // 设置 · 服务 →「添加账号…」。三步:
-// 1. 选服务商(Codex / Claude Code / Grok)
+// 1. 选服务商(Codex / Claude Code / Grok / Gemini · Antigravity / Grok Bot)
+//    - Gemini · Antigravity:没有「方式」一步，直接在终端里用独立目录的 agy 登录(见 GoogleQuotaClient),回来点「完成添加」。
+//    - Grok Bot:列出但不可选——只能读本机 Grok Bot app 的登录，没有多账号。
 // 2. 选方式：在浏览器中登录(调用官方 CLI,独立目录，不影响本机已登录账号)/ 粘贴凭据
 // 3. 浏览器登录进度，或粘贴表单
 // Codex 的粘贴沿用 AddImportedCodexAccountSheet。
@@ -18,16 +20,31 @@ struct AddAccountSheet: View {
         case method
         case browser
         case paste
+        case terminal
 
         /// 步骤先后，用于决定滑入方向。
         var order: Int {
             switch self {
             case .provider: return 0
             case .method: return 1
-            case .browser, .paste: return 2
+            case .browser, .paste, .terminal: return 2
             }
         }
     }
+
+    /// 第一步的选项：三个可多账号的 CLI 服务商，加上 Google(Gemini · Antigravity)和 Grok Bot。
+    private enum Choice: Hashable {
+        case provider(AccountProvider)
+        case google
+        case grokBot
+
+        static var all: [Choice] { AccountProvider.allCases.map { .provider($0) } + [.google, .grokBot] }
+    }
+    @State private var choice: Choice = .provider(.codex)
+    /// Google:本次登录用的独立 agy 目录(没添加成功就删掉)。
+    @State private var agyFolder: String?
+    @State private var terminalError: String?
+    @State private var isCheckingGoogle = false
 
     /// 步骤切换：内容按前进 / 后退方向滑入并淡入(弹簧动画)。
     private static let stepAnimation = Animation.spring(response: 0.4, dampingFraction: 0.88)
@@ -68,6 +85,7 @@ struct AddAccountSheet: View {
                         case .method: methodStep
                         case .browser: browserStep
                         case .paste: pasteStep
+                        case .terminal: terminalStep
                         }
                     }
                     .id(step)
@@ -85,7 +103,12 @@ struct AddAccountSheet: View {
             .onChange(of: session?.phase) { _, phase in
                 if phase == .exited(succeeded: true) { importFromSession() }
             }
-            .onDisappear { if addedName == nil { session?.cancel() } }
+            .onDisappear {
+                if addedName == nil {
+                    session?.cancel()
+                    if let agyFolder { ExtraAccountStore.removeAgyHome(folder: agyFolder) }
+                }
+            }
         }
     }
 
@@ -101,7 +124,7 @@ struct AddAccountSheet: View {
                 Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
                 stepLabel(tr("Method", "方式"), active: step == .method)
                 Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
-                stepLabel(tr("Sign in", "登录"), active: step == .browser || step == .paste)
+                stepLabel(tr("Sign in", "登录"), active: step == .browser || step == .paste || step == .terminal)
             }
         }
         .padding(.horizontal, 20)
@@ -117,7 +140,8 @@ struct AddAccountSheet: View {
 
     private var footer: some View {
         HStack {
-            if step == .method || (step == .paste && addedName == nil) || canGoBackFromBrowser {
+            if step == .method || (step == .paste && addedName == nil) || canGoBackFromBrowser
+                || (step == .terminal && addedName == nil && !isCheckingGoogle) {
                 Button(tr("Back", "返回")) { goBack() }
             }
             Spacer()
@@ -142,9 +166,17 @@ struct AddAccountSheet: View {
     private var primaryButton: some View {
         switch step {
         case .provider:
-            Button(tr("Continue", "继续")) { go(to: .method) }
+            Button(tr("Continue", "继续")) {
+                if choice == .google { startTerminalLogin() } else { go(to: .method) }
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .buttonStyle(.borderedProminent)
+            .disabled(choice == .grokBot)
+        case .terminal:
+            Button(tr("Finish adding", "完成添加")) { finishGoogle() }
                 .keyboardShortcut(.return, modifiers: [])
                 .buttonStyle(.borderedProminent)
+                .disabled(agyFolder == nil || isCheckingGoogle)
         case .method:
             Button(tr("Continue", "继续")) {
                 if method == .browser { startBrowserLogin() } else { go(to: .paste) }
@@ -178,6 +210,11 @@ struct AddAccountSheet: View {
         switch step {
         case .method: go(to: .provider)
         case .paste: go(to: .method)
+        case .terminal:
+            if let agyFolder { ExtraAccountStore.removeAgyHome(folder: agyFolder) }
+            agyFolder = nil
+            terminalError = nil
+            go(to: .provider)
         case .browser:
             session?.cancel()
             session = nil
@@ -194,29 +231,162 @@ struct AddAccountSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("Which service is this account for?", "要添加哪个服务的账号？"))
                 .font(.system(size: 12.5, weight: .medium))
-            HStack(spacing: 10) {
-                ForEach(AccountProvider.allCases) { item in
-                    choiceCard(selected: provider == item) {
-                        withAnimation(.easeOut(duration: 0.15)) { provider = item }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                      spacing: 10) {
+                ForEach(Choice.all, id: \.self) { item in
+                    choiceCard(selected: choice == item) {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            choice = item
+                            if case .provider(let value) = item { provider = value }
+                        }
                     } content: {
                         // 图标在左，服务名 / 服务商在右，卡片矮一些。
                         HStack(spacing: 9) {
-                            ServiceTile(logoName: item.logoName, fallback: String(item.title.prefix(1)),
+                            ServiceTile(logoName: logoName(for: item), fallback: String(title(for: item).prefix(1)),
                                         tint: tint(for: item), size: 28, logoSize: 16, cornerRadius: 7)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title)
+                                Text(title(for: item))
                                     .font(.system(size: 12.5, weight: .semibold))
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.85)
-                                Text(item.vendor)
+                                    .minimumScaleFactor(0.75)
+                                Text(vendor(for: item))
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                         }
                     }
+                    .opacity(item == .grokBot ? 0.55 : 1)
                 }
             }
+            if choice == .grokBot {
+                Text(tr("Grok Bot can't have extra accounts: yybar can only read the sign-in of the Grok Bot app on this Mac.",
+                        "Grok Bot 暂不能添加其他账号：yybar 只能读取本机 Grok Bot app 的登录。"))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if choice == .google {
+                Text(tr("One Google account covers both Gemini and Antigravity quotas. You'll sign in with agy in Terminal, in a separate folder; agy's sign-in on this Mac isn't touched.",
+                        "一个 Google 账号同时有 Gemini 和 Antigravity 两份额度。接下来会在终端里用 agy 在独立目录登录，不影响本机 agy 已登录的账号。"))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func title(for item: Choice) -> String {
+        switch item {
+        case .provider(let value): return value.title
+        case .google: return "Gemini · Antigravity"
+        case .grokBot: return "Grok Bot"
+        }
+    }
+
+    private func vendor(for item: Choice) -> String {
+        switch item {
+        case .provider(let value): return value.vendor
+        case .google: return "Google"
+        case .grokBot: return tr("This Mac only", "仅本机")
+        }
+    }
+
+    private func logoName(for item: Choice) -> String {
+        switch item {
+        case .provider(let value): return value.logoName
+        case .google: return "gemini"
+        case .grokBot: return "grokBot"
+        }
+    }
+
+    private func tint(for item: Choice) -> Color {
+        switch item {
+        case .provider(let value): return tint(for: value)
+        case .google: return .googleAccent
+        case .grokBot: return .grokAccent
+        }
+    }
+
+    // MARK: Step 3c · Google(终端登录)
+
+    @ViewBuilder
+    private var terminalStep: some View {
+        if let addedName {
+            successView(name: addedName)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    ServiceTile(logoName: "gemini", fallback: "G", tint: .googleAccent, size: 28, logoSize: 16, cornerRadius: 7)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Gemini · Antigravity").font(.system(size: 12.5, weight: .semibold))
+                        Text(tr("Sign in with agy in Terminal", "在终端里用 agy 登录"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(tr("1. A Terminal window opened running agy in a separate folder.", "1. 已打开一个终端窗口，在独立目录里运行 agy。"))
+                    Text(tr("2. Open the sign-in link it shows, sign in with the Google account to add, and paste the code back into Terminal.",
+                            "2. 打开它给出的登录链接，用要添加的 Google 账号登录，把授权码粘贴回终端。"))
+                    Text(tr("3. When agy says you're signed in, type /exit, then click \u{201C}Finish adding\u{201D} here.",
+                            "3. 看到登录成功后输入 /exit 退出 agy,再回到这里点「完成添加」。"))
+                }
+                .font(.system(size: 12))
+                .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    openTerminal()
+                } label: {
+                    Label(tr("Open Terminal again", "重新打开终端"), systemImage: "terminal")
+                }
+                .controlSize(.small)
+                .disabled(agyFolder == nil)
+                if isCheckingGoogle {
+                    progressRow(tr("Checking the account…", "正在检查账号(约 15 秒)…"))
+                }
+                if let terminalError {
+                    Label(terminalError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func startTerminalLogin() {
+        terminalError = nil
+        do {
+            let home = try ExtraAccountStore.makeAgyHome()
+            agyFolder = home.folder
+            go(to: .terminal)
+            openTerminal()
+        } catch {
+            terminalError = error.localizedDescription
+            go(to: .terminal)
+        }
+    }
+
+    private func openTerminal() {
+        guard let agyFolder else { return }
+        guard GoogleQuotaClient.isAgyInstalled else {
+            terminalError = tr("agy CLI not found. Install Antigravity's agy first.", "没有找到 agy CLI,请先安装 Antigravity 的 agy。")
+            return
+        }
+        do { try GoogleQuotaClient.openLoginInTerminal(home: ExtraAccountStore.agyHome(folder: agyFolder)) }
+        catch { terminalError = error.localizedDescription }
+    }
+
+    private func finishGoogle() {
+        guard let agyFolder else { return }
+        isCheckingGoogle = true
+        terminalError = nil
+        Task {
+            do {
+                addedName = try await appState.addExtraGoogle(folder: agyFolder)
+            } catch {
+                terminalError = error.localizedDescription
+            }
+            isCheckingGoogle = false
         }
     }
 

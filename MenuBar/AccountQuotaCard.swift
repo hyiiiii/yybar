@@ -50,18 +50,51 @@ struct LocalQuotaCard: View {
 
     /// 本周(周一起)已知定价部分的花费;有未知定价模型时返回 nil(显示 —)。
     private func weekSpend(for app: UsageApp) -> Decimal? {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = .current
-        cal.firstWeekday = 2
-        let now = Date()
-        let startOfToday = cal.startOfDay(for: now)
-        let to = cal.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
-        let from = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? startOfToday
+        let (from, _, to) = QuotaCardView.dayAndWeekBounds()
         let unknown = appState.usageService.aggregator.snapshot().contains {
             $0.app == app && $0.day >= from && $0.day < to && $0.app != .grok && !Pricing.hasPrice(model: $0.model)
         }
         if unknown { return nil }
         return appState.usageService.aggregator.totals(app: app, from: from, to: to).costUSD
+    }
+}
+
+/// Grok Bot / Gemini / agy 的额度浮层(只有本机账号，没有本地用量花费)。
+struct QuotaOnlyServiceCard: View {
+    @Environment(AppState.self) private var appState
+    let app: UsageApp
+
+    /// Gemini App 今日 / 本周(周一起)的回答次数。
+    private var geminiAnswers: (today: Int, week: Int) {
+        let (week, today, tomorrow) = QuotaCardView.dayAndWeekBounds()
+        let log = appState.geminiAnswerLog
+        return (log.total(from: today, to: tomorrow), log.total(from: week, to: tomorrow))
+    }
+
+    var body: some View {
+        switch app {
+        case .grokBot:
+            QuotaCardView(
+                title: "Grok Bot", subtitle: appState.grokBotQuota?.planType ?? "Cursor",
+                tint: .grokAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
+                windows: QuotaCardView.grokWindows(appState.grokBotQuota),
+                inUse: true,
+                refreshState: appState.grokBotRefreshState,
+                error: appState.grokBotQuotaError
+            )
+        default:
+            QuotaCardView(
+                title: app.displayName,
+                subtitle: app == .gemini ? tr("Google · Gemini app", "Google · Gemini app")
+                                         : tr("Google · Gemini + Claude·GPT pools · from agy", "Google · Gemini 池 + Claude·GPT 池 · 数据来自 agy"),
+                tint: .googleAccent, logoName: app.rawValue, fallback: app.fallbackLetter,
+                windows: QuotaCardView.standardWindows(appState.localQuota(for: app)),
+                inUse: true,
+                answers: app == .gemini ? geminiAnswers : nil,
+                refreshState: app == .gemini ? appState.geminiAppRefreshState : appState.googleRefreshState,
+                error: app == .gemini ? appState.geminiAppQuotaError : appState.googleQuotaError
+            )
+        }
     }
 }
 
@@ -86,6 +119,15 @@ struct OtherAccountQuotaCard: View {
                 serviceStatus: status ? appState.codexServiceStatus : nil,
                 refreshState: appState.importedCodexRefreshState(for: imported),
                 error: appState.importedCodexError(for: imported)
+            )
+        case .extra(let extra) where extra.provider == .google:
+            // 一个 Google 账号的 agy 两个池子(Gemini 池 + Claude·GPT 池)都在 Antigravity 卡里。
+            QuotaCardView(
+                title: "Antigravity", subtitle: subtitle(email: extra.email, plan: nil, fallback: extra.displayName),
+                tint: .googleAccent, logoName: "agy", fallback: "A",
+                windows: QuotaCardView.standardWindows(appState.antigravityQuota(for: extra)),
+                refreshState: appState.extraRefreshStates[extra.id] ?? QuotaRefreshState(),
+                error: appState.extraErrors[extra.id]
             )
         case .extra(let extra):
             let isClaude = extra.provider == .claude
@@ -144,6 +186,8 @@ struct QuotaCardView: View {
     var inUse: Bool = false
     /// 今日 / 本周花费(本机账号，来自本地日志);nil 不显示这一组。
     var costs: (today: Decimal?, week: Decimal?)? = nil
+    /// 今日 / 本周回答次数(Gemini App 没有花费，按次数);nil 不显示这一组。
+    var answers: (today: Int, week: Int)? = nil
     var serviceStatus: ServiceStatus? = nil
     var refreshState: QuotaRefreshState? = nil
     var error: String? = nil
@@ -151,6 +195,13 @@ struct QuotaCardView: View {
     /// Codex / Claude:5H 与 WK 并列。标签按窗口实际长度取(如 Codex 免费账号只有一个 30 天窗口，显示「每月」);
     /// 有窗口有数据时，没有数据的那块不显示，剩下的占满一行。
     static func standardWindows(_ snapshot: QuotaSnapshot?) -> [Window] {
+        if let pools = snapshot?.pools {
+            // 多个池子(Antigravity):每池 5H / WK 两行，行首带池名。
+            return pools.flatMap { pool in [
+                Window(id: pool.label + "-5h", label: "\(pool.label) \(tr("5h", "5 小时"))", window: pool.fiveHour),
+                Window(id: pool.label + "-wk", label: "\(pool.label) \(tr("weekly", "每周"))", window: pool.weekly)
+            ] }
+        }
         let all = [
             Window(id: "5h", label: label(snapshot?.fiveHour, fallback: tr("5-hour", "5 小时")), window: snapshot?.fiveHour),
             Window(id: "wk", label: label(snapshot?.weekly, fallback: tr("Weekly", "每周")), window: snapshot?.weekly)
@@ -273,6 +324,10 @@ struct QuotaCardView: View {
                 costItem(tr("Today", "今日"), costs.today)
                 costItem(tr("This week", "本周"), costs.week)
             }
+            if let answers {
+                countItem(tr("Today", "今日"), answers.today)
+                countItem(tr("This week", "本周"), answers.week)
+            }
             Spacer(minLength: 8)
             if let refreshState {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -283,6 +338,28 @@ struct QuotaCardView: View {
                         .lineLimit(1)
                 }
             }
+        }
+    }
+
+    /// 本周(周一起)开始、今天 0 点、明天 0 点。卡片底部「今日 / 本周」共用。
+    static func dayAndWeekBounds(now: Date = Date()) -> (weekStart: Date, today: Date, tomorrow: Date) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        cal.firstWeekday = 2
+        let today = cal.startOfDay(for: now)
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: today) ?? today
+        let week = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? today
+        return (week, today, tomorrow)
+    }
+
+    private func countItem(_ label: String, _ value: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+            Text(tr("\(value) answers", "\(value) 次"))
+                .font(.system(size: 11.5, weight: .semibold))
+                .monospacedDigit()
         }
     }
 

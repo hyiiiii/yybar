@@ -14,6 +14,9 @@ import CryptoKit
 nonisolated enum ExtraProvider: String, Sendable, Codable {
     case claude
     case grok
+    /// Google 账号(Gemini + Antigravity 两个额度池)。每个账号一个独立的 agy 目录(GEMINI_CLI_HOME),
+    /// 在终端里用 agy 交互登录;登录存成该目录里的文件，不碰本机 agy 的登录。不支持切换本机 agy。
+    case google
 }
 
 nonisolated struct ExtraAccount: Sendable, Equatable, Codable, Identifiable {
@@ -25,7 +28,7 @@ nonisolated struct ExtraAccount: Sendable, Equatable, Codable, Identifiable {
     var plan: String?
     var visibleInPopover: Bool
     var addedAt: Date
-    /// 仅 Grok:该账号独立 GROK_HOME 的目录名。
+    /// Grok:该账号独立 GROK_HOME 的目录名;Google:独立 agy 目录(GEMINI_CLI_HOME)的目录名。
     var homeFolder: String?
     /// 在菜单栏 / 悬浮窗显示这个账号的额度(需同时启用)。旧数据没有这两个字段，视为 false。
     var showInMenuBar: Bool? = nil
@@ -37,8 +40,15 @@ nonisolated struct ExtraAccount: Sendable, Equatable, Codable, Identifiable {
     var displayName: String {
         if !alias.isEmpty { return alias }
         if let email, !email.isEmpty { return email.components(separatedBy: "@").first ?? email }
-        return provider == .claude ? "Claude" : "Grok"
+        switch provider {
+        case .claude: return "Claude"
+        case .grok: return "Grok"
+        case .google: return "Google"
+        }
     }
+
+    /// Google 账号的 Antigravity(Claude + GPT)池额度在 extraQuotas / 缓存里的键;Gemini 池用 `id` 本身。
+    var antigravityQuotaKey: String { id + "#3p" }
 }
 
 nonisolated struct ExtraClaudeTokens: Sendable, Equatable, Codable {
@@ -111,6 +121,27 @@ enum ExtraAccountStore {
 
     nonisolated static func removeGrokHome(folder: String) {
         try? FileManager.default.removeItem(at: grokHome(folder: folder))
+    }
+
+    // MARK: Google(agy)独立目录
+
+    nonisolated static func agyHome(folder: String) -> URL {
+        supportDirectory()
+            .appendingPathComponent("agy-homes", isDirectory: true)
+            .appendingPathComponent(folder, isDirectory: true)
+    }
+
+    /// 新建一个空的、仅本用户可读的 agy 目录(GEMINI_CLI_HOME)。
+    nonisolated static func makeAgyHome() throws -> (folder: String, url: URL) {
+        let folder = UUID().uuidString.lowercased()
+        let url = agyHome(folder: folder)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        return (folder, url)
+    }
+
+    nonisolated static func removeAgyHome(folder: String) {
+        try? FileManager.default.removeItem(at: agyHome(folder: folder))
     }
 
     // MARK: Claude token(文件，见 AccountTokenFiles;旧版本在钥匙串，第一次读取时迁移)

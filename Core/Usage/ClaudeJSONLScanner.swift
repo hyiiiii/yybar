@@ -1,23 +1,45 @@
 import Foundation
 
-/// 扫 `~/.claude/projects/**/*.jsonl`，把 assistant 行解析成 UsageEntry。
+/// 扫 `~/.claude/projects/**/*.jsonl` 和 Claude 桌面 App Cowork 会话的日志(见 `logRoots`)，把 assistant 行解析成 UsageEntry。
 /// 增量逻辑：file mtime + byte offset；同一条 message.id 跨调用只计一次（持久化到 ScanFileState.seenMessageIds）。
 enum ClaudeJSONLScanner {
     struct Result: Sendable {
         var entries: [UsageEntry]
+        var messageEntries: [String: UsageEntry]
         var newState: [String: ScanFileState]
         var newSeenIds: [String]
         var filesScanned: Int
         var linesParsed: Int
     }
 
-    nonisolated static func scan(previous: [String: ScanFileState], seenMessageIds: [String]) -> Result {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let root = home.appendingPathComponent(".claude/projects", isDirectory: true)
-        let files = JSONLDirectoryEnumerator.files(at: root)
+    /// 日志根目录：CLI 的 `~/.claude/projects`,加上 Claude 桌面 App Cowork(本地代理模式)每个会话自己的
+    /// `~/Library/Application Support/Claude/local-agent-mode-sessions/<账号>/<组织>/local_<id>/.claude/projects`。
+    /// `.claude` 是隐藏目录，目录枚举会跳过它，所以逐层列出会话目录再拼路径。
+    nonisolated static func logRoots(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+        var roots = [home.appendingPathComponent(".claude/projects", isDirectory: true)]
+        let cowork = home.appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions", isDirectory: true)
+        for account in subdirectories(of: cowork) {
+            for org in subdirectories(of: account) {
+                for session in subdirectories(of: org) where session.lastPathComponent.hasPrefix("local_") {
+                    roots.append(session.appendingPathComponent(".claude/projects", isDirectory: true))
+                }
+            }
+        }
+        return roots
+    }
+
+    private nonisolated static func subdirectories(of url: URL) -> [URL] {
+        let items = (try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        return items.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+    }
+
+    nonisolated static func scan(previous: [String: ScanFileState], seenMessageIds: [String], includingMessageIDs: Set<String>? = nil, roots: [URL] = logRoots()) -> Result {
+        let files = roots.flatMap { JSONLDirectoryEnumerator.files(at: $0) }
 
         var newState: [String: ScanFileState] = previous
         var entries: [UsageEntry] = []
+        var messageEntries: [String: UsageEntry] = [:]
         var linesParsed = 0
         // 跨文件全局去重：同一 message.id 在 sidechain / subagent 文件中会反复出现。
         var seen = Set(seenMessageIds)
@@ -47,6 +69,7 @@ enum ClaudeJSONLScanner {
                 fileLines += 1
                 guard let parsed = parseAssistantLine(line) else { return }
                 if seen.contains(parsed.messageId) { return }
+                if let includingMessageIDs, !includingMessageIDs.contains(parsed.messageId) { return }
                 if let existing = candidates[parsed.messageId] {
                     let prefer = (parsed.stopReason != nil && existing.stopReason == nil)
                         || (parsed.outputTokens > existing.outputTokens && existing.stopReason == nil)
@@ -71,7 +94,7 @@ enum ClaudeJSONLScanner {
                     cacheRead: p.cacheReadTokens,
                     cacheCreation: p.cacheCreationTokens
                 )
-                entries.append(UsageEntry(
+                let entry = UsageEntry(
                     app: .claude,
                     model: Pricing.normalize(model: p.model),
                     day: day,
@@ -81,7 +104,9 @@ enum ClaudeJSONLScanner {
                     cacheReadTokens: p.cacheReadTokens,
                     cacheCreationTokens: p.cacheCreationTokens,
                     costUSD: cost
-                ))
+                )
+                entries.append(entry)
+                messageEntries[id] = entry
             }
 
             state.mtime = mtime
@@ -99,7 +124,7 @@ enum ClaudeJSONLScanner {
         let seenArr = Array(seen)
         let cappedSeen = seenArr.count > 20000 ? Array(seenArr.suffix(20000)) : seenArr
 
-        return Result(entries: entries, newState: newState, newSeenIds: cappedSeen, filesScanned: files.count, linesParsed: linesParsed)
+        return Result(entries: entries, messageEntries: messageEntries, newState: newState, newSeenIds: cappedSeen, filesScanned: files.count, linesParsed: linesParsed)
     }
 
     private struct ParsedAssistant {

@@ -147,6 +147,7 @@ private struct DetectAccountsStep: View {
                     fallback: "K",
                     isDetected: appState.claudeAccount != nil
                 )
+                AlsoDetectedServices()
             }
             .padding(.top, 18)
 
@@ -174,6 +175,36 @@ private struct DetectAccountsStep: View {
         case .file: return "~/.claude/.credentials.json"
         case .keychain: return "Keychain · claude-code"
         case .none: return "—"
+        }
+    }
+}
+
+/// 本机装了的 Grok Bot / Gemini / agy(只显示额度，默认随检测启用)。没有检测到任何一个时不显示。
+private struct AlsoDetectedServices: View {
+    private var apps: [UsageApp] {
+        [(UsageApp.grokBot, GrokBotQuotaClient.isInstalled),
+         (.gemini, GoogleQuotaClient.isGeminiInstalled),
+         (.agy, GoogleQuotaClient.isAgyInstalled)].filter(\.1).map(\.0)
+    }
+
+    var body: some View {
+        if !apps.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(apps, id: \.self) { app in
+                    HStack(spacing: 5) {
+                        ServiceLogoImage(logoName: app.rawValue, tint: app.accent, size: 13)
+                        Text(app.displayName)
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(tr("Also found · quota only, toggle in Settings", "也已检测到 · 仅额度，可在设置里开关"))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .ccPanel(cornerRadius: 10)
         }
     }
 }

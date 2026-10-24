@@ -12,6 +12,7 @@
 		4931AC632FC02A4200EE598C /* YYBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC412FC02A4200EE598C /* YYBarApp.swift */; };
 		4931AC642FC02A4200EE598C /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC542FC02A4200EE598C /* SettingsRootView.swift */; };
 		4931AC652FC02A4200EE598C /* AccountQuotaCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */; };
+		AA102210000000000001AABB /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA102210000000000001AAAA /* MenuBarPopover.swift */; };
 		4931AC662FC02A4200EE598C /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC422FC02A4200EE598C /* AppState.swift */; };
 		4931AC672FC02A4200EE598C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4931AC3E2FC02A4200EE598C /* AppDelegate.swift */; };
 		49C1B101000000000001AABB /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B101000000000001AAAA /* Models.swift */; };
@@ -26,6 +27,9 @@
 		49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B121000000000001AAAA /* CodexTokenRefresher.swift */; };
 		49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B122000000000001AAAA /* CodexQuotaClient.swift */; };
 		AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092026000000000001AAAA /* GrokQuotaClient.swift */; };
+		AA101910000000000002AABB /* GrokBotQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101910000000000002AAAA /* GrokBotQuotaClient.swift */; };
+		AA101910000000000001AABB /* GoogleQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101910000000000001AAAA /* GoogleQuotaClient.swift */; };
+		AA102010000000000003AABB /* GeminiAppQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA102010000000000003AAAA /* GeminiAppQuotaClient.swift */; };
 		49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */; };
 		49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */; };
 		49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */; };
@@ -40,14 +44,24 @@
 		49C1B151000000000001AABB /* Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B151000000000001AAAA /* Pricing.swift */; };
 		49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B152000000000001AAAA /* JSONLLineReader.swift */; };
 		49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */; };
+		AA101900000000000001AABB /* ClaudeCloudUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101900000000000001AAAA /* ClaudeCloudUsage.swift */; };
 		49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B154000000000001AAAA /* CodexJSONLScanner.swift */; };
 		AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000001AAAA /* GrokJSONLScanner.swift */; };
 		AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000002AAAA /* UsageActivityMonitor.swift */; };
+		AA0920270000000000AC01BB /* ActivityHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0920270000000000AC01AA /* ActivityHooks.swift */; };
+		AA101919000000000001AABB /* AgyConversationScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA101919000000000001AAAA /* AgyConversationScanner.swift */; };
+		AA102110000000000001AABB /* GeminiAnswerLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA102110000000000001AAAA /* GeminiAnswerLog.swift */; };
 		49C1B155000000000001AABB /* UsageAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B155000000000001AAAA /* UsageAggregator.swift */; };
+		AA102410000000000001AABB /* YYBarWebAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA102410000000000001AAAA /* YYBarWebAccount.swift */; };
 		AA092028000000000001AABB /* grok.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA092028000000000001AAAA /* grok.svg */; };
+		AA101910000000000006AABB /* agy-color.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000006AAAA /* agy-color.svg */; };
+		AA101910000000000005AABB /* agy.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000005AAAA /* agy.svg */; };
+		AA101910000000000004AABB /* gemini.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000004AAAA /* gemini.svg */; };
+		AA101910000000000003AABB /* grokBot.svg in Resources */ = {isa = PBXBuildFile; fileRef = AA101910000000000003AAAA /* grokBot.svg */; };
 		49C1B156000000000001AABB /* UsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B156000000000001AAAA /* UsageService.swift */; };
 		49C1B161000000000001AABB /* MainWindowRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B161000000000001AAAA /* MainWindowRootView.swift */; };
 		AA092027000000000020AABB /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092027000000000020AAAA /* WindowCoordinator.swift */; };
+		AA102310000000000001AABB /* BarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA102310000000000001AAAA /* BarView.swift */; };
 		49C1B162000000000001AABB /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B162000000000001AAAA /* StatsView.swift */; };
 		AA092030000000000010AABB /* TodayFlame.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA092030000000000010AAAA /* TodayFlame.swift */; };
 		49C1B163000000000001AABB /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C1B163000000000001AAAA /* DesignSystem.swift */; };
@@ -76,6 +90,7 @@
 		4931AC4E2FC02A4200EE598C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4931AC4F2FC02A4200EE598C /* MenuBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabel.swift; sourceTree = "<group>"; };
 		4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountQuotaCard.swift; sourceTree = "<group>"; };
+		AA102210000000000001AAAA /* MenuBarPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopover.swift; sourceTree = "<group>"; };
 		4931AC522FC02A4200EE598C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4931AC542FC02A4200EE598C /* SettingsRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRootView.swift; sourceTree = "<group>"; };
 		49C1B101000000000001AAAA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -90,6 +105,9 @@
 		49C1B121000000000001AAAA /* CodexTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexTokenRefresher.swift; sourceTree = "<group>"; };
 		49C1B122000000000001AAAA /* CodexQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexQuotaClient.swift; sourceTree = "<group>"; };
 		AA092026000000000001AAAA /* GrokQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokQuotaClient.swift; sourceTree = "<group>"; };
+		AA101910000000000002AAAA /* GrokBotQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokBotQuotaClient.swift; sourceTree = "<group>"; };
+		AA101910000000000001AAAA /* GoogleQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleQuotaClient.swift; sourceTree = "<group>"; };
+		AA102010000000000003AAAA /* GeminiAppQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAppQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIFallbackQuotaClient.swift; sourceTree = "<group>"; };
 		49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeTokenRefresher.swift; sourceTree = "<group>"; };
@@ -101,17 +119,27 @@
 		49C1B140000000000001AAAA /* codex.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = codex.svg; sourceTree = "<group>"; };
 		49C1B141000000000001AAAA /* claude.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = claude.svg; sourceTree = "<group>"; };
 		AA092028000000000001AAAA /* grok.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grok.svg; sourceTree = "<group>"; };
+		AA101910000000000006AAAA /* agy-color.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = agy-color.svg; sourceTree = "<group>"; };
+		AA101910000000000005AAAA /* agy.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = agy.svg; sourceTree = "<group>"; };
+		AA101910000000000004AAAA /* gemini.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = gemini.svg; sourceTree = "<group>"; };
+		AA101910000000000003AAAA /* grokBot.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = grokBot.svg; sourceTree = "<group>"; };
 		49C1B150000000000001AAAA /* UsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageModels.swift; sourceTree = "<group>"; };
 		49C1B151000000000001AAAA /* Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pricing.swift; sourceTree = "<group>"; };
 		49C1B152000000000001AAAA /* JSONLLineReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLLineReader.swift; sourceTree = "<group>"; };
 		49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeJSONLScanner.swift; sourceTree = "<group>"; };
+		AA101900000000000001AAAA /* ClaudeCloudUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCloudUsage.swift; sourceTree = "<group>"; };
 		49C1B154000000000001AAAA /* CodexJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexJSONLScanner.swift; sourceTree = "<group>"; };
 		AA092027000000000001AAAA /* GrokJSONLScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokJSONLScanner.swift; sourceTree = "<group>"; };
 		AA092027000000000002AAAA /* UsageActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageActivityMonitor.swift; sourceTree = "<group>"; };
+		AA0920270000000000AC01AA /* ActivityHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityHooks.swift; sourceTree = "<group>"; };
+		AA101919000000000001AAAA /* AgyConversationScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgyConversationScanner.swift; sourceTree = "<group>"; };
+		AA102110000000000001AAAA /* GeminiAnswerLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAnswerLog.swift; sourceTree = "<group>"; };
 		49C1B155000000000001AAAA /* UsageAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageAggregator.swift; sourceTree = "<group>"; };
+		AA102410000000000001AAAA /* YYBarWebAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YYBarWebAccount.swift; sourceTree = "<group>"; };
 		49C1B156000000000001AAAA /* UsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageService.swift; sourceTree = "<group>"; };
 		49C1B161000000000001AAAA /* MainWindowRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowRootView.swift; sourceTree = "<group>"; };
 		AA092027000000000020AAAA /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		AA102310000000000001AAAA /* BarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarView.swift; sourceTree = "<group>"; };
 		49C1B162000000000001AAAA /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		AA092030000000000010AAAA /* TodayFlame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayFlame.swift; sourceTree = "<group>"; };
 		49C1B163000000000001AAAA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -190,6 +218,7 @@
 				4931AC4F2FC02A4200EE598C /* MenuBarLabel.swift */,
 				49C1B130000000000001AAAA /* MenuBarLabelFormatter.swift */,
 				4931AC502FC02A4200EE598C /* AccountQuotaCard.swift */,
+				AA102210000000000001AAAA /* MenuBarPopover.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -254,6 +283,9 @@
 				49C1B121000000000001AAAA /* CodexTokenRefresher.swift */,
 				49C1B122000000000001AAAA /* CodexQuotaClient.swift */,
 				AA092026000000000001AAAA /* GrokQuotaClient.swift */,
+				AA101910000000000002AAAA /* GrokBotQuotaClient.swift */,
+				AA101910000000000001AAAA /* GoogleQuotaClient.swift */,
+				AA102010000000000003AAAA /* GeminiAppQuotaClient.swift */,
 				49C1B123000000000001AAAA /* ClaudeQuotaClient.swift */,
 				49C1B124000000000001AAAA /* ClaudeCLIFallbackQuotaClient.swift */,
 				49C1B125000000000001AAAA /* ClaudeTokenRefresher.swift */,
@@ -269,6 +301,10 @@
 				49C1B140000000000001AAAA /* codex.svg */,
 				49C1B141000000000001AAAA /* claude.svg */,
 				AA092028000000000001AAAA /* grok.svg */,
+				AA101910000000000006AAAA /* agy-color.svg */,
+				AA101910000000000005AAAA /* agy.svg */,
+				AA101910000000000004AAAA /* gemini.svg */,
+				AA101910000000000003AAAA /* grokBot.svg */,
 			);
 			path = Logos;
 			sourceTree = "<group>";
@@ -280,10 +316,15 @@
 				49C1B151000000000001AAAA /* Pricing.swift */,
 				49C1B152000000000001AAAA /* JSONLLineReader.swift */,
 				49C1B153000000000001AAAA /* ClaudeJSONLScanner.swift */,
+				AA101900000000000001AAAA /* ClaudeCloudUsage.swift */,
 				49C1B154000000000001AAAA /* CodexJSONLScanner.swift */,
 				AA092027000000000001AAAA /* GrokJSONLScanner.swift */,
 				AA092027000000000002AAAA /* UsageActivityMonitor.swift */,
+				AA0920270000000000AC01AA /* ActivityHooks.swift */,
+				AA101919000000000001AAAA /* AgyConversationScanner.swift */,
+				AA102110000000000001AAAA /* GeminiAnswerLog.swift */,
 				49C1B155000000000001AAAA /* UsageAggregator.swift */,
+				AA102410000000000001AAAA /* YYBarWebAccount.swift */,
 				49C1B156000000000001AAAA /* UsageService.swift */,
 			);
 			path = Usage;
@@ -294,6 +335,7 @@
 			children = (
 				49C1B161000000000001AAAA /* MainWindowRootView.swift */,
 				AA092027000000000020AAAA /* WindowCoordinator.swift */,
+				AA102310000000000001AAAA /* BarView.swift */,
 				49C1B162000000000001AAAA /* StatsView.swift */,
 				AA092030000000000010AAAA /* TodayFlame.swift */,
 				49C1B163000000000001AAAA /* DesignSystem.swift */,
@@ -407,6 +449,10 @@
 				49C1B140000000000001AABB /* codex.svg in Resources */,
 				49C1B141000000000001AABB /* claude.svg in Resources */,
 				AA092028000000000001AABB /* grok.svg in Resources */,
+				AA101910000000000006AABB /* agy-color.svg in Resources */,
+				AA101910000000000005AABB /* agy.svg in Resources */,
+				AA101910000000000004AABB /* gemini.svg in Resources */,
+				AA101910000000000003AABB /* grokBot.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -444,6 +490,7 @@
 				4931AC632FC02A4200EE598C /* YYBarApp.swift in Sources */,
 				4931AC642FC02A4200EE598C /* SettingsRootView.swift in Sources */,
 				4931AC652FC02A4200EE598C /* AccountQuotaCard.swift in Sources */,
+				AA102210000000000001AABB /* MenuBarPopover.swift in Sources */,
 				4931AC662FC02A4200EE598C /* AppState.swift in Sources */,
 				4931AC672FC02A4200EE598C /* AppDelegate.swift in Sources */,
 				49C1B101000000000001AABB /* Models.swift in Sources */,
@@ -456,6 +503,9 @@
 				49C1B121000000000001AABB /* CodexTokenRefresher.swift in Sources */,
 				49C1B122000000000001AABB /* CodexQuotaClient.swift in Sources */,
 				AA092026000000000001AABB /* GrokQuotaClient.swift in Sources */,
+				AA101910000000000002AABB /* GrokBotQuotaClient.swift in Sources */,
+				AA101910000000000001AABB /* GoogleQuotaClient.swift in Sources */,
+				AA102010000000000003AABB /* GeminiAppQuotaClient.swift in Sources */,
 				49C1B123000000000001AABB /* ClaudeQuotaClient.swift in Sources */,
 				49C1B124000000000001AABB /* ClaudeCLIFallbackQuotaClient.swift in Sources */,
 				49C1B125000000000001AABB /* ClaudeTokenRefresher.swift in Sources */,
@@ -470,13 +520,19 @@
 				49C1B151000000000001AABB /* Pricing.swift in Sources */,
 				49C1B152000000000001AABB /* JSONLLineReader.swift in Sources */,
 				49C1B153000000000001AABB /* ClaudeJSONLScanner.swift in Sources */,
+				AA101900000000000001AABB /* ClaudeCloudUsage.swift in Sources */,
 				49C1B154000000000001AABB /* CodexJSONLScanner.swift in Sources */,
 				AA092027000000000001AABB /* GrokJSONLScanner.swift in Sources */,
 				AA092027000000000002AABB /* UsageActivityMonitor.swift in Sources */,
+				AA0920270000000000AC01BB /* ActivityHooks.swift in Sources */,
+				AA101919000000000001AABB /* AgyConversationScanner.swift in Sources */,
+				AA102110000000000001AABB /* GeminiAnswerLog.swift in Sources */,
 				49C1B155000000000001AABB /* UsageAggregator.swift in Sources */,
+				AA102410000000000001AABB /* YYBarWebAccount.swift in Sources */,
 				49C1B156000000000001AABB /* UsageService.swift in Sources */,
 				49C1B161000000000001AABB /* MainWindowRootView.swift in Sources */,
 				AA092027000000000020AABB /* WindowCoordinator.swift in Sources */,
+				AA102310000000000001AABB /* BarView.swift in Sources */,
 				49C1B162000000000001AABB /* StatsView.swift in Sources */,
 				AA092030000000000010AABB /* TodayFlame.swift in Sources */,
 				49C1B163000000000001AABB /* DesignSystem.swift in Sources */,
