@@ -172,7 +172,9 @@ impl LoginSession {
             let status = tokio::select! {
                 status = child.wait() => status.ok(),
                 _ = cancel_rx => {
-                    let _ = child.kill().await;
+                    paths::kill_tree(&mut child).await;
+                    // CLI 退出前目录还被占着，删不干净，结束后再删一次
+                    remove_dir(s.provider, &s.folder);
                     None
                 }
             };

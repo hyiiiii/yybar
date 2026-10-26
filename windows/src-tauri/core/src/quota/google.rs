@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::Value;
+use tokio::io::AsyncReadExt;
 
 use super::{num, QuotaError, QuotaSnapshot, QuotaWindow};
 use crate::credentials::parse_iso;
@@ -65,12 +66,23 @@ async fn run(binary: &PathBuf, work: &PathBuf, home: Option<&std::path::Path>) -
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
     paths::hide_console(&mut cmd);
-    let child = cmd.spawn().map_err(|e| QuotaError::Transport(format!("agy launch failed: {e}")))?;
-    let output = tokio::time::timeout(Duration::from_secs(90), child.wait_with_output())
-        .await
-        .map_err(|_| QuotaError::Transport("agy /usage timed out".into()))?
-        .map_err(|e| QuotaError::Transport(e.to_string()))?;
-    let mut data = output.stdout;
+    let mut child = cmd.spawn().map_err(|e| QuotaError::Transport(format!("agy launch failed: {e}")))?;
+    let stdout = child.stdout.take();
+    let finished = tokio::time::timeout(Duration::from_secs(90), async {
+        let mut data = Vec::new();
+        if let Some(mut out) = stdout {
+            out.read_to_end(&mut data).await?;
+        }
+        child.wait().await.map(|_| data)
+    })
+    .await;
+    let mut data = match finished {
+        Ok(result) => result.map_err(|e| QuotaError::Transport(e.to_string()))?,
+        Err(_) => {
+            paths::kill_tree(&mut child).await;
+            return Err(QuotaError::Transport("agy /usage timed out".into()));
+        }
+    };
     data.truncate(1 << 20);
     parse(&data, now_secs())
 }

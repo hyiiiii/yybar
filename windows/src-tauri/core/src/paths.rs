@@ -153,6 +153,22 @@ pub fn hide_console(cmd: &mut tokio::process::Command) {
     let _ = cmd;
 }
 
+/// 结束子进程连同它启动的进程。Windows 上 npm 装的 CLI 是 `.cmd`，真正的 CLI 跑在 cmd.exe 的子进程里，
+/// 只结束 cmd.exe 会把它留在后台，所以先用 `taskkill /T` 结束整棵进程树。
+pub async fn kill_tree(child: &mut tokio::process::Child) {
+    #[cfg(windows)]
+    if let Some(pid) = child.id() {
+        let mut cmd = tokio::process::Command::new("taskkill");
+        cmd.args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        hide_console(&mut cmd);
+        let _ = cmd.status().await;
+    }
+    let _ = child.kill().await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

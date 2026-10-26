@@ -334,7 +334,16 @@ export function AddAccountDialog({ state, onClose }: { state: StateSnapshot; onC
                 {tr("Cancel", "取消")}
               </button>
               {step === "provider" && (
-                <button className="button primary" onClick={() => (provider === "google" ? startTerminal() : go("method"))} disabled={!canContinue}>
+                <button
+                  className="button primary"
+                  onClick={() => {
+                    if (provider === "google") return startTerminal();
+                    // 本机没装 CLI 时浏览器登录走不通，直接选中粘贴凭据
+                    setMethod(cliInstalled(provider) ? "browser" : "paste");
+                    go("method");
+                  }}
+                  disabled={!canContinue}
+                >
                   {tr("Continue", "继续")}
                 </button>
               )}

@@ -105,7 +105,7 @@ pub async fn refresh_credentials_in(home: Option<&std::path::Path>) -> bool {
     match tokio::time::timeout(Duration::from_secs(25), child.wait()).await {
         Ok(Ok(status)) => status.success(),
         _ => {
-            let _ = child.kill().await;
+            paths::kill_tree(&mut child).await;
             false
         }
     }
