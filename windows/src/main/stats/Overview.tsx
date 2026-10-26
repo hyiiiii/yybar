@@ -5,7 +5,7 @@
 // - 当前额度：2 列，每格服务图标 + 5H / WK 行（Grok 一行，Antigravity 每池两行）。
 
 import { useTicker } from "../../shared/api";
-import { LimitBarRow, Segmented, ServiceLogo } from "../../shared/design";
+import { LimitBarRow, RollingText, Segmented, ServiceLogo } from "../../shared/design";
 import { compactToken, cost, parseDay } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { quotaLanes } from "../../shared/quota";
@@ -213,8 +213,10 @@ function KpiCard({ title, value, detail, segments, line, accessory, className }:
         <span>{title}</span>
         {accessory}
       </div>
-      <div className="kpi-value num">{value}</div>
-      <div className="kpi-detail num">{detail ?? " "}</div>
+      <div className="kpi-value num">
+        <RollingText text={value} />
+      </div>
+      <div className="kpi-detail num">{detail ? <RollingText text={detail} /> : " "}</div>
       <span style={{ flex: 1 }} />
       <div className="kpi-bar">
         {(total > 0 || lineValue > 0) && (
@@ -376,7 +378,7 @@ function SingleDayPanel({ index, apps, day, isToday, isYesterday, metric, baseli
               {r.average > 0 && <span className="single-line" style={{ left: `calc(${Math.min(100, (r.average / maxValue) * 100)}% - 1px)` }} />}
             </span>
             <span className="single-value num">
-              {formatMetric(r.value, metric)} / {tr("avg", "均")} {formatMetric(r.average, metric)}
+              <RollingText text={`${formatMetric(r.value, metric)} / ${tr("avg", "均")} ${formatMetric(r.average, metric)}`} />
             </span>
           </div>
         ))}

@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { demoState, demoUsage } from "./demo";
 import { setChinese } from "./l10n";
-import type { ModelPrice, Settings, StateSnapshot, UsageApp, UsagePayload } from "./types";
+import type { LoginView, ModelPrice, Provider, Settings, StateSnapshot, UsageApp, UsagePayload } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -20,6 +20,12 @@ function applyDemoSettings(patch: Partial<Settings>) {
   if (!demo) return;
   demo = { ...demo, settings: { ...demo.settings, ...patch } };
   if (patch.appLanguage) demo.chinese = patch.appLanguage !== "en";
+  demoListeners.forEach((l) => l(demo!));
+}
+
+function applyDemoOther(id: string, patch: Record<string, unknown>) {
+  if (!demo) return;
+  demo = { ...demo, others: demo.others.map((o) => (o.id === id ? { ...o, ...patch } : o)) };
   demoListeners.forEach((l) => l(demo!));
 }
 
@@ -124,6 +130,25 @@ export const api = {
   setCustomPrice: (key: string, price: ModelPrice | null) => call("set_custom_price", { key, price }),
   removeLocalAccount: (service: UsageApp) => call("remove_local_account", { service }),
   restoreRemovedAccounts: () => call("restore_removed_accounts"),
+  // 其他账号（添加 / 登录 / 切换）
+  addAccountPaste: (provider: Provider, text: string) => call<string>("add_account_paste", { provider, text }),
+  loginStart: (provider: Provider) => call<LoginView>("login_start", { provider }),
+  loginSubmitCode: (id: string, code: string) => call("login_submit_code", { id, code }),
+  loginCancel: (id: string) => call("login_cancel", { id }),
+  googleLoginStart: () => call<string>("google_login_start"),
+  googleLoginReopen: (folder: string) => call("google_login_reopen", { folder }),
+  googleLoginFinish: (folder: string) => call<string>("google_login_finish", { folder }),
+  googleLoginCancel: (folder: string) => call("google_login_cancel", { folder }),
+  updateOtherAccount: (id: string, patch: { alias?: string; enabled?: boolean; showInTray?: boolean; showInFloating?: boolean }) =>
+    inTauri ? call("update_other_account", { id, patch }) : Promise.resolve(applyDemoOther(id, patch)),
+  removeOtherAccount: (id: string) => call("remove_other_account", { id }),
+  switchAccount: (id: string) => call("switch_account", { id }),
+  // bar：yybar 网站
+  webConnect: () => call("web_connect"),
+  webCancelConnect: () => call("web_cancel_connect"),
+  webDisconnect: () => call("web_disconnect"),
+  webUploadNow: () => call("web_upload_now"),
+  openSite: () => (inTauri ? call("open_site") : Promise.resolve(void window.open("https://yybar-web.hyi030618.workers.dev", "_blank"))),
   openMain: (tab?: string) => call("open_main", { tab: tab ?? null }),
   takePendingTab: () => call<string | null>("take_pending_tab"),
   getUiState: () => call<Record<string, unknown>>("get_ui_state"),

@@ -6,11 +6,14 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 
+use yybar_core::accounts::login::LoginView;
+use yybar_core::accounts::Provider;
 use yybar_core::quota::RefreshReason;
 use yybar_core::storage::settings::Settings;
 use yybar_core::usage::pricing::ModelPrice;
 use yybar_core::{l10n, paths, UsageApp};
 
+use crate::accounts::{self, OtherPatch};
 use crate::app_state::{self, AppState, StateSnapshot, UsagePayload};
 use crate::scheduler::Scheduler;
 use crate::windows::{self, WindowState};
@@ -25,6 +28,22 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_custom_price,
         remove_local_account,
         restore_removed_accounts,
+        add_account_paste,
+        login_start,
+        login_submit_code,
+        login_cancel,
+        google_login_start,
+        google_login_reopen,
+        google_login_finish,
+        google_login_cancel,
+        update_other_account,
+        remove_other_account,
+        switch_account,
+        web_connect,
+        web_cancel_connect,
+        web_disconnect,
+        web_upload_now,
+        open_site,
         open_main,
         take_pending_tab,
         get_ui_state,
@@ -81,6 +100,9 @@ async fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     if before.floating_enabled != after.floating_enabled {
         windows::sync_floating(&app);
     }
+    if before.web_auto_upload != after.web_auto_upload {
+        crate::web::auto_upload_changed(&app);
+    }
     let newly_enabled = UsageApp::ALL.iter().any(|a| after.is_enabled(*a) && !before.is_enabled(*a));
     if newly_enabled {
         let h = app.clone();
@@ -126,6 +148,95 @@ async fn remove_local_account(app: AppHandle, service: UsageApp) {
 #[tauri::command]
 async fn restore_removed_accounts(app: AppHandle) {
     app_state::restore_removed_accounts(&app);
+}
+
+// ---------- 其他账号（添加 / 登录 / 切换），流程见 accounts.rs ----------
+
+/// 粘贴凭据添加账号，返回显示名。
+#[tauri::command]
+async fn add_account_paste(app: AppHandle, provider: Provider, text: String) -> Result<String, String> {
+    accounts::add_pasted(&app, provider, &text).await
+}
+
+/// 用官方 CLI 在浏览器里登录；进度推 `login` 事件，成功后自动添加并推 `login-result`。
+#[tauri::command]
+async fn login_start(app: AppHandle, provider: Provider) -> Result<LoginView, String> {
+    accounts::login_start(&app, provider).await
+}
+
+#[tauri::command]
+async fn login_submit_code(app: AppHandle, id: String, code: String) {
+    accounts::login_submit_code(&app, &id, &code).await;
+}
+
+#[tauri::command]
+async fn login_cancel(app: AppHandle, id: String) {
+    accounts::login_cancel(&app, &id);
+}
+
+/// Google：打开控制台窗口用 agy 登录，返回账号目录名。
+#[tauri::command]
+async fn google_login_start() -> Result<String, String> {
+    accounts::google_login_start()
+}
+
+#[tauri::command]
+async fn google_login_reopen(folder: String) -> Result<(), String> {
+    accounts::google_login_reopen(&folder)
+}
+
+#[tauri::command]
+async fn google_login_finish(app: AppHandle, folder: String) -> Result<String, String> {
+    accounts::google_login_finish(&app, &folder).await
+}
+
+#[tauri::command]
+async fn google_login_cancel(folder: String) {
+    accounts::google_login_cancel(&folder);
+}
+
+#[tauri::command]
+async fn update_other_account(app: AppHandle, id: String, patch: OtherPatch) {
+    accounts::update(&app, &id, patch);
+}
+
+#[tauri::command]
+async fn remove_other_account(app: AppHandle, id: String) {
+    accounts::remove(&app, &id);
+}
+
+/// 把本机 CLI 切换到这个其他账号。
+#[tauri::command]
+async fn switch_account(app: AppHandle, id: String) {
+    accounts::switch_to(&app, &id).await;
+}
+
+// ---------- bar：yybar 网站（见 web.rs） ----------
+
+#[tauri::command]
+async fn web_connect(app: AppHandle) {
+    crate::web::connect(&app);
+}
+
+#[tauri::command]
+async fn web_cancel_connect(app: AppHandle) {
+    crate::web::cancel_connect(&app);
+}
+
+#[tauri::command]
+async fn web_disconnect(app: AppHandle) {
+    crate::web::disconnect(&app);
+}
+
+#[tauri::command]
+async fn web_upload_now(app: AppHandle) {
+    crate::web::upload_now(&app).await;
+}
+
+/// 用浏览器打开 yybar 网站（德州大厅）。
+#[tauri::command]
+fn open_site(app: AppHandle) -> Result<(), String> {
+    app.opener().open_url(yybar_core::web::SITE, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

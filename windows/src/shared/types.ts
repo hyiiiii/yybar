@@ -99,6 +99,8 @@ export interface Settings {
   showServiceStatus: boolean;
   appLanguage: AppLanguage;
   didCompleteOnboarding: boolean;
+  /** 每天 12:00 自动上传用量到 yybar 网站 */
+  webAutoUpload: boolean;
 }
 
 export interface HistorySample {
@@ -134,6 +136,84 @@ export interface ModelPrice {
   cacheCreation: number;
 }
 
+/** 能添加其他账号的服务（Google 一个账号对应 Gemini、Antigravity 两个池，显示在 Antigravity 下）。 */
+export type Provider = "codex" | "claude" | "grok" | "google";
+
+/** 设置 · 服务里「添加账号…」加进来的账号（后台 accounts.rs 的 OtherAccountView）。 */
+export interface OtherAccountView {
+  id: string;
+  provider: Provider;
+  app: UsageApp;
+  /** 别名 > 邮箱 @ 前 > 服务名 */
+  name: string;
+  alias: string;
+  email: string | null;
+  plan: string | null;
+  enabled: boolean;
+  showInTray: boolean;
+  showInFloating: boolean;
+  quota: QuotaSnapshot | null;
+  refresh: RefreshState;
+  renewal: SubscriptionRenewal | null;
+  historyKeys: string[];
+  switchable: boolean;
+}
+
+export type LoginPhase =
+  | { kind: "starting" }
+  | { kind: "waitingForBrowser" }
+  | { kind: "needsCode" }
+  | { kind: "exited"; succeeded: boolean }
+  | { kind: "failed"; message: string };
+
+/** 浏览器登录（添加账号）的进度，后台推 `login` 事件。 */
+export interface LoginView {
+  id: string;
+  provider: Provider;
+  phase: LoginPhase;
+  loginUrl: string | null;
+  outputTail: string;
+}
+
+/** 登录成功后自动添加的结果，后台推 `login-result` 事件。 */
+export interface LoginResult {
+  id: string;
+  ok: boolean;
+  name: string | null;
+  error: string | null;
+}
+
+export interface SwitchNotice {
+  seq: number;
+  text: string;
+  isError: boolean;
+  /** 切换的时间（只在 8 秒内显示） */
+  at: number;
+}
+
+/** 连上的 yybar 网站账号（GitHub）。 */
+export interface WebProfile {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
+/** bar 页：yybar 网站账号和待上传（后台 web.rs 的 WebView）。 */
+export interface WebView {
+  site: string;
+  connected: boolean;
+  profile: WebProfile | null;
+  phase: "idle" | "waitingForBrowser" | "uploading";
+  message: string | null;
+  messageIsError: boolean;
+  /** 今天以前、还没传过的（日期, 服务）；筹码按本机价格估，实际以网站为准 */
+  pending: { days: string[]; pairs: string[]; costUsd: number; chips: number };
+  uploadedDays: number;
+  lastUploadAt: number | null;
+  /** 今天已经成功点过一键上传 */
+  usedManualToday: boolean;
+}
+
 export interface StateSnapshot {
   services: ServiceView[];
   settings: Settings;
@@ -146,6 +226,12 @@ export interface StateSnapshot {
   autostart: boolean;
   agyInstalled: boolean;
   version: string;
+  others: OtherAccountView[];
+  switching: string | null;
+  switchNotice: SwitchNotice | null;
+  /** 本机装了哪些官方 CLI（添加账号时「在浏览器中登录」要用） */
+  clis: { codex: boolean; claude: boolean; grok: boolean; agy: boolean };
+  web: WebView;
 }
 
 export interface UsageBucket {

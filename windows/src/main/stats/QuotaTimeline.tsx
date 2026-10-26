@@ -4,11 +4,11 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTicker } from "../../shared/api";
-import { Icon, Segmented, statusColor, Toggle } from "../../shared/design";
+import { Collapsible, Icon, RollingText, Segmented, statusColor, Toggle } from "../../shared/design";
 import { dayString, quotaDelta, timeString } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
-import type { ChangeEvent, QuotaWindow, StateSnapshot, UsageApp } from "../../shared/types";
+import type { QuotaSnapshot, ChangeEvent, QuotaWindow, StateSnapshot, UsageApp } from "../../shared/types";
 import { SectionHeading } from "../SectionedPage";
 import { usePersisted } from "../uiState";
 import { Placeholder } from "./Panel";
@@ -64,21 +64,27 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
   const titleOf = (provider: string, plan: string | null, email: string | null) =>
     [provider, plan ? plan[0].toUpperCase() + plan.slice(1) : null, email].filter(Boolean).join(" · ");
 
+  // 顺序：Codex 本机 → Codex 其他 → Claude 本机 → Claude 其他 → Grok … → Antigravity …
+  const addAgy = (keys: string[], q: QuotaSnapshot | null, plan: string | null, email: string | null) => {
+    const pools = q?.pools ?? [];
+    const labels = ["Gemini", "Claude·GPT"];
+    keys.forEach((key, i) => {
+      const pool = pools.find((p) => p.label === labels[i]);
+      add("agy", key, titleOf(`Antigravity · ${labels[i]}`, plan, email), weekly ? pool?.weekly : pool?.fiveHour, false);
+    });
+  };
   for (const s of state.services) {
-    if (!s.enabled || s.removed) continue;
-    const q = s.quota;
-    if (s.app === "agy") {
-      const pools = q?.pools ?? [];
-      const labels = ["Gemini", "Claude·GPT"];
-      s.historyKeys.forEach((key, i) => {
-        const pool = pools.find((p) => p.label === labels[i]);
-        add("agy", key, titleOf(`Antigravity · ${labels[i]}`, s.plan, s.email), weekly ? pool?.weekly : pool?.fiveHour, false);
-      });
-      continue;
+    if (s.enabled && !s.removed) {
+      const q = s.quota;
+      if (s.app === "agy") addAgy(s.historyKeys, q, s.plan, s.email);
+      else if (s.app !== "grok" || weekly) add(s.app, s.historyKeys[0], titleOf(displayName[s.app], s.plan, s.email), weekly ? q?.weekly ?? q?.primary : q?.fiveHour, s.detected);
     }
-    if (s.app === "grok" && !weekly) continue;
-    const w = weekly ? q?.weekly ?? q?.primary : q?.fiveHour;
-    add(s.app, s.historyKeys[0], titleOf(displayName[s.app], s.plan, s.email), w, s.detected);
+    for (const o of state.others) {
+      if (o.app !== s.app || !o.enabled) continue;
+      const oq = o.quota;
+      if (o.provider === "google") addAgy(o.historyKeys, oq, o.plan, o.email ?? o.name);
+      else if (o.app !== "grok" || weekly) add(o.app, o.historyKeys[0], titleOf(displayName[o.app], o.plan, o.email ?? o.name), weekly ? oq?.weekly ?? oq?.primary : oq?.fiveHour, true);
+    }
   }
 
   const dayStart = new Date();
@@ -116,7 +122,10 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
         </div>
       ) : (
         <>
-          <TimelineChart sections={visible} start={ds} now={now} allHidden={visible.length === 0} />
+          {/* 换 5H / WK 时整张图淡入 */}
+          <div key={win} className="fade-swap">
+            <TimelineChart sections={visible} start={ds} now={now} allHidden={visible.length === 0} />
+          </div>
           <div className="panel accounts-panel">
             <div className="accounts-head">
               <button className="accounts-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? tr("Show accounts", "展开账号列表") : tr("Hide accounts", "收起账号列表")}>
@@ -127,10 +136,12 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
                 <span className="secondary num">{sections.length}</span>
               </button>
               <span style={{ flex: 1 }} />
-              {!collapsed && <span className="secondary" style={{ fontSize: 10.5 }}>{tr("Show in chart", "显示曲线")}</span>}
+              <span className={`secondary fade-toggle ${collapsed ? "off" : ""}`} style={{ fontSize: 10.5 }}>
+                {tr("Show in chart", "显示曲线")}
+              </span>
             </div>
-            {!collapsed &&
-              sections.map((s) => {
+            <Collapsible open={!collapsed}>
+              {sections.map((s) => {
                 const open = expanded.includes(s.key);
                 return (
                   <div key={s.key}>
@@ -150,14 +161,15 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
                       </button>
                       <Toggle small checked={!hidden.includes(s.key)} onChange={(v) => setHidden(v ? hidden.filter((k) => k !== s.key) : [...hidden, s.key])} />
                     </div>
-                    {open && (
+                    <Collapsible open={open}>
                       <div className="account-details">
                         {s.events.length === 0 ? <span className="secondary">{tr("No changes today", "今天暂无变动")}</span> : <EventTable events={s.events} />}
                       </div>
-                    )}
+                    </Collapsible>
                   </div>
                 );
               })}
+            </Collapsible>
           </div>
         </>
       )}
@@ -169,7 +181,9 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <span className="metric">
       <span className="tertiary">{label}</span>
-      <span className="num secondary">{value}</span>
+      <span className="num secondary">
+        <RollingText text={value} />
+      </span>
     </span>
   );
 }

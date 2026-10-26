@@ -1,5 +1,6 @@
 // 每日用量图（对应 Mac `dailyUsagePanel` 的 Swift Charts）：按服务堆叠的细柱 + 日均虚线，悬停显示当日各服务数值。
-// 横轴约 6 个日期标签，从最后一天往前每 N 天一个；换时间范围 / 服务时柱子从底部长出来。
+// 横轴约 6 个日期标签，从最后一天往前每 N 天一个；换时间范围 / 服务时柱子从底部长出来（组件按 key 重建），
+// 切换 费用 / Tokens 时柱子和日均线弹簧过渡到新高度（对应 Mac 的 switchAnimation）。
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { ServiceLogo } from "../../shared/design";
@@ -86,12 +87,15 @@ export function DailyChart({ samples, apps, average, metric }: { samples: DailyS
                   acc += v;
                   const y1 = y(acc);
                   const h = Math.max(1, y0 - y1 - (j < parts.length - 1 ? 0.5 : 0));
-                  return <rect key={a} x={x} y={y1} width={barW} height={h} rx={Math.min(2, barW / 2)} fill={colorOf(a)} />;
+                  // 高度和位置写成样式（SVG2 的几何属性），换口径时由 CSS 过渡
+                  return <rect key={a} x={x} width={barW} rx={Math.min(2, barW / 2)} fill={colorOf(a)} style={{ y: y1, height: h }} />;
                 })}
               </g>
             );
           })}
-          <line x1={AXIS_W} x2={width} y1={y(average)} y2={y(average)} className="avg-line" />
+          <g className="avg-line-group" style={{ transform: `translateY(${y(average)}px)` }}>
+            <line x1={AXIS_W} x2={width} y1={0} y2={0} className="avg-line" />
+          </g>
         </g>
         {samples.map((s, i) =>
           labelIdx.has(i) ? (

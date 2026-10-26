@@ -33,16 +33,30 @@ pub fn is_installed() -> bool {
 }
 
 pub async fn fetch() -> Result<UsageResult, QuotaError> {
+    fetch_in(None).await
+}
+
+/// `home` 为 None 时用本机 agy 的登录；否则用其他 Google 账号自己的 agy 目录（GEMINI_CLI_HOME）。
+pub async fn fetch_in(home: Option<&std::path::Path>) -> Result<UsageResult, QuotaError> {
     let Some(binary) = binary() else { return Err(QuotaError::MissingToken) };
     let work = std::env::temp_dir().join(format!("yybar-agy-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&work).map_err(|e| QuotaError::Transport(format!("agy temp dir: {e}")))?;
-    let result = run(&binary, &work).await;
+    let result = run(&binary, &work, home).await;
     let _ = std::fs::remove_dir_all(&work);
     result
 }
 
-async fn run(binary: &PathBuf, work: &PathBuf) -> Result<UsageResult, QuotaError> {
+/// 其他 Google 账号的 agy 环境：GEMINI_CLI_HOME 指到账号目录（agy 用它替代 ~/.gemini）；
+/// SSH_TTY 让 agy 把登录存成该目录里的文件，不碰本机 agy 的登录（和 Mac 版一样）。
+fn isolated_env(cmd: &mut tokio::process::Command, home: &std::path::Path) {
+    cmd.env("GEMINI_CLI_HOME", home).env("SSH_TTY", "yybar");
+}
+
+async fn run(binary: &PathBuf, work: &PathBuf, home: Option<&std::path::Path>) -> Result<UsageResult, QuotaError> {
     let mut cmd = tokio::process::Command::new(binary);
+    if let Some(home) = home {
+        isolated_env(&mut cmd, home);
+    }
     cmd.args(["-p", "/usage", "--output-format", "json", "--log-file"])
         .arg(work.join("agy.log"))
         .current_dir(work)
@@ -61,9 +75,40 @@ async fn run(binary: &PathBuf, work: &PathBuf) -> Result<UsageResult, QuotaError
     parse(&data, now_secs())
 }
 
+/// 在新的控制台窗口里给其他 Google 账号登录：在账号目录里运行交互式 agy（按提示在浏览器登录，
+/// 把授权码粘贴回控制台，登录成功后输入 /exit），回到 yybar 点「完成添加」。只在 Windows 上可用。
+pub fn open_login_console(home: &std::path::Path) -> std::io::Result<()> {
+    let Some(binary) = binary() else {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "agy"));
+    };
+    #[cfg(windows)]
+    {
+        let banner = crate::tr(
+            "yybar: sign in to Antigravity (agy) with the Google account to add. Paste the code back here; after signing in, type /exit and click Finish adding in yybar.",
+            "yybar：为新的 Google 账号登录 Antigravity（agy）。按提示在浏览器登录，把授权码粘贴回这里；登录成功后输入 /exit，再回到 yybar 点「完成添加」。",
+        );
+        let mut cmd = std::process::Command::new("cmd.exe");
+        cmd.env("GEMINI_CLI_HOME", home)
+            .env("SSH_TTY", "yybar")
+            .current_dir(home)
+            .args(["/C", "start", "agy", "cmd.exe", "/K"])
+            .arg(format!("echo {banner} && \"{}\"", binary.display()));
+        cmd.spawn().map(|_| ())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (home, binary);
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"))
+    }
+}
+
 /// agy 日志里记录的登录邮箱（`applyAuthResult: email=…`），只用来给账号起名字。
 pub fn signed_in_email() -> Option<String> {
-    let gemini = paths::gemini_dir();
+    signed_in_email_in(&paths::gemini_dir())
+}
+
+/// 同上，读指定 agy 目录（其他 Google 账号的 GEMINI_CLI_HOME）。
+pub fn signed_in_email_in(gemini: &std::path::Path) -> Option<String> {
     let mut logs: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
     for dir in ["antigravity-cli/log", "antigravity/log"] {
         let Ok(entries) = std::fs::read_dir(gemini.join(dir)) else { continue };

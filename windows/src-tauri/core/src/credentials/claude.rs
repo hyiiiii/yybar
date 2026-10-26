@@ -43,13 +43,20 @@ pub fn load(wsl: &[HomeRoot]) -> Option<ClaudeAccount> {
 
 /// 和凭据同一个主目录下的 `.claude.json`（CLI 把账号信息另存在这里）。
 fn config_for(credentials: &Path) -> Option<Value> {
-    let claude_dir = credentials.parent()?;
-    // CLAUDE_CONFIG_DIR 时 .claude.json 在该目录里；默认在主目录
+    read_json(&config_path_for(credentials))
+}
+
+/// `.claude.json` 的位置：CLAUDE_CONFIG_DIR 时在该目录里；默认在主目录（`~/.claude` 的上一级）。
+pub fn config_path_for(credentials: &Path) -> PathBuf {
+    let claude_dir = credentials.parent().unwrap_or(Path::new("."));
     let inside = claude_dir.join(".claude.json");
     if inside.is_file() {
-        return read_json(&inside);
+        return inside;
     }
-    read_json(&claude_dir.parent()?.join(".claude.json"))
+    match claude_dir.parent() {
+        Some(home) if claude_dir.file_name().is_some_and(|n| n == ".claude") => home.join(".claude.json"),
+        _ => inside,
+    }
 }
 
 pub fn parse(root: &Value, path: PathBuf) -> Option<ClaudeAccount> {

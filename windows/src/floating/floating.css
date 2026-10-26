@@ -50,3 +50,13 @@ body,
   font-weight: 600;
   letter-spacing: -0.3px;
 }
+
+/* 同一服务有几行时的账号名 */
+.hud-name {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}

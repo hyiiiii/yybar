@@ -1,6 +1,7 @@
 //! 任务栏托盘（对应 Mac 菜单栏 `StatusItemController`）。
 //!
 //! - 每个勾选了「托盘」（Mac 的「菜单栏」列）的服务一个图标，顺序 Codex → Claude → Grok → Antigravity；
+//!   勾了「任务栏」的其他账号排在同服务本机账号后面（只显示额度，不呼吸，和 Mac 一样）。
 //!   一个都没勾时保留一个 yybar 图标，避免托盘完全消失。
 //! - 左键：弹出额度浮窗（再点一次或点别处收起）。右键：立即刷新 / 打开统计 / 设置… / 退出 yybar。
 //! - 悬停提示：服务名、5H / WK 剩余、今日花费。
@@ -40,6 +41,24 @@ pub struct TrayState {
 
 fn tray_id(app: UsageApp) -> String {
     format!("tray-{}", app.key())
+}
+
+/// 其他账号的图标 id（账号 id 里有邮箱等字符，取个短哈希）。
+fn other_tray_id(account_id: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in account_id.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("tray-other-{h:016x}")
+}
+
+/// 托盘上的一个图标：本机账号（name 为 None）或其他账号。
+struct Entry {
+    id: String,
+    app: UsageApp,
+    snapshot: Option<yybar_core::quota::QuotaSnapshot>,
+    name: Option<String>,
 }
 
 fn build_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -105,8 +124,11 @@ fn headline(snapshot: &yybar_core::quota::QuotaSnapshot, choice: MenuBarWindow) 
     }
 }
 
-fn tooltip(app: UsageApp, snapshot: Option<&yybar_core::quota::QuotaSnapshot>, today_cost: Option<f64>) -> String {
-    let mut lines = vec![app.display_name().to_string()];
+fn tooltip(app: UsageApp, name: Option<&str>, snapshot: Option<&yybar_core::quota::QuotaSnapshot>, today_cost: Option<f64>) -> String {
+    let mut lines = vec![match name {
+        Some(n) => format!("{} · {n}", app.display_name()),
+        None => app.display_name().to_string(),
+    }];
     if let Some(s) = snapshot {
         let mut parts = Vec::new();
         if app.has_single_period() {
@@ -149,11 +171,15 @@ pub fn update(handle: &AppHandle) {
     let state = handle.state::<AppState>();
     let (settings, entries) = {
         let g = state.inner.lock().unwrap();
-        let entries: Vec<(UsageApp, Option<yybar_core::quota::QuotaSnapshot>)> = UsageApp::ALL
-            .iter()
-            .filter(|a| g.settings.tray_shows(**a) && !g.is_removed(**a))
-            .map(|a| (*a, g.quota(*a)))
-            .collect();
+        let mut entries: Vec<Entry> = Vec::new();
+        for app in UsageApp::ALL {
+            if g.settings.tray_shows(app) && !g.is_removed(app) {
+                entries.push(Entry { id: tray_id(app), app, snapshot: g.quota(app), name: None });
+            }
+            for other in g.shown_others(app, true) {
+                entries.push(Entry { id: other_tray_id(&other.id), app, snapshot: g.other_quota(other), name: Some(other.display_name()) });
+            }
+        }
         (g.settings.clone(), entries)
     };
     // 语言变了：菜单文字要换，全部重建。
@@ -170,7 +196,7 @@ pub fn update(handle: &AppHandle) {
         *lang = Some(chinese);
     }
 
-    let wanted: Vec<String> = if entries.is_empty() { vec![PLACEHOLDER.into()] } else { entries.iter().map(|(a, _)| tray_id(*a)).collect() };
+    let wanted: Vec<String> = if entries.is_empty() { vec![PLACEHOLDER.into()] } else { entries.iter().map(|e| e.id.clone()).collect() };
     // 删掉不要的
     {
         let mut drawn = tray.drawn.lock().unwrap();
@@ -199,13 +225,15 @@ pub fn update(handle: &AppHandle) {
     let breath = (1.0 - (std::f32::consts::TAU * elapsed / BREATH_PERIOD).cos()) / 2.0;
     let today = today_costs(&state);
     let mut breathing = false;
-    for (app, snapshot) in &entries {
-        let id = tray_id(*app);
+    for Entry { id, app, snapshot, name } in &entries {
+        let id = id.clone();
         let remaining = snapshot.as_ref().and_then(|s| headline(s, settings.menu_bar_window));
         let exhausted = snapshot.as_ref().is_some_and(|s| s.is_exhausted(now));
-        let phase = if settings.menu_bar_hold_color_while_waiting && activity.waiting.contains(app) {
+        // 其他账号只显示额度，不跟着本机 CLI 呼吸
+        let local = name.is_none();
+        let phase = if local && settings.menu_bar_hold_color_while_waiting && activity.waiting.contains(app) {
             1.0
-        } else if settings.menu_bar_breathe_when_active && activity.active.contains(app) && !exhausted {
+        } else if local && settings.menu_bar_breathe_when_active && activity.active.contains(app) && !exhausted {
             breathing = true;
             breath
         } else {
@@ -226,7 +254,7 @@ pub fn update(handle: &AppHandle) {
             drawn.insert(id.clone(), key);
         }
         drop(drawn);
-        let tip = tooltip(*app, snapshot.as_ref(), today.get(app).copied());
+        let tip = tooltip(*app, name.as_deref(), snapshot.as_ref(), if local { today.get(app).copied() } else { None });
         let mut tips = tray.tooltips.lock().unwrap();
         if tips.get(&id) != Some(&tip) {
             if let Some(t) = handle.tray_by_id(&id) {

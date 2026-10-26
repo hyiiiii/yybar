@@ -70,6 +70,9 @@ pub struct Settings {
     // 通用
     pub app_language: AppLanguage,
     pub did_complete_onboarding: bool,
+    // bar
+    /// 每天 12:00 自动把今天以前的用量传到 yybar 网站（默认关，对应 Mac `yybar.settings.webAutoUpload`）
+    pub web_auto_upload: bool,
 }
 
 impl Default for Settings {
@@ -100,6 +103,7 @@ impl Default for Settings {
             show_service_status: true,
             app_language: AppLanguage::System,
             did_complete_onboarding: false,
+            web_auto_upload: false,
         }
     }
 }

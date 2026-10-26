@@ -6,7 +6,8 @@ import { api, useAppState, useEvent, useUsage } from "../shared/api";
 import { Icon, RefreshButton } from "../shared/design";
 import { relativeShort } from "../shared/format";
 import { tr } from "../shared/l10n";
-import { ALL_TABS, SETTINGS_PAGES, STATS_PAGES, isStats, tabIcon, tabTitle, type MainTab } from "./tabs";
+import { ALL_TABS, BAR_PAGES, SETTINGS_PAGES, STATS_PAGES, isStats, tabIcon, tabTitle, type MainTab } from "./tabs";
+import { BarPage, WebAvatar } from "./bar/BarPage";
 import { loadUiState, uiValue, setUiValue } from "./uiState";
 import type { ScrollRequest } from "./SectionedPage";
 import { StatsView } from "./stats/StatsView";
@@ -74,20 +75,29 @@ export function MainWindow() {
 
   return (
     <div className="main-root">
-      {sidebar && (
-        <aside className="sidebar">
+      {/* 侧边栏隐藏 / 显示时滑出滑入（对应 Mac 的 .move(edge: .leading)） */}
+      <aside className={`sidebar ${sidebar ? "" : "collapsed"}`} aria-hidden={!sidebar}>
           <SidebarGroup title={tr("Statistics", "统计")} pages={STATS_PAGES} active={active} onSelect={select} />
           <SidebarGroup title={tr("Settings", "设置")} pages={SETTINGS_PAGES} active={active} onSelect={select} />
+          {/* bar 是独立的一页，单独一组、没有标题 */}
+          <SidebarGroup pages={BAR_PAGES} active={active} onSelect={select} />
           <span style={{ flex: 1 }} />
+          {/* 左边是连上 yybar 网站后的 GitHub 头像和用户名（点了去 bar 页），右边刷新 */}
           <div className="sidebar-footer">
-            <span className="num tertiary" title={tr("Last quota refresh", "上次额度刷新")}>
-              {latest > 0 ? tr(`${relativeShort(latest)} ago`, `${relativeShort(latest)} 前`) : ""}
-            </span>
+            {state.web.connected && state.web.profile ? (
+              <button className="sidebar-account" onClick={() => select("bar")} title={tr(`Connected to yybar as @${state.web.profile.login}`, `已连接 yybar 网站：@${state.web.profile.login}`)}>
+                <WebAvatar profile={state.web.profile} size={18} />
+                <span>@{state.web.profile.login}</span>
+              </button>
+            ) : (
+              <span className="num tertiary" title={tr("Last quota refresh", "上次额度刷新")}>
+                {latest > 0 ? tr(`${relativeShort(latest)} ago`, `${relativeShort(latest)} 前`) : ""}
+              </span>
+            )}
             <span style={{ flex: 1 }} />
             <RefreshButton onClick={() => api.refreshNow()} size={13} />
           </div>
-        </aside>
-      )}
+      </aside>
       <main className="content">
         <button
           className="icon-button sidebar-toggle"
@@ -101,20 +111,25 @@ export function MainWindow() {
         >
           <Icon name="sidebar" size={14} />
         </button>
-        {isStats(active) ? (
-          <StatsView state={state} index={index} active={active} request={request} onActive={setActive} />
-        ) : (
-          <SettingsView state={state} usage={usage} active={active} request={request} onActive={setActive} />
-        )}
+        {/* 统计 / 设置 / bar 之间切换时新的一页弹簧淡入（对应 Mac mainTab 变化的 spring 动画） */}
+        <div key={active === "bar" ? "bar" : isStats(active) ? "stats" : "settings"} className="page-swap">
+          {active === "bar" ? (
+            <BarPage state={state} />
+          ) : isStats(active) ? (
+            <StatsView state={state} index={index} active={active} request={request} onActive={setActive} />
+          ) : (
+            <SettingsView state={state} usage={usage} active={active} request={request} onActive={setActive} />
+          )}
+        </div>
       </main>
     </div>
   );
 }
 
-function SidebarGroup({ title, pages, active, onSelect }: { title: string; pages: MainTab[]; active: MainTab; onSelect: (t: MainTab) => void }) {
+function SidebarGroup({ title, pages, active, onSelect }: { title?: string; pages: MainTab[]; active: MainTab; onSelect: (t: MainTab) => void }) {
   return (
     <div className="sidebar-group">
-      <div className="sidebar-group-title">{title}</div>
+      {title && <div className="sidebar-group-title">{title}</div>}
       {pages.map((p) => (
         <button key={p} className={`sidebar-item ${active === p ? "active" : ""}`} onClick={() => onSelect(p)}>
           <Icon name={tabIcon[p]} size={14} />

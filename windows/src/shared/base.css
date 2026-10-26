@@ -473,3 +473,105 @@ select {
   border: 3px solid transparent;
   background-clip: content-box;
 }
+
+/* 数字滚动（对应 Mac 的 numericText 过渡）：旧值往上淡出，新值从下面淡入；变小时方向相反 */
+.rolling {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.rolling-out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.rolling-out.up {
+  animation: roll-out-up 0.38s cubic-bezier(0.3, 0.8, 0.3, 1) forwards;
+}
+
+.rolling-out.down {
+  animation: roll-out-down 0.38s cubic-bezier(0.3, 0.8, 0.3, 1) forwards;
+}
+
+.rolling-in {
+  display: inline-block;
+}
+
+.rolling-in.up {
+  animation: roll-in-up 0.38s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+.rolling-in.down {
+  animation: roll-in-down 0.38s cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+@keyframes roll-in-up {
+  from {
+    transform: translateY(65%);
+    opacity: 0;
+  }
+}
+
+@keyframes roll-in-down {
+  from {
+    transform: translateY(-65%);
+    opacity: 0;
+  }
+}
+
+@keyframes roll-out-up {
+  to {
+    transform: translateY(-65%);
+    opacity: 0;
+  }
+}
+
+@keyframes roll-out-down {
+  to {
+    transform: translateY(65%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rolling-out {
+    display: none;
+  }
+  .rolling-in.up,
+  .rolling-in.down {
+    animation: none;
+  }
+}
+
+/* 展开 / 收起（Collapsible） */
+.collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.45s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.3s ease, visibility 0s linear 0.45s;
+}
+
+.collapsible.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.45s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.3s ease 0.05s, visibility 0s;
+}
+
+.collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsible,
+  .collapsible.open {
+    transition: none;
+  }
+}

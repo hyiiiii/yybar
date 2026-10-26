@@ -28,11 +28,12 @@ popover.html / main.html / floating.html / onboarding.html   四个窗口的入�
 src/
   shared/      共享：后台接口（api.ts）、类型、文案（l10n.ts）、格式化、设计组件（design.tsx、base.css）
   popover/     托盘额度弹出窗口
-  main/        主窗口：侧边栏、统计（stats/）、设置（settings/）
+  main/        主窗口：侧边栏、统计（stats/）、设置（settings/，含添加账号对话框）、bar（bar/）
   floating/    桌面悬浮窗
   onboarding/  首次启动引导
 src-tauri/
   src/         程序外壳：全局状态与刷新（app_state.rs）、调度（scheduler.rs）、托盘（tray.rs、tray_render.rs）、
-               窗口（windows.rs）、前端命令（commands.rs）
-  core/        核心逻辑（不依赖 Tauri）：凭据、额度接口、token 续期、服务状态、日志扫描、价格、存储
+               窗口（windows.rs）、前端命令（commands.rs）、其他账号（accounts.rs）、连接网站与上传（web.rs）
+  core/        核心逻辑（不依赖 Tauri）：凭据、额度接口、token 续期、服务状态、日志扫描、价格、存储、
+               其他账号（accounts/）、网站上传（web.rs）
 ```

@@ -2,11 +2,13 @@
 
 import { tr } from "../shared/l10n";
 
-export type MainTab = "overview" | "quota" | "models" | "activity" | "services" | "display" | "refresh" | "general";
+export type MainTab = "overview" | "quota" | "models" | "activity" | "services" | "display" | "refresh" | "general" | "bar";
 
 export const STATS_PAGES: MainTab[] = ["overview", "quota", "models", "activity"];
 export const SETTINGS_PAGES: MainTab[] = ["services", "display", "refresh", "general"];
-export const ALL_TABS: MainTab[] = [...STATS_PAGES, ...SETTINGS_PAGES];
+/** bar 是和统计、设置都不同的独立页（侧边栏单独一组，没有标题）。 */
+export const BAR_PAGES: MainTab[] = ["bar"];
+export const ALL_TABS: MainTab[] = [...STATS_PAGES, ...SETTINGS_PAGES, ...BAR_PAGES];
 
 export const isStats = (t: MainTab) => STATS_PAGES.includes(t);
 
@@ -28,6 +30,8 @@ export function tabTitle(t: MainTab): string {
       return tr("Refresh", "刷新");
     case "general":
       return tr("General", "通用");
+    case "bar":
+      return "bar";
   }
 }
 
@@ -40,4 +44,5 @@ export const tabIcon: Record<MainTab, string> = {
   display: "taskbar",
   refresh: "refresh",
   general: "gear",
+  bar: "cards",
 };

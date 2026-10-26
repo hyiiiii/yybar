@@ -1,5 +1,7 @@
 //! 最近一次成功的额度快照（`quota-cache.json`），启动时先读它让界面立刻有数（对应 Mac `QuotaCache`）。
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::{load_json, save_json};
@@ -35,6 +37,9 @@ pub struct QuotaCache {
     /// agy 的 Claude·GPT 池
     #[serde(default)]
     pub agy: Option<QuotaCacheRecord>,
+    /// 其他账号（键是账号 id；Google 账号的 Antigravity 池是 `id#3p`）
+    #[serde(default)]
+    pub other: HashMap<String, QuotaCacheRecord>,
 }
 
 impl QuotaCache {

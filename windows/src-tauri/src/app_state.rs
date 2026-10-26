@@ -8,13 +8,14 @@
 //! 锁只在同步代码里短暂持有，绝不跨 await。
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
+use yybar_core::accounts::{self as other_accounts, login::LoginSession, OtherAccount, Provider};
 use yybar_core::credentials::{self, ClaudeAccount, CodexAccount, GrokAccount, SubscriptionRenewal};
 use yybar_core::paths::{self, HomeRoot};
 use yybar_core::quota::status::{self as service_status, ServiceStatus};
@@ -28,6 +29,9 @@ use yybar_core::usage::service::{self as usage_service, Reprice, ScanRoots, Usag
 use yybar_core::usage::UsageBucket;
 use yybar_core::{l10n, now_secs, tr, UsageApp};
 
+use crate::accounts::{self, OtherAccountView, SwitchNotice};
+use crate::web::{self, WebState, WebView};
+
 const MIN_SUCCESS_INTERVAL: i64 = 60;
 const RATE_LIMIT_BACKOFF: i64 = 10 * 60;
 /// agy 一次要跑 10~15 秒，定时刷新至少间隔 100 秒。
@@ -37,6 +41,10 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     pub usage: Mutex<UsageService>,
     pub activity: ActivityMonitor,
+    /// 正在进行的浏览器登录（添加账号）
+    pub logins: Mutex<HashMap<String, Arc<LoginSession>>>,
+    /// bar 页的 yybar 网站账号（连接、上传）
+    pub web: Mutex<WebState>,
     scan_lock: tokio::sync::Mutex<()>,
     refresh_lock: tokio::sync::Mutex<()>,
 }
@@ -58,13 +66,23 @@ pub struct Inner {
     pub google_email: Option<String>,
     pub google_plan: Option<String>,
     pub status: HashMap<UsageApp, ServiceStatus>,
-    cache: QuotaCache,
+    pub(crate) cache: QuotaCache,
     pub history: QuotaHistory,
     pub repricing: bool,
     /// 主窗口关闭后保留的界面选择（时间范围、筛选、排序……），只在内存里，退出后回到默认。
     pub ui_state: Value,
     pub autostart: bool,
     pub wsl: Vec<HomeRoot>,
+    /// 其他账号（设置 · 服务里「添加账号…」加进来的，见 accounts.rs）
+    pub others: Vec<OtherAccount>,
+    /// 其他账号的额度：键是账号 id；Google 账号的 Antigravity 池是 `id#3p`
+    pub other_quotas: HashMap<String, QuotaSnapshot>,
+    pub other_refresh: HashMap<String, RefreshState>,
+    /// 其他账号上次更新订阅等级 / 订阅开始日的时间
+    pub other_profile_at: HashMap<String, i64>,
+    /// 正在把本机 CLI 切换到的账号 id（设置页该行转圈，其他行暂不可切换）
+    pub switching: Option<String>,
+    pub switch_notice: Option<SwitchNotice>,
 }
 
 // ---------- 给前端的快照 ----------
@@ -126,6 +144,22 @@ pub struct StateSnapshot {
     pub autostart: bool,
     pub agy_installed: bool,
     pub version: String,
+    pub others: Vec<OtherAccountView>,
+    pub switching: Option<String>,
+    pub switch_notice: Option<SwitchNotice>,
+    /// 本机装了哪些官方 CLI（添加账号时「在浏览器中登录」要用）
+    pub clis: CliPresence,
+    /// bar 页：yybar 网站账号和待上传
+    pub web: WebView,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliPresence {
+    pub codex: bool,
+    pub claude: bool,
+    pub grok: bool,
+    pub agy: bool,
 }
 
 #[derive(Serialize)]
@@ -154,6 +188,13 @@ impl AppState {
         if agy_gemini.is_none() {
             from_cache(&cache.agy, UsageApp::Agy);
         }
+        let others = other_accounts::load_all();
+        let other_quotas: HashMap<String, QuotaSnapshot> = cache.other.iter().map(|(k, r)| (k.clone(), r.snapshot.clone())).collect();
+        let other_refresh: HashMap<String, RefreshState> = cache
+            .other
+            .iter()
+            .map(|(k, r)| (k.clone(), RefreshState { last_success_at: Some(r.updated_at), source: Some(QuotaSource::Cache), ..Default::default() }))
+            .collect();
         AppState {
             inner: Mutex::new(Inner {
                 settings,
@@ -177,9 +218,17 @@ impl AppState {
                 ui_state: Value::Object(Default::default()),
                 autostart: false,
                 wsl: Vec::new(),
+                others,
+                other_quotas,
+                other_refresh,
+                other_profile_at: HashMap::new(),
+                switching: None,
+                switch_notice: None,
             }),
             usage: Mutex::new(UsageService::bootstrap()),
             activity: ActivityMonitor::new(),
+            logins: Mutex::new(HashMap::new()),
+            web: Mutex::new(WebState::default()),
             scan_lock: tokio::sync::Mutex::new(()),
             refresh_lock: tokio::sync::Mutex::new(()),
         }
@@ -192,6 +241,7 @@ impl AppState {
     pub fn snapshot(&self) -> StateSnapshot {
         let g = self.inner.lock().unwrap();
         let usage = self.usage.lock().unwrap();
+        let web = web::view(&self.web.lock().unwrap(), &usage.buckets());
         let activity = self.activity.snapshot();
         let now = now_secs();
         let services = UsageApp::ALL.iter().map(|app| g.service_view(*app, now)).collect();
@@ -210,6 +260,16 @@ impl AppState {
             autostart: g.autostart,
             agy_installed: google::is_installed(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            others: g.other_views(now),
+            switching: g.switching.clone(),
+            switch_notice: g.switch_notice.clone(),
+            clis: CliPresence {
+                codex: other_accounts::login::binary(Provider::Codex).is_some(),
+                claude: other_accounts::login::binary(Provider::Claude).is_some(),
+                grok: other_accounts::login::binary(Provider::Grok).is_some(),
+                agy: google::is_installed(),
+            },
+            web,
         }
     }
 
@@ -234,6 +294,26 @@ impl Inner {
         match (self.settings.removed_local_accounts.get(app.key()), self.identity(app)) {
             (Some(removed), Some(current)) => *removed == current,
             _ => false,
+        }
+    }
+
+    /// 切换本机账号后，先把目标账号最近一次的额度当作本机额度显示，刷新回来再换成新的。
+    pub fn seed_local_quota(&mut self, app: UsageApp, snapshot: QuotaSnapshot) {
+        let record = Some(QuotaCacheRecord { snapshot: snapshot.clone(), source: QuotaSource::Cache, updated_at: snapshot.fetched_at });
+        match app {
+            UsageApp::Codex => {
+                self.codex_quota = Some(snapshot);
+                self.cache.codex = record;
+            }
+            UsageApp::Claude => {
+                self.claude_quota = Some(snapshot);
+                self.cache.claude = record;
+            }
+            UsageApp::Grok => {
+                self.grok_quota = Some(snapshot);
+                self.cache.grok = record;
+            }
+            UsageApp::Agy => {}
         }
     }
 
@@ -373,7 +453,13 @@ pub async fn bootstrap(app: &AppHandle) {
         g.wsl = if g.settings.scan_wsl { paths::wsl_homes() } else { Vec::new() };
     }
     load_credentials(app);
+    {
+        let state = app.state::<AppState>();
+        let others = state.inner.lock().unwrap().others.clone();
+        accounts::cleanup_orphan_dirs(&others);
+    }
     start_activity_monitor(app);
+    web::bootstrap(app);
     publish(app);
     let h = app.clone();
     tauri::async_runtime::spawn(async move { scan_usage(&h).await });
@@ -403,6 +489,25 @@ pub fn start_activity_monitor(app: &AppHandle) {
 }
 
 // ---------- 凭据 ----------
+
+/// 重读本机凭据（切换本机账号后调用）。
+pub fn reload_credentials(app: &AppHandle) {
+    load_credentials(app);
+}
+
+/// 重读凭据后只刷新一个服务的本机账号（切换本机账号后用）。
+pub async fn refresh_service(app: &AppHandle, service: UsageApp) {
+    load_credentials(app);
+    publish(app);
+    let reason = RefreshReason::UserInitiated;
+    match service {
+        UsageApp::Codex => load_codex_quota(app, reason).await,
+        UsageApp::Claude => load_claude_quota(app, reason).await,
+        UsageApp::Grok => load_grok_quota(app, reason).await,
+        UsageApp::Agy => load_google_quota(app, reason).await,
+    }
+    publish(app);
+}
 
 /// 重读本机凭据。身份变了（外部切换了账号）就清掉旧额度和磁盘缓存。
 fn load_credentials(app: &AppHandle) {
@@ -490,6 +595,7 @@ pub async fn refresh_quotas(app: &AppHandle, reason: RefreshReason) {
         load_claude_quota(app, reason),
         load_grok_quota(app, reason),
         load_google_quota(app, reason),
+        accounts::refresh_all(app, reason),
     );
     publish(app);
 }
@@ -758,6 +864,8 @@ pub async fn scan_usage(app: &AppHandle) {
             break;
         }
     }
+    // 扫描完：到点了就自动上传（每天 12:00 一次）
+    web::usage_did_update(app);
 }
 
 /// 改了某个模型的自定义价格：历史费用按新价格重算（全量重建，日志已删的历史保留）。

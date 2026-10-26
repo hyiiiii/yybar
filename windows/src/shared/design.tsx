@@ -349,6 +349,43 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M2 8h12M8 2c1.8 1.8 2.6 3.8 2.6 6S9.8 12.2 8 14c-1.8-1.8-2.6-3.8-2.6-6S6.2 3.8 8 2z" />
     </>
   ),
+  clipboard: (
+    <>
+      <rect x="3.5" y="3" width="9" height="11" rx="1.5" />
+      <path d="M6 3V2.4c0-.3.2-.5.5-.5h3c.3 0 .5.2.5.5V3M5.8 7h4.4M5.8 9.5h4.4" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="m4.8 6.2 2 1.8-2 1.8M8.5 10.2h2.7" />
+    </>
+  ),
+  external: <path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" />,
+  personPlus: (
+    <>
+      <circle cx="6.5" cy="5.5" r="2.5" />
+      <path d="M2 13.5c.4-2.3 2.2-3.8 4.5-3.8s4.1 1.5 4.5 3.8M12.5 5v4M10.5 7h4" />
+    </>
+  ),
+  plusCircle: (
+    <>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 5.2v5.6M5.2 8h5.6" />
+    </>
+  ),
+  cards: (
+    <>
+      <rect x="2.3" y="3.6" width="6.8" height="9.6" rx="1.2" transform="rotate(-10 5.7 8.4)" />
+      <rect x="7" y="2.8" width="6.8" height="9.6" rx="1.2" transform="rotate(8 10.4 7.6)" />
+    </>
+  ),
+  upload: (
+    <>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 10.8V5.4M5.6 7.6 8 5.2l2.4 2.4" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 14, className }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {
@@ -373,5 +410,40 @@ export function HotFlame({ title }: { title?: string }) {
     <span className="hot-flame" title={title}>
       🔥
     </span>
+  );
+}
+
+/**
+ * 数字变化时滚动过去（对应 Mac 的 `.contentTransition(.numericText())`）：旧值往上淡出，新值从下面淡入。
+ * 第一次显示不动；系统要求减少动态效果时直接换。
+ */
+export function RollingText({ text, className }: { text: string; className?: string }) {
+  const [state, setState] = useState<{ cur: string; prev: string | null; seq: number; up: boolean }>({ cur: text, prev: null, seq: 0, up: true });
+  if (text !== state.cur) {
+    // 数值变大往上滚，变小往下滚（读得出数字时）
+    const n = (v: string) => Number(v.replace(/[^0-9.\-]/g, ""));
+    const up = !(Number.isFinite(n(text)) && Number.isFinite(n(state.cur)) && n(text) < n(state.cur));
+    setState({ cur: text, prev: state.cur, seq: state.seq + 1, up });
+  }
+  return (
+    <span className={`rolling ${className ?? ""}`}>
+      {state.prev != null && (
+        <span key={`p${state.seq}`} className={`rolling-out ${state.up ? "up" : "down"}`} aria-hidden>
+          {state.prev}
+        </span>
+      )}
+      <span key={`c${state.seq}`} className={state.seq > 0 ? `rolling-in ${state.up ? "up" : "down"}` : undefined}>
+        {state.cur}
+      </span>
+    </span>
+  );
+}
+
+/** 展开 / 收起时高度弹簧过渡、内容淡入淡出（对应 Mac 的 `.transition(.opacity.combined(with: .move(edge: .top)))`）。内容一直挂着。 */
+export function Collapsible({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div className={`collapsible ${open ? "open" : ""}`} aria-hidden={!open}>
+      <div className="collapsible-inner">{children}</div>
+    </div>
   );
 }

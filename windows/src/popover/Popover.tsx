@@ -1,5 +1,5 @@
 // 左键点托盘图标弹出的额度浮窗（对应 Mac `MenuBarPopoverView`，320 宽）。
-// 顶部 yybar + 统计 / 设置；中间是托盘上显示的每个账号（顺序同托盘）：图标、名称、套餐、官方状态点，
+// 顶部 yybar + 统计 / 设置；中间是托盘上显示的每个账号（顺序同托盘，其他账号排在同服务本机账号后面）：图标、名称、套餐、官方状态点，
 // 下面 5H / WK 的剩余条和重置倒计时（Antigravity 按池写成「Gemini 5H」），刷新失败时名称旁一个小警告（悬停看原因）；
 // 底部左边刷新按钮 +「x 前更新」，右边今日花费 / Token。
 
@@ -10,7 +10,7 @@ import { compactToken, cost, relativeShort } from "../shared/format";
 import { tr } from "../shared/l10n";
 import { shortLabel, windowsFor } from "../shared/quota";
 import { accentVar, displayName } from "../shared/services";
-import { ALL_APPS, trayShows, type ServiceView } from "../shared/types";
+import { ALL_APPS, trayShows, type QuotaSnapshot, type RefreshState, type ServiceStatus, type UsageApp } from "../shared/types";
 import { allTokens, dayBounds, totalsBetween } from "../shared/usage";
 
 export function Popover() {
@@ -47,16 +47,27 @@ export function Popover() {
   if (!state) return <div ref={rootRef} className={`popover ${translucent ? "translucent" : ""}`} style={{ height: 120 }} />;
 
   const settings = state.settings;
-  const entries: ServiceView[] = ALL_APPS.map((app) => state.services.find((s) => s.app === app)!).filter(
-    (s) => s && trayShows(settings, s.app) && !s.removed,
-  );
+  /** 托盘上的一个账号：本机账号，或者勾了「任务栏」的其他账号（标题带账号名）。 */
+  type Entry = { key: string; app: UsageApp; title: string; plan: string | null; quota: QuotaSnapshot | null; refresh: RefreshState; status: ServiceStatus | null };
+  const entries: Entry[] = [];
+  for (const app of ALL_APPS) {
+    const s = state.services.find((x) => x.app === app);
+    if (!s) continue;
+    if (trayShows(settings, app) && !s.removed) {
+      entries.push({ key: app, app, title: displayName[app], plan: s.plan, quota: s.quota, refresh: s.refresh, status: s.status });
+    }
+    for (const o of state.others) {
+      if (o.app !== app || !o.enabled || !o.showInTray) continue;
+      entries.push({ key: o.id, app, title: `${displayName[app]} · ${o.name}`, plan: o.plan, quota: o.quota, refresh: o.refresh, status: s.status });
+    }
+  }
 
   const { today, tomorrow } = dayBounds();
   const totals = totalsBetween(usage?.buckets ?? [], today, tomorrow);
   const todaySummary = tr(`Today ${cost(totals.cost)} · ${compactToken(allTokens(totals))} tokens`, `今日 ${cost(totals.cost)} · ${compactToken(allTokens(totals))} Token`);
 
-  const shown = entries.length ? entries : state.services.filter((s) => ["codex", "claude", "grok"].includes(s.app));
-  const latest = Math.max(0, ...shown.map((s) => s.refresh.lastSuccessAt ?? 0));
+  const shown = entries.length ? entries.map((e) => e.refresh) : state.services.filter((s) => ["codex", "claude", "grok"].includes(s.app)).map((s) => s.refresh);
+  const latest = Math.max(0, ...shown.map((r) => r.lastSuccessAt ?? 0));
   const refreshed = latest > 0 ? tr(`Updated ${relativeShort(latest, now)} ago`, `${relativeShort(latest, now)} 前更新`) : tr("Waiting for data", "等待数据");
 
   return (
@@ -72,6 +83,10 @@ export function Popover() {
           <Icon name="gear" size={13} />
           {tr("Settings", "设置")}
         </button>
+        <button className="pop-head-button" onClick={() => api.openMain("bar")}>
+          <Icon name="cards" size={13} />
+          bar
+        </button>
       </header>
       <div className="divider" />
       {entries.length === 0 ? (
@@ -82,11 +97,11 @@ export function Popover() {
             const windows = windowsFor(s.app, s.quota);
             const pools = s.quota?.pools;
             return (
-              <div className="pop-entry" key={s.app}>
+              <div className="pop-entry" key={s.key}>
                 <ServiceTile app={s.app} size={22} logoSize={13} />
                 <div className="pop-entry-body">
                   <div className="pop-entry-head">
-                    <span className="pop-entry-title">{displayName[s.app]}</span>
+                    <span className="pop-entry-title">{s.title}</span>
                     {s.plan && <span className="pop-plan">{s.plan}</span>}
                     {s.refresh.lastError && (
                       <span className="pop-warning" title={s.refresh.lastError}>

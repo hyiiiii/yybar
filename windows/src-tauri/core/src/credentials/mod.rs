@@ -19,7 +19,7 @@ pub use codex::CodexAccount;
 pub use grok::GrokAccount;
 pub use renewal::SubscriptionRenewal;
 
-pub(crate) fn read_json(path: &Path) -> Option<Value> {
+pub fn read_json(path: &Path) -> Option<Value> {
     let data = std::fs::read(path).ok()?;
     if data.is_empty() {
         return None;
@@ -29,7 +29,7 @@ pub(crate) fn read_json(path: &Path) -> Option<Value> {
     serde_json::from_slice(data).ok()
 }
 
-pub(crate) fn str_field<'a>(v: &'a Value, keys: &[&str]) -> Option<&'a str> {
+pub fn str_field<'a>(v: &'a Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter()
         .find_map(|k| v.get(*k).and_then(Value::as_str))
         .map(str::trim)

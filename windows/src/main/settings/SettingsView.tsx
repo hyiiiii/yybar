@@ -7,11 +7,12 @@ import { Checkbox, Icon, Segmented, Select, ServiceTile, Toggle } from "../../sh
 import { relativeShort, timeString } from "../../shared/format";
 import { isChinese, tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
-import { ALL_APPS, SETTING_KEYS, type IntervalChoice, type ServiceView, type Settings, type StateSnapshot, type SubscriptionRenewal, type UsageApp, type UsagePayload } from "../../shared/types";
+import { ALL_APPS, SETTING_KEYS, type IntervalChoice, type OtherAccountView, type ServiceView, type Settings, type StateSnapshot, type SubscriptionRenewal, type SwitchNotice, type UsageApp, type UsagePayload } from "../../shared/types";
 import { Section, SectionHeading, SectionedPage, type ScrollRequest } from "../SectionedPage";
 import { SETTINGS_PAGES, tabTitle, type MainTab } from "../tabs";
 import { ModelPrices } from "./ModelPrices";
-import { QuotaCard } from "./QuotaCard";
+import { AddAccountDialog } from "./AddAccountDialog";
+import { QuotaCard, otherTitle } from "./QuotaCard";
 
 const INTERVALS: IntervalChoice[] = ["m1", "m2", "m3", "m5", "m10"];
 const intervalLabel = (c: IntervalChoice) => {
@@ -29,6 +30,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
   const s = state.settings;
   const set = (patch: Partial<Settings>) => api.updateSettings(patch);
   const [confirm, setConfirm] = useState<UsageApp | null>(null);
+  const [otherConfirm, setOtherConfirm] = useState<OtherAccountView | null>(null);
+  const [adding, setAdding] = useState(false);
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const now = useTicker(1000);
   const anyRemoved = Object.keys(s.removedLocalAccounts).length > 0;
@@ -42,21 +45,33 @@ export function SettingsView({ state, usage, active, request, onActive }: {
           <PrefsGroup
             title={tr("Accounts", "账号")}
             desc={tr(
-              "The green dot marks the account each CLI on this PC is using. Turn a service off to stop showing and refreshing it.",
-              "绿点表示本机 CLI 正在使用的账号；关闭「启用」后不再显示和刷新该服务",
+              "The green dot marks the account each CLI on this PC is using. Click the circle next to another account to switch the CLI to it.",
+              "绿点表示本机 CLI 正在使用的账号；点其他账号左侧的圆圈，即可把本机 CLI 切换到该账号",
             )}
           >
             <MatrixHeader />
             {ALL_APPS.map((app) => {
               const service = state.services.find((x) => x.app === app)!;
-              if (service.removed) return null;
+              const others = state.others.filter((o) => o.app === app);
+              if (service.removed && others.length === 0) return null;
               return (
                 <div key={app}>
                   <div className="divider" />
-                  <ServiceRow state={state} service={service} buckets={usage?.buckets ?? []} onDelete={() => setConfirm(app)} />
+                  {!service.removed && <ServiceRow state={state} service={service} buckets={usage?.buckets ?? []} onDelete={() => setConfirm(app)} />}
+                  {others.map((o, i) => (
+                    <div key={o.id} className="row-enter">
+                      {(i > 0 || !service.removed) && <div className="divider inset" />}
+                      <OtherRow state={state} service={service} account={o} buckets={usage?.buckets ?? []} onDelete={() => setOtherConfirm(o)} />
+                    </div>
+                  ))}
                 </div>
               );
             })}
+            <div className="divider" />
+            <button className="restore-button add-account-button" onClick={() => setAdding(true)}>
+              <Icon name="plusCircle" size={14} />
+              {tr("Add account…", "添加账号…")}
+            </button>
             {anyRemoved && (
               <>
                 <div className="divider" />
@@ -67,10 +82,11 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               </>
             )}
           </PrefsGroup>
+          <SwitchNoticeView notice={state.switchNotice} />
           <p className="group-note">
             {tr(
-              "yybar reads the sign-ins of the CLIs on this PC (Codex, Claude Code, Grok, agy). To use another account, sign in with the CLI in a terminal; yybar picks it up on the next refresh.",
-              "yybar 读取本机 CLI（Codex、Claude Code、Grok、agy）的登录。要换账号，在终端里用对应 CLI 重新登录，yybar 下次刷新时自动跟上。",
+              "Accounts you add are saved only on this PC (%APPDATA%\\yybar), readable by your Windows user, and don't affect the CLIs' own sign-ins until you switch.",
+              "添加的账号只保存在本机（%APPDATA%\\yybar），只有当前 Windows 用户能读；在你切换之前，不影响本机 CLI 自己的登录。",
             )}
           </p>
         </Section>
@@ -255,6 +271,22 @@ export function SettingsView({ state, usage, active, request, onActive }: {
           onCancel={() => setConfirm(null)}
         />
       )}
+      {otherConfirm && (
+        <ConfirmDialog
+          title={tr("Remove account?", "删除此账号？")}
+          message={tr(
+            `“${otherConfirm.email ?? otherConfirm.name}” will be removed from yybar and its saved credentials deleted. The account itself is not affected.`,
+            `“${otherConfirm.email ?? otherConfirm.name}” 将从 yybar 中移除，并删除保存的凭据，账号本身不受影响。`,
+          )}
+          confirmLabel={tr("Remove", "删除")}
+          onConfirm={() => {
+            api.removeOtherAccount(otherConfirm.id);
+            setOtherConfirm(null);
+          }}
+          onCancel={() => setOtherConfirm(null)}
+        />
+      )}
+      {adding && <AddAccountDialog state={state} onClose={() => setAdding(false)} />}
     </>
   );
 }
@@ -309,21 +341,6 @@ function ServiceRow({ state, service, buckets, onDelete }: { state: StateSnapsho
   const keys = SETTING_KEYS[service.app];
   const detected = service.detected;
   const enabled = Boolean(s[keys.enabled]);
-  const [showQuota, setShowQuota] = useState(false);
-  const popRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showQuota) return;
-    const close = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) setShowQuota(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setShowQuota(false);
-    setTimeout(() => window.addEventListener("mousedown", close), 0);
-    window.addEventListener("keydown", esc);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", esc);
-    };
-  }, [showQuota]);
   const notDetected =
     service.app === "agy" ? tr("agy CLI not found", "没有找到 agy CLI") : tr("Not detected", "未识别");
   return (
@@ -356,18 +373,7 @@ function ServiceRow({ state, service, buckets, onDelete }: { state: StateSnapsho
           onChange={(v) => api.updateSettings({ [keys.floating]: v })}
         />
       </span>
-      <span className="col-quota" ref={popRef}>
-        {detected && (
-          <button className={`icon-button ${showQuota ? "accent" : ""}`} title={tr("View quota", "查看额度")} onClick={() => setShowQuota(!showQuota)}>
-            <Icon name="gauge" size={15} />
-          </button>
-        )}
-        {showQuota && (
-          <div className="quota-popover">
-            <QuotaCard state={state} service={service} buckets={buckets} />
-          </div>
-        )}
-      </span>
+      <span className="col-quota">{detected && <QuotaButton>{() => <QuotaCard state={state} service={service} buckets={buckets} />}</QuotaButton>}</span>
       <span className="col-action">
         {detected && (
           <button className="icon-button" title={tr("Remove", "删除")} onClick={onDelete}>
@@ -375,6 +381,120 @@ function ServiceRow({ state, service, buckets, onDelete }: { state: StateSnapsho
           </button>
         )}
       </span>
+    </div>
+  );
+}
+
+/** 其他账号一行：左侧空心圆点一下把本机 CLI 切换到它（切换中转圈，期间其他行不能点）；启用 / 任务栏 / 悬浮窗；查看额度；删除。 */
+function OtherRow({ state, service, account, buckets, onDelete }: {
+  state: StateSnapshot;
+  service: ServiceView;
+  account: OtherAccountView;
+  buckets: UsagePayload["buckets"];
+  onDelete: () => void;
+}) {
+  const s = state.settings;
+  const switching = state.switching;
+  const error = account.refresh.lastError;
+  return (
+    <div className="matrix-row">
+      <span className="col-radio">
+        {account.switchable &&
+          (switching === account.id ? (
+            <span className="spinner small" title={tr("Switching…", "正在切换…")} />
+          ) : (
+            <button
+              className="switch-radio"
+              disabled={switching != null}
+              title={tr(`Switch the ${displayName[account.app]} CLI on this PC to this account`, `把本机 ${displayName[account.app]} CLI 切换到这个账号`)}
+              onClick={() => api.switchAccount(account.id)}
+            />
+          ))}
+      </span>
+      <span className="col-name" style={{ opacity: account.enabled ? 1 : 0.5 }}>
+        <ServiceTile app={account.app} size={26} logoSize={15} radius={7} />
+        <span className="name-text">
+          <span className="name-line">
+            <b>{otherTitle(account)}</b>
+            {account.plan && <PlanTag plan={account.plan} app={account.app} />}
+            {account.renewal && <RenewalTag renewal={account.renewal} />}
+            {error && (
+              <span className="row-warning" title={error}>
+                <Icon name="warning" size={11} />
+              </span>
+            )}
+          </span>
+          <span className="email">{account.email ?? account.name}</span>
+        </span>
+      </span>
+      <span className="col-enabled">
+        <Toggle small checked={account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { enabled: v })} title={tr("Refresh this account's quota", "刷新这个账号的额度")} />
+      </span>
+      <span className="col-tray">
+        <Checkbox checked={account.showInTray} disabled={!account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { showInTray: v })} />
+      </span>
+      <span className="col-floating">
+        <Checkbox
+          checked={account.showInFloating}
+          disabled={!account.enabled || !s.floatingEnabled}
+          title={s.floatingEnabled ? "" : tr("Turn on the floating window on the Display page first.", "先在「显示」页开启悬浮窗")}
+          onChange={(v) => api.updateOtherAccount(account.id, { showInFloating: v })}
+        />
+      </span>
+      <span className="col-quota">
+        <QuotaButton>{() => <QuotaCard state={state} service={service} other={account} buckets={buckets} />}</QuotaButton>
+      </span>
+      <span className="col-action">
+        <button className="icon-button" title={tr("Remove", "删除")} onClick={onDelete}>
+          <Icon name="minusCircle" size={14} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** 「查看额度」按钮 + 浮层（点外面或 Esc 收起）。 */
+function QuotaButton({ children }: { children: () => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    setTimeout(() => window.addEventListener("mousedown", close), 0);
+    window.addEventListener("keydown", esc);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button className={`icon-button ${open ? "accent" : ""}`} title={tr("View quota", "查看额度")} onClick={() => setOpen(!open)}>
+        <Icon name="gauge" size={15} />
+      </button>
+      {open && <div className="quota-popover">{children()}</div>}
+    </span>
+  );
+}
+
+/** 切换本机账号的结果，显示在账号卡片下方，8 秒后淡出。 */
+function SwitchNoticeView({ notice }: { notice: SwitchNotice | null }) {
+  const now = useTicker(1000);
+  const [shown, setShown] = useState<SwitchNotice | null>(null);
+  useEffect(() => {
+    if (notice && Date.now() / 1000 - notice.at < 8) setShown(notice);
+  }, [notice?.seq]);
+  const visible = shown != null && now - shown.at < 8;
+  if (!shown) return null;
+  return (
+    <div className={`switch-notice ${visible ? "" : "hidden"}`}>
+      <span style={{ color: shown.isError ? "var(--sys-orange)" : "var(--sys-green)" }}>
+        <Icon name={shown.isError ? "warning" : "check"} size={12} />
+      </span>
+      <span>{shown.text}</span>
     </div>
   );
 }

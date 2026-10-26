@@ -1,12 +1,12 @@
 // 桌面悬浮窗（对应 Mac `FloatingContentView`）：每行 18px tile + 4px 进度条 + 剩余百分比（状态色）。
-// Grok 显示周期额度，其余显示 5H。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附；双击打开统计。
+// Grok 显示周期额度，其余显示 5H。勾了「悬浮窗」的其他账号排在同服务本机账号后面；同一服务有几行时每行加账号名。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附；双击打开统计。
 
 import { useLayoutEffect, useRef } from "react";
 import { api, useAppState } from "../shared/api";
 import { ProgressBar, ServiceTile, statusColor } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
-import { ALL_APPS, floatingShows } from "../shared/types";
+import { ALL_APPS, floatingShows, type QuotaSnapshot, type UsageApp } from "../shared/types";
 
 export function Floating() {
   const state = useAppState();
@@ -25,9 +25,20 @@ export function Floating() {
     return () => ro.disconnect();
   }, [state != null]);
 
-  const rows = state
-    ? ALL_APPS.map((app) => state.services.find((s) => s.app === app)!).filter((s) => s && floatingShows(state.settings, s.app) && !s.removed)
-    : [];
+  type Row = { key: string; app: UsageApp; name: string | null; quota: QuotaSnapshot | null };
+  const rows: Row[] = [];
+  if (state) {
+    for (const app of ALL_APPS) {
+      const s = state.services.find((x) => x.app === app);
+      const group: Row[] = [];
+      if (s && floatingShows(state.settings, app) && !s.removed) group.push({ key: app, app, name: s.email ? s.email.split("@")[0] : null, quota: s.quota });
+      for (const o of state.others) {
+        if (o.app === app && o.enabled && o.showInFloating) group.push({ key: o.id, app, name: o.name, quota: o.quota });
+      }
+      // 只有一行时不写名字
+      rows.push(...(group.length > 1 ? group : group.map((r) => ({ ...r, name: null }))));
+    }
+  }
 
   return (
     <div
@@ -44,8 +55,9 @@ export function Floating() {
         const rem = remaining(w);
         const color = statusColor(rem);
         return (
-          <div className="hud-row" key={s.app}>
+          <div className="hud-row" key={s.key}>
             <ServiceTile app={s.app} size={18} logoSize={12} radius={5} />
+            {s.name && <span className="hud-name">{s.name}</span>}
             <ProgressBar value={(rem ?? 0) / 100} color={color} height={4} />
             <span className="hud-percent num" style={{ color }}>
               {rem == null ? "--%" : `${Math.round(rem)}%`}

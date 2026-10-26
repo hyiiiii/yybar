@@ -84,10 +84,18 @@ pub fn binary() -> Option<PathBuf> {
 
 /// 让已安装的 CLI 自己续期 token（`grok models` 只读、不产生对话或计费）。最多等 25 秒。
 pub async fn refresh_credentials() -> bool {
+    refresh_credentials_in(None).await
+}
+
+/// 同上；`home` 是其他账号自己的 GROK_HOME。
+pub async fn refresh_credentials_in(home: Option<&std::path::Path>) -> bool {
     let Some(binary) = binary() else { return false };
     let mut cmd = tokio::process::Command::new(binary);
+    if let Some(home) = home {
+        cmd.env("GROK_HOME", home);
+    }
     cmd.arg("models")
-        .current_dir(paths::grok_dir())
+        .current_dir(home.map(|h| h.to_path_buf()).unwrap_or_else(paths::grok_dir))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

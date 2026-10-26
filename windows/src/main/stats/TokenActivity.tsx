@@ -4,6 +4,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { compactToken, dayString, longDate, monthDayLabel, parseDay, shortMonth } from "../../shared/format";
+import { RollingText } from "../../shared/design";
 import { tr } from "../../shared/l10n";
 import { usePersisted } from "../uiState";
 import { TokenHeat, type ServiceFilter } from "./data";
@@ -194,7 +195,9 @@ export function TokenActivity({ daily, filter }: { daily: Map<string, number>; f
 function Summary({ value, label }: { value: string; label: string }) {
   return (
     <div className="summary-cell">
-      <div className="summary-value num">{value}</div>
+      <div className="summary-value num">
+        <RollingText text={value} />
+      </div>
       <div className="summary-label">{label}</div>
     </div>
   );
