@@ -32,6 +32,8 @@ ab_glyph = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.6"
+# 悬浮窗拖动时看左键是否还按着（松手后才吸附 / 收起）
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [profile.release]
 codegen-units = 1

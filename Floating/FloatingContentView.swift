@@ -94,14 +94,9 @@ struct FloatingContentView: View {
         }
         .clipShape(shape)
         .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
-        .contentShape(shape)
-        .onTapGesture { FloatingPanelController.shared.expand() }
-        .gesture(
-            DragGesture(minimumDistance: 3)
-                .onChanged { _ in FloatingPanelController.shared.dragDocked(ended: false) }
-                .onEnded { _ in FloatingPanelController.shared.dragDocked(ended: true) }
-        )
-        .help(tr("Click to expand · drag to move along the edge", "单击展开 · 拖动可沿屏幕边上下移动"))
+        // 点击 / 拖动交给 AppKit 视图：非激活面板里第一下点击也能收到，不和窗口背景拖动抢
+        .overlay(DockedTabMouse(help: tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there",
+                                         "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")))
         .fixedSize()
     }
 
@@ -203,5 +198,52 @@ private struct FloatingRow: View {
 
     private var barColor: Color {
         statusColor(remainingPercent: window?.remainingPercent, tint: tint)
+    }
+}
+
+/// 收起窄条上的鼠标处理：没移动就松开 = 展开；移动超过 3pt = 拖动窄条(见 FloatingPanelController.dragDocked)。
+private struct DockedTabMouse: NSViewRepresentable {
+    let help: String
+
+    func makeNSView(context: Context) -> DockedTabMouseView {
+        let view = DockedTabMouseView()
+        view.toolTip = help
+        return view
+    }
+
+    func updateNSView(_ nsView: DockedTabMouseView, context: Context) {
+        nsView.toolTip = help
+    }
+}
+
+final class DockedTabMouseView: NSView {
+    private var downAt: NSPoint?
+    private var dragging = false
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        downAt = NSEvent.mouseLocation
+        dragging = false
+        FloatingPanelController.shared.dockedMouseDown()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let downAt else { return }
+        let p = NSEvent.mouseLocation
+        if !dragging, hypot(p.x - downAt.x, p.y - downAt.y) < 3 { return }
+        dragging = true
+        FloatingPanelController.shared.dragDocked(ended: false)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if dragging {
+            FloatingPanelController.shared.dragDocked(ended: true)
+        } else {
+            FloatingPanelController.shared.expand()
+        }
+        downAt = nil
+        dragging = false
     }
 }

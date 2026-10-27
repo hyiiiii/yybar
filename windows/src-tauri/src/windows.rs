@@ -27,8 +27,25 @@ pub const ONBOARDING: &str = "onboarding";
 
 const POPOVER_GAP: f64 = 10.0;
 const SNAP_THRESHOLD: f64 = 20.0;
-/// 悬浮窗拖出屏幕左 / 右边缘超过这么多（逻辑像素）时收起成贴边窄条
-const COLLAPSE_OVERHANG: f64 = 12.0;
+/// 悬浮窗拖出屏幕左 / 右边缘超过窗口宽度的三分之一（至少这么多逻辑像素）时收起成贴边窄条。
+/// 默认位置离右边只有 16 像素，阈值太小时轻轻碰一下就会收起来。
+const COLLAPSE_OVERHANG: f64 = 40.0;
+/// 拖完收起的窄条，离屏幕左 / 右边不超过这么远（逻辑像素）就重新贴边，拖得更远就在那里展开
+const REDOCK_DISTANCE: f64 = 60.0;
+
+/// 左键还按着（拖动还没结束）。
+fn left_button_down() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        // 最高位为 1 表示按着
+        (unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000) != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
 const FLOATING_MARGIN: f64 = 16.0;
 
 #[derive(Default)]
@@ -275,9 +292,13 @@ fn create_floating(app: &AppHandle) -> tauri::Result<()> {
             let started = Instant::now();
             *h.state::<WindowState>().floating_moved_at.lock().unwrap() = Some(started);
             let h2 = h.clone();
-            // 拖动结束（200 毫秒没有新的移动）后吸附并记住位置。
+            // 拖动结束（250 毫秒没有新的移动，并且左键已经松开）后吸附 / 收起并记住位置。
+            // 只看停顿的话，拖到一半停一下就会在手底下收起来。
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(250)).await;
+                while left_button_down() {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
                 if *h2.state::<WindowState>().floating_moved_at.lock().unwrap() == Some(started) {
                     let h3 = h2.clone();
                     let _ = h2.run_on_main_thread(move || snap_and_persist(&h3));
@@ -322,22 +343,38 @@ fn snap_and_persist(app: &AppHandle) {
     if let Some(m) = monitor {
         let work = m.work_area();
         let t = (SNAP_THRESHOLD * m.scale_factor()) as i32;
-        let overhang = (COLLAPSE_OVERHANG * m.scale_factor()) as i32;
+        let overhang = (COLLAPSE_OVERHANG * m.scale_factor()).max(size.width as f64 / 3.0) as i32;
+        let redock = (REDOCK_DISTANCE * m.scale_factor()) as i32;
         let (left, top) = (work.position.x, work.position.y);
         let work_right = left + work.size.width as i32;
         let right = work_right - size.width as i32;
         let bottom = top + work.size.height as i32 - size.height as i32;
+        let center = x + size.width as i32 / 2;
+        // 那一边接着另一块屏幕时是在换屏，不收
+        let screen = m.position();
+        let screen_right = screen.x + m.size().width as i32;
+        let mid_y = (y + size.height as i32 / 2) as f64;
+        let neighbor = |px: i32| w.monitor_from_point(px as f64, mid_y).ok().flatten().is_some_and(|n| n.position() != m.position());
         if docked.is_some() {
-            dock = Some(if x + size.width as i32 / 2 < left + work.size.width as i32 / 2 { DockEdge::Left } else { DockEdge::Right });
-        } else if x < left - overhang {
+            // 拖动收起的窄条：放回屏幕边附近继续收着，拖远了就在那里展开
+            dock = if center - left < redock {
+                Some(DockEdge::Left)
+            } else if work_right - center < redock {
+                Some(DockEdge::Right)
+            } else {
+                None
+            };
+        } else if x < left - overhang && !neighbor(screen.x - 1) {
             dock = Some(DockEdge::Left);
-        } else if x + size.width as i32 > work_right + overhang {
+        } else if x + size.width as i32 > work_right + overhang && !neighbor(screen_right + 1) {
             dock = Some(DockEdge::Right);
         }
         match dock {
             // 收起后窗口会按窄条重新量尺寸（fit_floating 贴边），这里先贴边、限制在屏幕上下之间
             Some(DockEdge::Left) => x = left,
             Some(DockEdge::Right) => x = right,
+            // 窄条拖离了屏幕边：就地展开（展开后 fit_floating 按内容量尺寸）
+            None if docked.is_some() => {}
             None => {
                 if (x - left).abs() < t {
                     x = left;

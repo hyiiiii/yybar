@@ -63,7 +63,7 @@ export function Floating() {
           if (press.current) api.expandFloating();
           press.current = null;
         }}
-        title={tr("Click to expand · drag to move along the edge", "单击展开 · 拖动可沿屏幕边上下移动")}
+        title={tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there", "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")}
       >
         {rows.map((s) => {
           const rem = remaining(headlineWindow(s.app, s.quota));
