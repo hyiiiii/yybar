@@ -12,8 +12,6 @@ import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type UsageApp 
 export function Floating() {
   const state = useAppState();
   const ref = useRef<HTMLDivElement>(null);
-  /** 收起时按下鼠标的位置：没移动就松开算单击（展开），移动超过 3 像素才开始拖动。 */
-  const press = useRef<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -49,19 +47,10 @@ export function Floating() {
       <div
         ref={ref}
         className={`hud collapsed dock-${dock}`}
+        // 按下就交给系统拖；松手后后台判断：没移动 = 单击展开，移动了 = 拖动（放回屏幕边继续收着，拖远了就地展开）。
+        // 窄条只有 30 宽，等前端看到「移动了 3 像素」再开始拖，快速一甩时鼠标早已离开窄条
         onMouseDown={(e) => {
-          if (e.button === 0) press.current = { x: e.screenX, y: e.screenY };
-        }}
-        onMouseMove={(e) => {
-          const p = press.current;
-          if (p && e.buttons === 1 && Math.hypot(e.screenX - p.x, e.screenY - p.y) > 3) {
-            press.current = null;
-            api.dragFloating();
-          }
-        }}
-        onMouseUp={() => {
-          if (press.current) api.expandFloating();
-          press.current = null;
+          if (e.button === 0) api.dragFloating();
         }}
         title={tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there", "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")}
       >

@@ -305,7 +305,7 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-/// 前端在悬浮窗上按下并要拖动时调用：交给系统拖（start_dragging 立刻返回），等左键松开后再判断
+/// 前端在悬浮窗上按下时调用（收起的窄条也一样，单击 / 拖动都在这里分辨）：交给系统拖（start_dragging 立刻返回），等左键松开后再判断
 /// 吸附 / 收起 / 展开（见 snap_and_persist）。拖动看鼠标有没有移动：贴着屏幕边往外推时系统不挪窗口，
 /// 但这也是一次拖动（推到边 → 收起）。
 pub fn drag_floating(app: &AppHandle) {
@@ -329,6 +329,9 @@ pub fn drag_floating(app: &AppHandle) {
             let window_moved = matches!((start_pos, pos), (Some(a), Some(b)) if (a.x - b.x).abs() + (a.y - b.y).abs() >= 3);
             if cursor_moved || window_moved {
                 snap_and_persist(&h2, cursor);
+            } else {
+                // 没拖动：收起的窄条上就是单击 → 展开（展开的悬浮窗上单击什么也不做）
+                expand_floating(&h2);
             }
         });
     });
