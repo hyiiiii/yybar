@@ -11,6 +11,7 @@ body,
 .main-root {
   display: flex;
   height: 100%;
+  position: relative;
 }
 
 .main-loading {
@@ -129,13 +130,36 @@ body,
   display: flex;
   flex-direction: column;
   position: relative;
+  background: var(--content-bg);
 }
 
+/* 侧边栏显示时在它右上角、和「统计」同一行；隐藏后停在内容区左上角 */
 .sidebar-toggle {
   position: absolute;
   top: 10px;
-  left: 6px;
+  left: 116px;
   z-index: 5;
+  transition: left 0.22s ease-in-out;
+}
+
+.sidebar-hidden .sidebar-toggle {
+  left: 6px;
+}
+
+/* 侧边栏隐藏后，内容区左上角给按钮让位 */
+.sidebar-hidden .toolbar {
+  padding-left: 40px;
+}
+
+/* 设置页没有工具栏，第一个标题挪开一点 */
+.sidebar-hidden .page-swap > .sectioned .section:first-child > .section-heading {
+  padding-left: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-toggle {
+    transition: none;
+  }
 }
 
 .stats-root {
@@ -149,16 +173,18 @@ body,
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  padding: 12px 24px 12px 40px;
+  padding: 12px 24px;
   border-bottom: 0.5px solid var(--separator);
+  transition: padding-left 0.22s ease-in-out;
 }
 
+/* 按内容宽度占位、不收缩：放不下服务筛选时整组换到第二行（同 Mac 的 ViewThatFits），不会叠在一起 */
 .toolbar-left {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  flex: 1;
+  flex: 1 0 auto;
 }
 
 .custom-range {
@@ -1108,6 +1134,13 @@ body,
   color: var(--text-secondary);
   margin: -2px 4px 0;
   line-height: 1.5;
+}
+
+.services-empty {
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .restore-button {

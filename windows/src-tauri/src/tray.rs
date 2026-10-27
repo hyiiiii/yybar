@@ -173,7 +173,7 @@ pub fn update(handle: &AppHandle) {
         let g = state.inner.lock().unwrap();
         let mut entries: Vec<Entry> = Vec::new();
         for app in UsageApp::ALL {
-            if g.settings.tray_shows(app) && !g.is_removed(app) {
+            if g.settings.tray_shows(app) && g.local_shown(app) {
                 entries.push(Entry { id: tray_id(app), app, snapshot: g.quota(app), name: None });
             }
             for other in g.shown_others(app, true) {
@@ -311,9 +311,12 @@ fn ensure_ticker(handle: &AppHandle) {
         loop {
             let (breathing, needs) = {
                 let state = h.state::<AppState>();
-                let settings = state.settings();
+                let (settings, shown) = {
+                    let g = state.inner.lock().unwrap();
+                    let shown: BTreeSet<UsageApp> = UsageApp::ALL.into_iter().filter(|a| g.settings.tray_shows(*a) && g.local_shown(*a)).collect();
+                    (g.settings.clone(), shown)
+                };
                 let snap = state.activity.snapshot();
-                let shown: BTreeSet<UsageApp> = UsageApp::ALL.into_iter().filter(|a| settings.tray_shows(*a)).collect();
                 (settings.menu_bar_breathe_when_active && snap.active.iter().any(|a| shown.contains(a)), state.activity.needs_ticking())
             };
             if !breathing && !needs {

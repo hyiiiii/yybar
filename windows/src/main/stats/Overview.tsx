@@ -10,7 +10,7 @@ import { compactToken, cost, parseDay } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { quotaLanes } from "../../shared/quota";
 import { accentVar, shortName } from "../../shared/services";
-import type { StateSnapshot, UsageApp } from "../../shared/types";
+import { localShown, type StateSnapshot, type UsageApp } from "../../shared/types";
 import { allTokens, nonCacheReadTokens, type Totals } from "../../shared/usage";
 import { addDays, todayString, TokenHeat, type Baseline, type Bounds, type Metric, type StatsIndex } from "./data";
 import { DailyChart, type DailySample } from "./DailyChart";
@@ -392,9 +392,14 @@ function SingleDayPanel({ index, apps, day, isToday, isYesterday, metric, baseli
 
 function CurrentLimits({ state, apps }: { state: StateSnapshot; apps: UsageApp[] }) {
   const now = useTicker(30_000);
-  const shown = apps.filter((a) => state.services.find((s) => s.app === a)?.enabled !== false);
+  // 只列本机登录着并启用的账号（未识别的没有额度可看）
+  const shown = apps.filter((a) => {
+    const s = state.services.find((x) => x.app === a);
+    return s != null && s.enabled && localShown(s);
+  });
   return (
     <Panel title={tr("Current limits", "当前额度")}>
+      {shown.length === 0 && <div className="secondary" style={{ fontSize: 12 }}>{tr("No signed-in accounts.", "没有登录着的账号。")}</div>}
       <div className="limits-grid">
         {shown.map((app, i) => {
           const s = state.services.find((x) => x.app === app)!;

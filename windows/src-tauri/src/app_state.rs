@@ -326,6 +326,12 @@ impl Inner {
         }
     }
 
+    /// 本机账号在 yybar 里出现：本机 CLI 登录着（agy 为装了 CLI），且没被用户从列表删掉。
+    /// 没有时设置页不列、托盘 / 悬浮窗 / 弹出窗口也不显示它。
+    pub fn local_shown(&self, app: UsageApp) -> bool {
+        self.detected(app) && !self.is_removed(app)
+    }
+
     fn detected(&self, app: UsageApp) -> bool {
         match app {
             UsageApp::Codex => self.codex.is_some(),

@@ -74,7 +74,7 @@ export function MainWindow() {
   const latest = Math.max(0, ...state.services.map((s) => s.refresh.lastSuccessAt ?? 0));
 
   return (
-    <div className="main-root">
+    <div className={`main-root ${sidebar ? "" : "sidebar-hidden"}`}>
       {/* 侧边栏隐藏 / 显示时滑出滑入（对应 Mac 的 .move(edge: .leading)） */}
       <aside className={`sidebar ${sidebar ? "" : "collapsed"}`} aria-hidden={!sidebar}>
           <SidebarGroup title={tr("Statistics", "统计")} pages={STATS_PAGES} active={active} onSelect={select} />
@@ -98,19 +98,20 @@ export function MainWindow() {
             <RefreshButton onClick={() => api.refreshNow()} size={13} />
           </div>
       </aside>
+      {/* 侧边栏按钮：显示时在侧边栏右上角（Mac 在标题栏同一位置），隐藏后留在内容区左上角 */}
+      <button
+        className="icon-button sidebar-toggle"
+        title={sidebar ? tr("Hide sidebar (Ctrl+Shift+S)", "隐藏侧边栏（Ctrl+Shift+S）") : tr("Show sidebar (Ctrl+Shift+S)", "显示侧边栏（Ctrl+Shift+S）")}
+        onClick={() =>
+          setSidebar((v) => {
+            setUiValue("sidebar", !v);
+            return !v;
+          })
+        }
+      >
+        <Icon name="sidebar" size={14} />
+      </button>
       <main className="content">
-        <button
-          className="icon-button sidebar-toggle"
-          title={sidebar ? tr("Hide sidebar (Ctrl+Shift+S)", "隐藏侧边栏（Ctrl+Shift+S）") : tr("Show sidebar (Ctrl+Shift+S)", "显示侧边栏（Ctrl+Shift+S）")}
-          onClick={() =>
-            setSidebar((v) => {
-              setUiValue("sidebar", !v);
-              return !v;
-            })
-          }
-        >
-          <Icon name="sidebar" size={14} />
-        </button>
         {/* 统计 / 设置 / bar 之间切换时新的一页弹簧淡入（对应 Mac mainTab 变化的 spring 动画） */}
         <div key={active === "bar" ? "bar" : isStats(active) ? "stats" : "settings"} className="page-swap">
           {active === "bar" ? (

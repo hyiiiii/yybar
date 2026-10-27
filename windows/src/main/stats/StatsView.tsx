@@ -6,7 +6,7 @@ import { Icon, Segmented, ServiceLogo, StatusDot } from "../../shared/design";
 import { compactToken, cost } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { displayName, shortName } from "../../shared/services";
-import { ALL_APPS, isEnabled, type StateSnapshot, type UsageApp } from "../../shared/types";
+import { ALL_APPS, isEnabled, localShown, type StateSnapshot, type UsageApp } from "../../shared/types";
 import { Section, SectionHeading, SectionedPage, type ScrollRequest } from "../SectionedPage";
 import { STATS_PAGES, type MainTab } from "../tabs";
 import { usePersisted } from "../uiState";
@@ -42,10 +42,17 @@ export function StatsView({ state, index, active, request, onActive }: {
   const [customTo, setCustomTo] = usePersisted("stats.customTo", todayString());
 
   const settings = state.settings;
+  // 统计页列出的服务：本机登录着并启用的、有其他账号的，或者留有本地用量记录的；都没有的不出现
+  const present: UsageApp[] = ALL_APPS.filter((a) => {
+    const s = state.services.find((x) => x.app === a);
+    return (s != null && localShown(s) && isEnabled(settings, a)) || state.others.some((o) => o.app === a) || (index?.firstDays.has(a) ?? false);
+  });
+  const presentKey = present.join();
   const visibleApps: UsageApp[] = useMemo(() => {
-    if (filter === "all") return ALL_APPS.filter((a) => a !== "agy" || isEnabled(settings, a));
+    if (filter === "all" || !present.includes(filter)) return present;
     return [filter];
-  }, [filter, settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, presentKey]);
 
   const bounds = rangeBounds(range, customFrom, customTo);
   const previous = previousBounds(range, customFrom, customTo);
@@ -53,7 +60,7 @@ export function StatsView({ state, index, active, request, onActive }: {
 
   const sel: StatsSelections = { range, filter, metric, baseline, mergeTokens, customFrom, customTo };
 
-  const chips: ServiceFilter[] = ["all", "codex", "claude", "grok", ...(isEnabled(settings, "agy") ? (["agy"] as const) : [])];
+  const chips: ServiceFilter[] = ["all", ...present];
 
   return (
     <div className="stats-root">
@@ -70,7 +77,7 @@ export function StatsView({ state, index, active, request, onActive }: {
         </div>
         <div className="chips">
           {chips.map((c) => (
-            <button key={c} className={`chip ${filter === c ? "active" : ""}`} onClick={() => setFilter(c)}>
+            <button key={c} className={`chip ${filter === c || (c === "all" && !present.includes(filter as UsageApp)) ? "active" : ""}`} onClick={() => setFilter(c)}>
               {c !== "all" && <StatusDot status={settings.showServiceStatus ? state.services.find((s) => s.app === c)?.status : null} grayWhenMissing size={7} />}
               {c === "all" ? tr("All", "全部") : shortName(c)}
             </button>

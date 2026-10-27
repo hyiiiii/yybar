@@ -63,7 +63,7 @@ export function demoState(): StateSnapshot {
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
   const ds = Math.floor(dayStart.getTime() / 1000);
-  return {
+  const state: StateSnapshot = {
     services: [
       service("codex", snap("codex", 58, 31), "me@example.com", "pro", {
         renewal: { date: t + 2 * 86400, estimated: false, basis: t + 2 * 86400 },
@@ -182,6 +182,12 @@ export function demoState(): StateSnapshot {
       usedManualToday: false,
     },
   };
+  // 地址带 ?empty：模拟本机什么都没登录、也没添加账号（看空状态）
+  if (new URLSearchParams(location.search).has("empty")) {
+    state.services = state.services.map((x) => ({ ...x, detected: false, email: null, plan: null, quota: null }));
+    state.others = [];
+  }
+  return state;
 }
 
 export function demoUsage(): UsagePayload {

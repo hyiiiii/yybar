@@ -10,7 +10,7 @@ import { compactToken, cost, relativeShort } from "../shared/format";
 import { tr } from "../shared/l10n";
 import { shortLabel, windowsFor } from "../shared/quota";
 import { accentVar, displayName } from "../shared/services";
-import { ALL_APPS, trayShows, type QuotaSnapshot, type RefreshState, type ServiceStatus, type UsageApp } from "../shared/types";
+import { ALL_APPS, localShown, trayShows, type QuotaSnapshot, type RefreshState, type ServiceStatus, type UsageApp } from "../shared/types";
 import { allTokens, dayBounds, totalsBetween } from "../shared/usage";
 
 export function Popover() {
@@ -53,7 +53,7 @@ export function Popover() {
   for (const app of ALL_APPS) {
     const s = state.services.find((x) => x.app === app);
     if (!s) continue;
-    if (trayShows(settings, app) && !s.removed) {
+    if (trayShows(settings, app) && localShown(s)) {
       entries.push({ key: app, app, title: displayName[app], plan: s.plan, quota: s.quota, refresh: s.refresh, status: s.status });
     }
     for (const o of state.others) {
@@ -66,7 +66,8 @@ export function Popover() {
   const totals = totalsBetween(usage?.buckets ?? [], today, tomorrow);
   const todaySummary = tr(`Today ${cost(totals.cost)} · ${compactToken(allTokens(totals))} tokens`, `今日 ${cost(totals.cost)} · ${compactToken(allTokens(totals))} Token`);
 
-  const shown = entries.length ? entries.map((e) => e.refresh) : state.services.filter((s) => ["codex", "claude", "grok"].includes(s.app)).map((s) => s.refresh);
+  const noAccounts = state.services.every((s) => !localShown(s)) && state.others.length === 0;
+  const shown = entries.length ? entries.map((e) => e.refresh) : state.services.filter(localShown).map((s) => s.refresh);
   const latest = Math.max(0, ...shown.map((r) => r.lastSuccessAt ?? 0));
   const refreshed = latest > 0 ? tr(`Updated ${relativeShort(latest, now)} ago`, `${relativeShort(latest, now)} 前更新`) : tr("Waiting for data", "等待数据");
 
@@ -90,7 +91,11 @@ export function Popover() {
       </header>
       <div className="divider" />
       {entries.length === 0 ? (
-        <div className="pop-empty">{tr("No services in the tray. Choose them in Settings › Services.", "托盘没有显示任何服务，可在 设置 · 服务 里勾选。")}</div>
+        <div className="pop-empty">
+          {noAccounts
+            ? tr("No accounts yet. Sign in with a CLI on this PC, or add one in Settings › Services.", "还没有账号。在本机用 CLI 登录，或在 设置 · 服务 里添加账号。")
+            : tr("No services in the tray. Choose them in Settings › Services.", "托盘没有显示任何服务，可在 设置 · 服务 里勾选。")}
+        </div>
       ) : (
         <div className="pop-entries">
           {entries.map((s) => {

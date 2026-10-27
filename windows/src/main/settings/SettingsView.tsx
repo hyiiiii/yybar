@@ -7,7 +7,7 @@ import { Checkbox, Icon, Segmented, Select, ServiceTile, Toggle } from "../../sh
 import { relativeShort, timeString } from "../../shared/format";
 import { isChinese, tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
-import { ALL_APPS, SETTING_KEYS, type IntervalChoice, type OtherAccountView, type ServiceView, type Settings, type StateSnapshot, type SubscriptionRenewal, type SwitchNotice, type UsageApp, type UsagePayload } from "../../shared/types";
+import { ALL_APPS, SETTING_KEYS, localShown, type IntervalChoice, type OtherAccountView, type ServiceView, type Settings, type StateSnapshot, type SubscriptionRenewal, type SwitchNotice, type UsageApp, type UsagePayload } from "../../shared/types";
 import { Section, SectionHeading, SectionedPage, type ScrollRequest } from "../SectionedPage";
 import { SETTINGS_PAGES, tabTitle, type MainTab } from "../tabs";
 import { ModelPrices } from "./ModelPrices";
@@ -35,6 +35,7 @@ export function SettingsView({ state, usage, active, request, onActive }: {
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const now = useTicker(1000);
   const anyRemoved = Object.keys(s.removedLocalAccounts).length > 0;
+  const noAccounts = state.services.every((x) => !localShown(x)) && state.others.length === 0;
   const latest = Math.max(0, ...state.services.map((x) => x.refresh.lastSuccessAt ?? 0));
 
   return (
@@ -49,18 +50,29 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               "绿点表示本机 CLI 正在使用的账号；点其他账号左侧的圆圈，即可把本机 CLI 切换到该账号",
             )}
           >
-            <MatrixHeader />
+            {noAccounts ? (
+              <div className="services-empty">
+                {tr(
+                  "No accounts yet. A CLI signed in on this PC shows up here automatically, or add an account below.",
+                  "还没有账号。本机 CLI 登录后会自动出现在这里，也可以点下方「添加账号…」添加。",
+                )}
+              </div>
+            ) : (
+              <MatrixHeader />
+            )}
             {ALL_APPS.map((app) => {
               const service = state.services.find((x) => x.app === app)!;
               const others = state.others.filter((o) => o.app === app);
-              if (service.removed && others.length === 0) return null;
+              // 本机没登录（未识别）的服务不列，只列其他账号
+              const local = localShown(service);
+              if (!local && others.length === 0) return null;
               return (
                 <div key={app}>
                   <div className="divider" />
-                  {!service.removed && <ServiceRow state={state} service={service} buckets={usage?.buckets ?? []} onDelete={() => setConfirm(app)} />}
+                  {local && <ServiceRow state={state} service={service} buckets={usage?.buckets ?? []} onDelete={() => setConfirm(app)} />}
                   {others.map((o, i) => (
                     <div key={o.id} className="row-enter">
-                      {(i > 0 || !service.removed) && <div className="divider inset" />}
+                      {(i > 0 || local) && <div className="divider inset" />}
                       <OtherRow state={state} service={service} account={o} buckets={usage?.buckets ?? []} onDelete={() => setOtherConfirm(o)} />
                     </div>
                   ))}

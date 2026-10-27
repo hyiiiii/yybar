@@ -262,3 +262,5 @@ export const SETTING_KEYS: Record<UsageApp, { enabled: keyof Settings; tray: key
 export const isEnabled = (s: Settings, app: UsageApp) => Boolean(s[SETTING_KEYS[app].enabled]);
 export const trayShows = (s: Settings, app: UsageApp) => isEnabled(s, app) && Boolean(s[SETTING_KEYS[app].tray]);
 export const floatingShows = (s: Settings, app: UsageApp) => isEnabled(s, app) && Boolean(s[SETTING_KEYS[app].floating]);
+/** 本机账号在 yybar 里出现：本机 CLI 登录着（agy 为装了 CLI），且没被从列表删掉。没有时设置页不列，任务栏 / 悬浮窗 / 弹出窗口也不显示。 */
+export const localShown = (s: ServiceView) => s.detected && !s.removed;

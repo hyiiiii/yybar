@@ -6,7 +6,7 @@ import { api, useAppState } from "../shared/api";
 import { ProgressBar, ServiceTile, statusColor } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
-import { ALL_APPS, floatingShows, type QuotaSnapshot, type UsageApp } from "../shared/types";
+import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type UsageApp } from "../shared/types";
 
 export function Floating() {
   const state = useAppState();
@@ -31,7 +31,7 @@ export function Floating() {
     for (const app of ALL_APPS) {
       const s = state.services.find((x) => x.app === app);
       const group: Row[] = [];
-      if (s && floatingShows(state.settings, app) && !s.removed) group.push({ key: app, app, name: s.email ? s.email.split("@")[0] : null, quota: s.quota });
+      if (s && floatingShows(state.settings, app) && localShown(s)) group.push({ key: app, app, name: s.email ? s.email.split("@")[0] : null, quota: s.quota });
       for (const o of state.others) {
         if (o.app === app && o.enabled && o.showInFloating) group.push({ key: o.id, app, name: o.name, quota: o.quota });
       }
@@ -65,7 +65,7 @@ export function Floating() {
           </div>
         );
       })}
-      {state && rows.length === 0 && <span className="secondary" style={{ fontSize: 11 }}>{tr("No services", "未启用")}</span>}
+      {state && rows.length === 0 && <span className="secondary" style={{ fontSize: 11 }}>{tr("Nothing to show", "没有要显示的账号")}</span>}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { api, useAppState } from "../shared/api";
 import { Icon, ServiceLogo, ServiceTile, Toggle } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { displayName, providerName } from "../shared/services";
-import type { ServiceView, StateSnapshot, UsageApp } from "../shared/types";
+import { localShown, type ServiceView, type StateSnapshot, type UsageApp } from "../shared/types";
 
 export function Onboarding() {
   const state = useAppState();
@@ -143,18 +143,23 @@ function Configure({ state, onBack, onContinue }: { state: StateSnapshot; onBack
       <div className="rows">
         <ConfigureRow title={tr("Show in the taskbar", "任务栏")} subtitle={tr("One tray icon per service with its remaining percentage.", "每个服务一个托盘图标，显示剩余百分比")}>
           <div className="toggles">
+            {/* 只列本机登录着的服务；默认都不勾 */}
             {(
               [
-                ["Codex", "menuBarShowCodex"],
-                ["Claude", "menuBarShowClaude"],
-                ["Grok", "menuBarShowGrok"],
+                ["codex", "Codex", "menuBarShowCodex"],
+                ["claude", "Claude", "menuBarShowClaude"],
+                ["grok", "Grok", "menuBarShowGrok"],
+                ["agy", "Antigravity", "menuBarShowAgy"],
               ] as const
-            ).map(([label, key]) => (
-              <label key={key}>
-                <Toggle checked={s[key]} onChange={(v) => api.updateSettings({ [key]: v })} small />
-                {label}
-              </label>
-            ))}
+            )
+              .filter(([app]) => state.services.some((x) => x.app === app && localShown(x)))
+              .map(([, label, key]) => (
+                <label key={key}>
+                  <Toggle checked={s[key]} onChange={(v) => api.updateSettings({ [key]: v })} small />
+                  {label}
+                </label>
+              ))}
+            {!state.services.some(localShown) && <span className="secondary">{tr("No accounts detected", "没有检测到账号")}</span>}
           </div>
         </ConfigureRow>
         <ConfigureRow title={tr("Floating window", "桌面悬浮窗")} subtitle={tr("Pin a small always-on-top window to your desktop.", "在桌面常驻一个置顶的小悬浮窗")}>

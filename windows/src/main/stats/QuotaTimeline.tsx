@@ -8,7 +8,7 @@ import { Collapsible, Icon, RollingText, Segmented, statusColor, Toggle } from "
 import { dayString, quotaDelta, timeString } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
-import type { QuotaSnapshot, ChangeEvent, QuotaWindow, StateSnapshot, UsageApp } from "../../shared/types";
+import { localShown, type QuotaSnapshot, type ChangeEvent, type QuotaWindow, type StateSnapshot, type UsageApp } from "../../shared/types";
 import { SectionHeading } from "../SectionedPage";
 import { usePersisted } from "../uiState";
 import { Placeholder } from "./Panel";
@@ -74,7 +74,7 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
     });
   };
   for (const s of state.services) {
-    if (s.enabled && !s.removed) {
+    if (s.enabled && localShown(s)) {
       const q = s.quota;
       if (s.app === "agy") addAgy(s.historyKeys, q, s.plan, s.email);
       else if (s.app !== "grok" || weekly) add(s.app, s.historyKeys[0], titleOf(displayName[s.app], s.plan, s.email), weekly ? q?.weekly ?? q?.primary : q?.fiveHour, s.detected);
