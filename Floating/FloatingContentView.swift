@@ -94,9 +94,8 @@ struct FloatingContentView: View {
         }
         .clipShape(shape)
         .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
-        // 点击 / 拖动交给 AppKit 视图：非激活面板里第一下点击也能收到，不和窗口背景拖动抢
-        .overlay(DockedTabMouse(help: tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there",
-                                         "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")))
+        .overlay(FloatingMouse(help: tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there",
+                                        "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")))
         .fixedSize()
     }
 
@@ -140,6 +139,7 @@ struct FloatingContentView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+        .overlay(FloatingMouse(help: tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")))
         // 阴影交给 NSPanel 的 hasShadow,它按内容 alpha 自动取圆角形状,
         // SwiftUI 这层 shadow 会被 panel 边界裁掉而且和系统阴影叠加,所以移除。
         .fixedSize()
@@ -201,49 +201,31 @@ private struct FloatingRow: View {
     }
 }
 
-/// 收起窄条上的鼠标处理：没移动就松开 = 展开；移动超过 3pt = 拖动窄条(见 FloatingPanelController.dragDocked)。
-private struct DockedTabMouse: NSViewRepresentable {
+/// 悬浮窗(展开和收起)上的鼠标处理：按下时把拖动交给系统(`performDrag`,松手才返回),
+/// 再告诉 controller 这次有没有拖动过(见 FloatingPanelController.mouseReleased)。
+/// 用 AppKit 视图接：非激活面板里第一下点击也能收到。
+private struct FloatingMouse: NSViewRepresentable {
     let help: String
 
-    func makeNSView(context: Context) -> DockedTabMouseView {
-        let view = DockedTabMouseView()
+    func makeNSView(context: Context) -> FloatingMouseView {
+        let view = FloatingMouseView()
         view.toolTip = help
         return view
     }
 
-    func updateNSView(_ nsView: DockedTabMouseView, context: Context) {
+    func updateNSView(_ nsView: FloatingMouseView, context: Context) {
         nsView.toolTip = help
     }
 }
 
-final class DockedTabMouseView: NSView {
-    private var downAt: NSPoint?
-    private var dragging = false
-
+final class FloatingMouseView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
-        downAt = NSEvent.mouseLocation
-        dragging = false
-        FloatingPanelController.shared.dockedMouseDown()
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let downAt else { return }
-        let p = NSEvent.mouseLocation
-        if !dragging, hypot(p.x - downAt.x, p.y - downAt.y) < 3 { return }
-        dragging = true
-        FloatingPanelController.shared.dragDocked(ended: false)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if dragging {
-            FloatingPanelController.shared.dragDocked(ended: true)
-        } else {
-            FloatingPanelController.shared.expand()
-        }
-        downAt = nil
-        dragging = false
+        guard let window else { return }
+        let before = window.frame.origin
+        window.performDrag(with: event)
+        let after = window.frame.origin
+        FloatingPanelController.shared.mouseReleased(moved: hypot(after.x - before.x, after.y - before.y) >= 3)
     }
 }

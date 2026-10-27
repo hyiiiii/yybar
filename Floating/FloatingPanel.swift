@@ -4,7 +4,7 @@ import AppKit
 /// - 无标题、无边框
 /// - 不抢焦点（`.nonactivatingPanel` + `canBecomeKey/Main = false`）
 /// - 置顶；在所有 Space 与全屏应用上可见
-/// - 可拖动（`isMovableByWindowBackground`）
+/// - 可拖动（FloatingMouseView → `performDrag`）
 final class FloatingPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
@@ -20,7 +20,8 @@ final class FloatingPanel: NSPanel {
         hasShadow = true
         isOpaque = false
         backgroundColor = .clear
-        isMovableByWindowBackground = true
+        // 拖动由内容上的 FloatingMouseView 调 performDrag 处理(SwiftUI 内容上「按背景拖动」不可靠，有的系统上完全拖不动)
+        isMovableByWindowBackground = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         worksWhenModal = false

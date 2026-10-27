@@ -9,7 +9,6 @@ final class FloatingPanelController: NSObject {
     private var hostingView: NSHostingView<AnyView>?
     private weak var appState: AppState?
     private var observers: [NSObjectProtocol] = []
-    private var snapTask: Task<Void, Never>?
 
     /// 默认窗口大小（实际大小由 SwiftUI fixedSize 收缩决定，这里只是初始 contentRect）
     private static let defaultSize = CGSize(width: 160, height: 64)
@@ -21,8 +20,6 @@ final class FloatingPanelController: NSObject {
     private static func collapseOverhang(width: CGFloat) -> CGFloat { max(40, width / 3) }
     /// 拖完收起的窄条，离屏幕左 / 右边不超过这么远就重新贴边，拖得更远就在那里展开
     private static let redockDistance: CGFloat = 60
-    /// 收起时拖动窄条：按下鼠标时的鼠标位置和窗口位置
-    private var dockDragStart: (mouse: CGPoint, frame: CGRect)?
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -81,7 +78,6 @@ final class FloatingPanelController: NSObject {
     /// 收起成贴在 edge 那条边上的窄条(只显示各行的剩余百分比)。
     private func collapse(to edge: FloatingDockEdge) {
         SettingsStore.shared.floatingDockEdge = edge
-        panel?.isMovableByWindowBackground = false
         resizeToFitContent()
     }
 
@@ -89,29 +85,26 @@ final class FloatingPanelController: NSObject {
     func expand() {
         guard SettingsStore.shared.floatingDockEdge != nil else { return }
         SettingsStore.shared.floatingDockEdge = nil
-        panel?.isMovableByWindowBackground = true
         resizeToFitContent()
     }
 
-    /// 在收起的窄条上按下鼠标：记下起点，拖动时窄条跟着鼠标走。
-    func dockedMouseDown() {
+    /// 悬浮窗上的一次按下 → 松开结束(拖动由 FloatingMouseView 交给系统 performDrag,松手才回到这里)。
+    /// 展开时：拖动过就吸附 / 收起。收起时：没拖动 = 单击展开；拖动过 = 放回屏幕边继续收着，拖远了就在那里展开。
+    func mouseReleased(moved: Bool) {
         guard let panel else { return }
-        dockDragStart = (NSEvent.mouseLocation, panel.frame)
-    }
-
-    /// 拖动收起的窄条：跟着鼠标走；松手时离屏幕左 / 右边不远就重新贴边收起，拖远了就在那里展开。
-    func dragDocked(ended: Bool) {
-        guard let panel, let start = dockDragStart else { return }
-        let mouse = NSEvent.mouseLocation
+        let settings = SettingsStore.shared
+        guard settings.floatingDockEdge != nil else {
+            if moved { snapToEdgeIfNeeded() }
+            return
+        }
+        guard moved else {
+            expand()
+            return
+        }
         var frame = panel.frame
-        frame.origin.x = start.frame.origin.x + mouse.x - start.mouse.x
-        frame.origin.y = start.frame.origin.y + mouse.y - start.mouse.y
-        panel.setFrame(frame, display: true)
-        guard ended else { return }
-        dockDragStart = nil
+        let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? panel.screen ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let settings = SettingsStore.shared
         if frame.midX - visible.minX < Self.redockDistance {
             settings.floatingDockEdge = .left
         } else if visible.maxX - frame.midX < Self.redockDistance {
@@ -119,7 +112,6 @@ final class FloatingPanelController: NSObject {
         } else {
             // 拖离了屏幕边：在松手的地方展开
             settings.floatingDockEdge = nil
-            panel.isMovableByWindowBackground = true
         }
         if let edge = settings.floatingDockEdge {
             frame.origin.x = edge == .left ? visible.minX : visible.maxX - frame.width
@@ -154,8 +146,6 @@ final class FloatingPanelController: NSObject {
         hosting.frame = panel.contentView?.bounds ?? .zero
         hosting.autoresizingMask = [.width, .height]
         panel.setFrame(adjustedFrame(initialFrame), display: false)
-        // 上次退出时是收起的：窄条自己处理拖动
-        panel.isMovableByWindowBackground = settings.floatingDockEdge == nil
 
         self.panel = panel
         self.hostingView = hosting
@@ -185,28 +175,16 @@ final class FloatingPanelController: NSObject {
         observers = [move, resize]
     }
 
+    /// 记住位置(吸附 / 收起在松手时由 mouseReleased 处理)。
     private func persistFrame() {
         guard let panel else { return }
         SettingsStore.shared.floatingPanelFrame = panel.frame
-
-        // 拖动期间 didMove 会持续触发,延迟一小段时间没有新事件、并且鼠标已经松开再吸附 / 收起
-        // (isMovableByWindowBackground 没有显式结束通知;只看停顿的话，拖到一半停一下就会在手底下收起来)
-        snapTask?.cancel()
-        snapTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            while NSEvent.pressedMouseButtons & 1 != 0 {
-                guard !Task.isCancelled else { return }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-            guard !Task.isCancelled else { return }
-            self?.snapToEdgeIfNeeded()
-        }
     }
 
     private func snapToEdgeIfNeeded() {
         guard let panel else { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
-        // 已经收起：位置由 dragDocked 控制
+        // 已经收起：位置由 mouseReleased 控制
         guard SettingsStore.shared.floatingDockEdge == nil else { return }
         // 拖出左 / 右屏幕边缘：收起成贴边的窄条(那一边接着另一块屏幕时是在换屏，不收)
         let visible = screen.visibleFrame
