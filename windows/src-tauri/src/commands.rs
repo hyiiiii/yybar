@@ -52,6 +52,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         fit_popover,
         fit_floating,
         expand_floating,
+        drag_floating,
         finish_onboarding,
         open_url,
         backdrop,
@@ -277,6 +278,12 @@ fn fit_popover(app: AppHandle, height: f64) {
 #[tauri::command]
 fn fit_floating(app: AppHandle, width: f64, height: f64) {
     windows::fit_floating(&app, width, height);
+}
+
+/// 在悬浮窗上按下并拖动：交给系统拖，松手后吸附 / 收起 / 展开。
+#[tauri::command]
+fn drag_floating(app: AppHandle) {
+    windows::drag_floating(&app);
 }
 
 /// 点悬浮窗收起后的窄条：展开。

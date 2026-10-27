@@ -52,8 +52,6 @@ const FLOATING_MARGIN: f64 = 16.0;
 pub struct WindowState {
     /// 浮窗因失焦收起的时刻：点托盘图标会先让浮窗失焦，紧接着的这次点击不应再把它打开。
     popover_hidden_at: Mutex<Option<Instant>>,
-    /// 悬浮窗拖动结束检测（最后一次移动的时刻）
-    floating_moved_at: Mutex<Option<Instant>>,
     /// 主窗口要打开的部分（窗口还没建好时先记下，页面加载后来取）
     pub pending_tab: Mutex<Option<String>>,
     /// 正在后台新建的窗口（连点两下不会建出两个）
@@ -286,26 +284,6 @@ fn create_floating(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
     place_floating(app, &window);
     let _ = window.show();
-    let h = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::Moved(_) = event {
-            let started = Instant::now();
-            *h.state::<WindowState>().floating_moved_at.lock().unwrap() = Some(started);
-            let h2 = h.clone();
-            // 拖动结束（250 毫秒没有新的移动，并且左键已经松开）后吸附 / 收起并记住位置。
-            // 只看停顿的话，拖到一半停一下就会在手底下收起来。
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                while left_button_down() {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-                if *h2.state::<WindowState>().floating_moved_at.lock().unwrap() == Some(started) {
-                    let h3 = h2.clone();
-                    let _ = h2.run_on_main_thread(move || snap_and_persist(&h3));
-                }
-            });
-        }
-    });
     Ok(())
 }
 
@@ -327,9 +305,38 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-/// 拖动结束：拖出屏幕左 / 右边缘超过 COLLAPSE_OVERHANG 时收起成贴边窄条（像微信通话小窗）；
-/// 已收起时只能贴着左 / 右边上下移动（松手时靠近哪边贴哪边）；其余情况离屏幕边 20 像素内吸附。
-fn snap_and_persist(app: &AppHandle) {
+/// 前端在悬浮窗上按下并要拖动时调用：交给系统拖（start_dragging 立刻返回），等左键松开后再判断
+/// 吸附 / 收起 / 展开（见 snap_and_persist）。拖动看鼠标有没有移动：贴着屏幕边往外推时系统不挪窗口，
+/// 但这也是一次拖动（推到边 → 收起）。
+pub fn drag_floating(app: &AppHandle) {
+    let Some(w) = app.get_webview_window(FLOATING) else { return };
+    let start_cursor = app.cursor_position().ok();
+    let start_pos = w.outer_position().ok();
+    let _ = w.start_dragging();
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        while left_button_down() {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+        // 松手后窗口最后一次移动可能稍晚才到
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        let h2 = h.clone();
+        let _ = h.run_on_main_thread(move || {
+            let cursor = h2.cursor_position().ok();
+            let pos = h2.get_webview_window(FLOATING).and_then(|w| w.outer_position().ok());
+            let cursor_moved = matches!((start_cursor, cursor), (Some(a), Some(b)) if (a.x - b.x).hypot(a.y - b.y) >= 5.0);
+            let window_moved = matches!((start_pos, pos), (Some(a), Some(b)) if (a.x - b.x).abs() + (a.y - b.y).abs() >= 3);
+            if cursor_moved || window_moved {
+                snap_and_persist(&h2, cursor);
+            }
+        });
+    });
+}
+
+/// 拖动结束：拖出屏幕左 / 右边缘超过窗口宽度 1/3（或鼠标已经顶到屏幕左 / 右边）时收起成贴边窄条（像微信通话小窗）；
+/// 已收起时放回屏幕边附近继续收着、拖远了就地展开；其余情况离屏幕边 20 像素内吸附。
+fn snap_and_persist(app: &AppHandle, cursor: Option<PhysicalPosition<f64>>) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
     let monitor = w
@@ -355,6 +362,9 @@ fn snap_and_persist(app: &AppHandle) {
         let screen_right = screen.x + m.size().width as i32;
         let mid_y = (y + size.height as i32 / 2) as f64;
         let neighbor = |px: i32| w.monitor_from_point(px as f64, mid_y).ok().flatten().is_some_and(|n| n.position() != m.position());
+        // 鼠标推到屏幕边就推不动了：按着靠边的位置往外推时窗口只能超出一点点，所以鼠标顶到边也算
+        let pushed_left = cursor.is_some_and(|c| c.x <= screen.x as f64 + 1.0) && x <= left + 4;
+        let pushed_right = cursor.is_some_and(|c| c.x >= (screen_right - 2) as f64) && x + size.width as i32 >= work_right - 4;
         if docked.is_some() {
             // 拖动收起的窄条：放回屏幕边附近继续收着，拖远了就在那里展开
             dock = if center - left < redock {
@@ -364,9 +374,9 @@ fn snap_and_persist(app: &AppHandle) {
             } else {
                 None
             };
-        } else if x < left - overhang && !neighbor(screen.x - 1) {
+        } else if (x < left - overhang || pushed_left) && !neighbor(screen.x - 1) {
             dock = Some(DockEdge::Left);
-        } else if x + size.width as i32 > work_right + overhang && !neighbor(screen_right + 1) {
+        } else if (x + size.width as i32 > work_right + overhang || pushed_right) && !neighbor(screen_right + 1) {
             dock = Some(DockEdge::Right);
         }
         match dock {
@@ -391,7 +401,6 @@ fn snap_and_persist(app: &AppHandle) {
             y = bottom;
         }
         if (x, y) != (pos.x, pos.y) {
-            *app.state::<WindowState>().floating_moved_at.lock().unwrap() = None;
             let _ = w.set_position(PhysicalPosition::new(x, y));
         }
     }
@@ -445,7 +454,6 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         (None, Some(a)) if pos.x <= a.position.x => pos.x,
         _ => right - nw as i32,
     };
-    *app.state::<WindowState>().floating_moved_at.lock().unwrap() = None;
     let _ = w.set_size(PhysicalSize::new(nw, nh));
     let _ = w.set_position(PhysicalPosition::new(x, pos.y));
 }

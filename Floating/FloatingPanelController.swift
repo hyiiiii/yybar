@@ -45,11 +45,15 @@ final class FloatingPanelController: NSObject {
     }
 
     /// 用 SwiftUI 的 fittingSize 调整 panel 尺寸，保持左上角不动。
-    /// 立即同步一次；再在下一帧补一次，覆盖 SwiftUI view 异步重渲染的情况。
+    /// 立即同步一次，再在之后几帧补几次：SwiftUI 按设置变化重画内容是异步的(收起 / 展开时尤其明显),
+    /// 只补一次有时还量到旧内容的尺寸，窗口就没变成窄条。
     private func resizeToFitContent() {
         applyFitOnce()
         Task { @MainActor [weak self] in
-            self?.applyFitOnce()
+            for delay: UInt64 in [0, 50, 150, 400] {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+                self?.applyFitOnce()
+            }
         }
     }
 
@@ -95,7 +99,7 @@ final class FloatingPanelController: NSObject {
         let settings = SettingsStore.shared
         guard settings.floatingDockEdge != nil else {
             if moved {
-                snapToEdgeIfNeeded()
+                snapToEdgeIfNeeded(cursor: NSEvent.mouseLocation)
                 settings.floatingPanelFrame = panel.frame
             }
             return
@@ -184,7 +188,8 @@ final class FloatingPanelController: NSObject {
         SettingsStore.shared.floatingPanelFrame = panel.frame
     }
 
-    private func snapToEdgeIfNeeded() {
+    /// 松手后：拖出屏幕左 / 右边缘(或鼠标已经顶到屏幕左 / 右边)就收起成窄条，否则离边 20pt 内吸附。
+    private func snapToEdgeIfNeeded(cursor: CGPoint) {
         guard let panel else { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
         // 已经收起：位置由 mouseReleased 控制
@@ -194,11 +199,14 @@ final class FloatingPanelController: NSObject {
         let frame = panel.frame
         let hasNeighbor = { (x: CGFloat) in NSScreen.screens.contains { $0 != screen && $0.frame.contains(CGPoint(x: x, y: frame.midY)) } }
         let overhang = Self.collapseOverhang(width: frame.width)
-        if frame.minX < visible.minX - overhang, !hasNeighbor(screen.frame.minX - 1) {
+        // 鼠标推到屏幕边就推不动了：按着靠边的位置往外推时窗口只能超出一点点，所以鼠标顶到边也算
+        let pushedLeft = cursor.x <= screen.frame.minX + 2 && frame.minX < visible.minX + 4
+        let pushedRight = cursor.x >= screen.frame.maxX - 3 && frame.maxX > visible.maxX - 4
+        if frame.minX < visible.minX - overhang || pushedLeft, !hasNeighbor(screen.frame.minX - 1) {
             collapse(to: .left)
             return
         }
-        if frame.maxX > visible.maxX + overhang, !hasNeighbor(screen.frame.maxX + 1) {
+        if frame.maxX > visible.maxX + overhang || pushedRight, !hasNeighbor(screen.frame.maxX + 1) {
             collapse(to: .right)
             return
         }

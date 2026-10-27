@@ -162,4 +162,6 @@ export const api = {
   backdrop: () => call<string>("backdrop"),
   quit: () => call("quit"),
   startDragging: () => (inTauri ? getCurrentWindow().startDragging() : Promise.resolve()),
+  /** 悬浮窗拖动：交给系统拖，松手后由后台判断吸附 / 收起 / 展开。 */
+  dragFloating: () => call("drag_floating"),
 };

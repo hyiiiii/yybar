@@ -56,7 +56,7 @@ export function Floating() {
           const p = press.current;
           if (p && e.buttons === 1 && Math.hypot(e.screenX - p.x, e.screenY - p.y) > 3) {
             press.current = null;
-            api.startDragging();
+            api.dragFloating();
           }
         }}
         onMouseUp={() => {
@@ -86,7 +86,7 @@ export function Floating() {
       ref={ref}
       className="hud"
       onMouseDown={(e) => {
-        if (e.button === 0 && e.detail === 1) api.startDragging();
+        if (e.button === 0 && e.detail === 1) api.dragFloating();
       }}
       onDoubleClick={() => api.openMain("overview")}
       title={tr("Drag to move · double-click to open Statistics · drag past the screen edge to tuck it away", "拖动可移动 · 双击打开统计 · 拖出屏幕边缘可收起")}

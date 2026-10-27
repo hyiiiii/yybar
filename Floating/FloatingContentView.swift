@@ -225,6 +225,7 @@ final class FloatingMouseView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
         let before = window.frame.origin
+        let downAt = NSEvent.mouseLocation
         window.performDrag(with: event)
         Task { @MainActor [weak window] in
             while NSEvent.pressedMouseButtons & 1 != 0 {
@@ -234,7 +235,10 @@ final class FloatingMouseView: NSView {
             try? await Task.sleep(nanoseconds: 60_000_000)
             guard let window else { return }
             let after = window.frame.origin
-            FloatingPanelController.shared.mouseReleased(moved: hypot(after.x - before.x, after.y - before.y) >= 3)
+            let up = NSEvent.mouseLocation
+            // 拖动看鼠标有没有移动：贴着屏幕边往外推时系统不挪窗口，但这也是一次拖动(推到边 → 收起)
+            let moved = hypot(after.x - before.x, after.y - before.y) >= 3 || hypot(up.x - downAt.x, up.y - downAt.y) >= 5
+            FloatingPanelController.shared.mouseReleased(moved: moved)
         }
     }
 }
