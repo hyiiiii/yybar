@@ -48,6 +48,65 @@ struct FloatingContentView: View {
     }
 
     var body: some View {
+        if let edge = settings.floatingDockEdge {
+            collapsedTab(edge: edge)
+        } else {
+            expandedPanel
+        }
+    }
+
+    /// 拖出屏幕边缘后收起的窄条(像微信通话小窗):贴边一侧是直角，每行一个小图标 + 剩余百分比。
+    /// 单击展开；拖动沿着屏幕边上下移动。
+    private func collapsedTab(edge: FloatingDockEdge) -> some View {
+        let rows = rows
+        let radius: CGFloat = 10
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: edge == .right ? radius : 0,
+            bottomLeadingRadius: edge == .right ? radius : 0,
+            bottomTrailingRadius: edge == .left ? radius : 0,
+            topTrailingRadius: edge == .left ? radius : 0,
+            style: .continuous
+        )
+        return VStack(spacing: 7) {
+            ForEach(rows) { row in
+                VStack(spacing: 2) {
+                    ServiceTile(logoName: row.app.rawValue, fallback: row.app.fallbackLetter, tint: row.app.accent,
+                                size: 14, logoSize: 9, cornerRadius: 4)
+                    Text(row.window.map { "\(Int($0.remainingPercent.rounded()))" } ?? "--")
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(statusColor(remainingPercent: row.window?.remainingPercent, tint: row.app.accent))
+                }
+            }
+            if rows.isEmpty {
+                Image(systemName: edge == .right ? "chevron.left" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 9)
+        .frame(width: 30)
+        .background {
+            ZStack {
+                Color(nsColor: .windowBackgroundColor).opacity(0.55)
+                VisualEffectBackground(material: .popover, blendingMode: .behindWindow)
+            }
+        }
+        .clipShape(shape)
+        .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        .contentShape(shape)
+        .onTapGesture { FloatingPanelController.shared.expand() }
+        .gesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { _ in FloatingPanelController.shared.dragDocked(ended: false) }
+                .onEnded { _ in FloatingPanelController.shared.dragDocked(ended: true) }
+        )
+        .help(tr("Click to expand · drag to move along the edge", "单击展开 · 拖动可沿屏幕边上下移动"))
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var expandedPanel: some View {
         let rows = rows
         // 同一服务有不止一行时，所有行都加上账号名(统一占一列，保证进度条对齐)。
         let showNames = Dictionary(grouping: rows, by: \.app).values.contains { $0.count > 1 }

@@ -323,7 +323,7 @@ private struct BarUploadCard: View {
                         .disabled(!account.isConnected)
                 }
             }
-            .font(.system(size: 12.5))
+            .scaledFont(size: 12.5)
 
             HStack(spacing: 10) {
                 Button {
@@ -338,7 +338,7 @@ private struct BarUploadCard: View {
                 }
                 if let message = account.message {
                     Text(message)
-                        .font(.system(size: 11.5))
+                        .scaledFont(size: 11.5)
                         .foregroundStyle(account.messageIsError ? Color.red : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -353,7 +353,7 @@ private struct BarUploadCard: View {
         HStack(spacing: 8) {
             if let profile = account.profile, account.isConnected {
                 WebAvatar(profile: profile, size: 20)
-                Text("@\(profile.login)").font(.system(size: 12.5, weight: .medium))
+                Text("@\(profile.login)").scaledFont(size: 12.5, weight: .medium)
                 if let name = profile.name, !name.isEmpty, name != profile.login {
                     Text(name).foregroundStyle(.secondary)
                 }
@@ -408,7 +408,7 @@ struct WebAvatar: View {
             image.resizable().scaledToFill()
         } placeholder: {
             Text(profile.login.prefix(1).uppercased())
-                .font(.system(size: size * 0.5, weight: .semibold))
+                .scaledFont(size: size * 0.5, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.secondary.opacity(0.15))

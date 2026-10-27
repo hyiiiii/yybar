@@ -125,6 +125,11 @@ impl UsageService {
         self.aggregator.snapshot()
     }
 
+    /// 某一天各服务的费用合计。
+    pub fn costs_on(&self, day: chrono::NaiveDate) -> std::collections::HashMap<crate::UsageApp, f64> {
+        self.aggregator.costs_on(day)
+    }
+
     /// 改了自定义价格后排队一次全量重建。
     pub fn request_rebuild(&mut self, reprice: Reprice) {
         self.pending_rebuild = Some(match self.pending_rebuild.take() {

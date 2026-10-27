@@ -70,6 +70,8 @@ export interface ServiceView {
 
 export type MenuBarWindow = "fiveHour" | "weekly" | "both";
 export type ResetTimeDisplay = "relative" | "absolute";
+export type TextSize = "small" | "standard" | "large" | "extraLarge";
+export type DockEdge = "left" | "right";
 export type AppLanguage = "system" | "zh" | "en";
 export type IntervalChoice = "m1" | "m2" | "m3" | "m5" | "m10";
 
@@ -96,6 +98,10 @@ export interface Settings {
   usageInterval: IntervalChoice;
   scanWsl: boolean;
   resetTimeDisplay: ResetTimeDisplay;
+  /** 主窗口字号（缩放主窗口） */
+  textSize: TextSize;
+  /** 悬浮窗收起时贴着的屏幕边；null 为展开 */
+  floatingDock: DockEdge | null;
   showServiceStatus: boolean;
   appLanguage: AppLanguage;
   didCompleteOnboarding: boolean;

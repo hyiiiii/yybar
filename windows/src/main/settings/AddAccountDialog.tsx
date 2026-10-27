@@ -237,8 +237,8 @@ export function AddAccountDialog({ state, onClose }: { state: StateSnapshot; onC
                               `在独立目录里运行官方的 ${LOGIN_COMMAND[provider]}，不影响本机已登录的账号。`,
                             )
                           : tr(
-                              `Needs the ${LOGIN_COMMAND[provider].split(" ")[0]} command, which isn't installed on this PC. Paste credentials instead.`,
-                              `需要 ${LOGIN_COMMAND[provider].split(" ")[0]} 命令，本机没有安装，请改用粘贴凭据。`,
+                              `Couldn't find the ${LOGIN_COMMAND[provider].split(" ")[0]} command (CLI) on this PC. If you only use the app or an editor plugin, paste credentials instead.`,
+                              `本机没有找到 ${LOGIN_COMMAND[provider].split(" ")[0]} 命令（CLI）。只装了 App 或编辑器插件的话，请改用粘贴凭据。`,
                             )}
                       </span>
                     </span>

@@ -224,6 +224,19 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               />
             </PrefsRow>
             <div className="divider" />
+            <PrefsRow label={tr("Text size", "字体大小")}>
+              <Segmented
+                options={[
+                  { value: "small", label: tr("Small", "小") },
+                  { value: "standard", label: tr("Default", "标准") },
+                  { value: "large", label: tr("Large", "大") },
+                  { value: "extraLarge", label: tr("Larger", "特大") },
+                ]}
+                value={s.textSize}
+                onChange={(v) => set({ textSize: v })}
+              />
+            </PrefsRow>
+            <div className="divider" />
             <PrefsRow label={tr("Launch at sign-in", "开机自动启动")}>
               <Toggle
                 checked={state.autostart}

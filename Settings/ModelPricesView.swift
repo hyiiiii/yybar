@@ -54,7 +54,7 @@ struct ModelPriceRows: View {
             if models.isEmpty {
                 Divider()
                 Text(tr("No models in the local usage yet", "本地用量里还没有模型"))
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
@@ -84,7 +84,7 @@ private struct ModelPriceHeader: View {
             Text(tr("Cache write", "缓存写入")).frame(width: ModelPriceColumn.field, alignment: .trailing)
             Color.clear.frame(width: ModelPriceColumn.reset, height: 1)
         }
-        .font(.system(size: 10.5))
+        .scaledFont(size: 10.5)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -109,7 +109,7 @@ private struct ModelPriceRow: View {
             HStack(spacing: 7) {
                 ServiceLogoImage(logoName: model.app.rawValue, tint: model.app.accent, size: 13)
                 Text(model.name)
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 tag
@@ -120,7 +120,7 @@ private struct ModelPriceRow: View {
                 TextField("", text: $fields[index], prompt: Text("—"))
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
-                    .font(.system(size: 11.5).monospacedDigit())
+                    .scaledFont(size: 11.5).monospacedDigit()
                     .multilineTextAlignment(.trailing)
                     .focused($focused, equals: index)
                     .onSubmit { commit() }
@@ -134,7 +134,7 @@ private struct ModelPriceRow: View {
                         load()
                     } label: {
                         Image(systemName: "arrow.uturn.backward.circle")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -159,7 +159,7 @@ private struct ModelPriceRow: View {
     private var tag: some View {
         if custom != nil {
             Text(tr("Custom", "自定义"))
-                .font(.system(size: 9.5, weight: .medium))
+                .scaledFont(size: 9.5, weight: .medium)
                 .foregroundStyle(Color.accentColor)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
@@ -167,7 +167,7 @@ private struct ModelPriceRow: View {
                 .transition(.opacity)
         } else if model.builtIn == nil {
             Text(tr("No price", "未定价"))
-                .font(.system(size: 9.5, weight: .medium))
+                .scaledFont(size: 9.5, weight: .medium)
                 .foregroundStyle(Color.orange)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)

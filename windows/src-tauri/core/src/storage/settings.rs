@@ -24,6 +24,36 @@ pub enum ResetTimeDisplay {
     Absolute,
 }
 
+/// 悬浮窗收起时贴着的屏幕边（对应 Mac `FloatingDockEdge`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DockEdge {
+    Left,
+    Right,
+}
+
+/// 主窗口字号（对应 Mac `TextSize`）：Windows 上按倍数缩放主窗口网页。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TextSize {
+    Small,
+    #[default]
+    Standard,
+    Large,
+    ExtraLarge,
+}
+
+impl TextSize {
+    pub fn scale(self) -> f64 {
+        match self {
+            TextSize::Small => 0.9,
+            TextSize::Standard => 1.0,
+            TextSize::Large => 1.1,
+            TextSize::ExtraLarge => 1.2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AppLanguage {
@@ -58,6 +88,8 @@ pub struct Settings {
     pub floating_show_agy: bool,
     /// 悬浮窗左上角（物理像素），None 表示还没拖动过
     pub floating_position: Option<(i32, i32)>,
+    /// 悬浮窗拖出屏幕左 / 右边缘后收起成贴边窄条，记住贴的哪一边；None 为展开
+    pub floating_dock: Option<DockEdge>,
     // 刷新
     /// "m1" / "m2" / "m3" / "m5" / "m10"
     pub quota_interval: String,
@@ -67,6 +99,8 @@ pub struct Settings {
     // 统计
     pub reset_time_display: ResetTimeDisplay,
     pub show_service_status: bool,
+    /// 主窗口字号
+    pub text_size: TextSize,
     // 通用
     pub app_language: AppLanguage,
     pub did_complete_onboarding: bool,
@@ -97,11 +131,13 @@ impl Default for Settings {
             floating_show_grok: false,
             floating_show_agy: false,
             floating_position: None,
+            floating_dock: None,
             quota_interval: "m2".into(),
             usage_interval: "m2".into(),
             scan_wsl: false,
             reset_time_display: ResetTimeDisplay::Relative,
             show_service_status: true,
+            text_size: TextSize::Standard,
             app_language: AppLanguage::System,
             did_complete_onboarding: false,
             web_auto_upload: false,

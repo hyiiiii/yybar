@@ -117,13 +117,13 @@ struct AddAccountSheet: View {
     private var header: some View {
         HStack {
             Text(tr("Add Account", "添加账号"))
-                .font(.system(size: 14, weight: .semibold))
+                .scaledFont(size: 14, weight: .semibold)
             Spacer()
             HStack(spacing: 6) {
                 stepLabel(tr("Service", "服务商"), active: step == .provider)
-                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").scaledFont(size: 9).foregroundStyle(.tertiary)
                 stepLabel(tr("Method", "方式"), active: step == .method)
-                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").scaledFont(size: 9).foregroundStyle(.tertiary)
                 stepLabel(tr("Sign in", "登录"), active: step == .browser || step == .paste || step == .terminal)
             }
         }
@@ -134,7 +134,7 @@ struct AddAccountSheet: View {
 
     private func stepLabel(_ text: String, active: Bool) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: active ? .semibold : .regular))
+            .scaledFont(size: 11, weight: active ? .semibold : .regular)
             .foregroundStyle(active ? Color.primary : Color.secondary)
     }
 
@@ -230,7 +230,7 @@ struct AddAccountSheet: View {
     private var providerStep: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("Which service is this account for?", "要添加哪个服务的账号？"))
-                .font(.system(size: 12.5, weight: .medium))
+                .scaledFont(size: 12.5, weight: .medium)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                       spacing: 10) {
                 ForEach(Choice.all, id: \.self) { item in
@@ -246,11 +246,11 @@ struct AddAccountSheet: View {
                                         tint: tint(for: item), size: 28, logoSize: 16, cornerRadius: 7)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(title(for: item))
-                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .scaledFont(size: 12.5, weight: .semibold)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.75)
                                 Text(vendor(for: item))
-                                    .font(.system(size: 11))
+                                    .scaledFont(size: 11)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -262,13 +262,13 @@ struct AddAccountSheet: View {
             if choice == .grokBot {
                 Text(tr("Grok Bot can't have extra accounts: yybar can only read the sign-in of the Grok Bot app on this Mac.",
                         "Grok Bot 暂不能添加其他账号：yybar 只能读取本机 Grok Bot app 的登录。"))
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if choice == .google {
                 Text(tr("One Google account covers both Gemini and Antigravity quotas. You'll sign in with agy in Terminal, in a separate folder; agy's sign-in on this Mac isn't touched.",
                         "一个 Google 账号同时有 Gemini 和 Antigravity 两份额度。接下来会在终端里用 agy 在独立目录登录，不影响本机 agy 已登录的账号。"))
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -318,9 +318,9 @@ struct AddAccountSheet: View {
                 HStack(spacing: 10) {
                     ServiceTile(logoName: "gemini", fallback: "G", tint: .googleAccent, size: 28, logoSize: 16, cornerRadius: 7)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Gemini · Antigravity").font(.system(size: 12.5, weight: .semibold))
+                        Text("Gemini · Antigravity").scaledFont(size: 12.5, weight: .semibold)
                         Text(tr("Sign in with agy in Terminal", "在终端里用 agy 登录"))
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -331,7 +331,7 @@ struct AddAccountSheet: View {
                     Text(tr("3. When agy says you're signed in, type /exit, then click \u{201C}Finish adding\u{201D} here.",
                             "3. 看到登录成功后输入 /exit 退出 agy,再回到这里点「完成添加」。"))
                 }
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .fixedSize(horizontal: false, vertical: true)
                 Button {
                     openTerminal()
@@ -345,7 +345,7 @@ struct AddAccountSheet: View {
                 }
                 if let terminalError {
                     Label(terminalError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -395,7 +395,7 @@ struct AddAccountSheet: View {
     private var methodStep: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("How do you want to add the \(provider.title) account?", "怎样添加 \(provider.title) 账号？"))
-                .font(.system(size: 12.5, weight: .medium))
+                .scaledFont(size: 12.5, weight: .medium)
             choiceCard(selected: method == .browser) {
                 withAnimation(.easeOut(duration: 0.15)) { method = .browser }
             } content: {
@@ -403,9 +403,9 @@ struct AddAccountSheet: View {
                     HStack(spacing: 6) {
                         Image(systemName: "globe")
                         Text(tr("Sign in in the browser", "在浏览器中登录"))
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .scaledFont(size: 12.5, weight: .semibold)
                         Text(tr("Recommended", "推荐"))
-                            .font(.system(size: 10))
+                            .scaledFont(size: 10)
                             .foregroundStyle(.green)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -413,7 +413,7 @@ struct AddAccountSheet: View {
                     }
                     Text(tr("Runs the official `\(provider.loginCommand)` in a separate folder. Your current sign-in on this Mac isn't touched.",
                             "调用官方 `\(provider.loginCommand)`,在独立目录登录，不影响本机已登录的账号。"))
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -425,11 +425,11 @@ struct AddAccountSheet: View {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.on.clipboard")
                         Text(tr("Paste credentials", "粘贴凭据"))
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .scaledFont(size: 12.5, weight: .semibold)
                     }
                     Text(tr("Paste \(provider.credentialsFile) from another Mac.",
                             "粘贴另一台机器上的 \(provider.credentialsFile)。"))
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -448,9 +448,9 @@ struct AddAccountSheet: View {
                     ServiceTile(logoName: provider.logoName, fallback: String(provider.title.prefix(1)),
                                 tint: tint(for: provider), size: 28, logoSize: 16, cornerRadius: 7)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(provider.title).font(.system(size: 12.5, weight: .semibold))
+                        Text(provider.title).scaledFont(size: 12.5, weight: .semibold)
                         Text(provider.loginCommand)
-                            .font(.system(size: 11, design: .monospaced))
+                            .scaledFont(size: 11, design: .monospaced)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -483,12 +483,12 @@ struct AddAccountSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(tr("After approving in the browser, Claude shows an authorization code. Paste it here:",
                             "在浏览器中授权后,Claude 会显示一个授权码，把它粘贴到这里："))
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {
                         TextField(tr("Authorization code", "授权码"), text: $authCode)
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
+                            .scaledFont(size: 12, design: .monospaced)
                             .onSubmit { session.submitCode(authCode) }
                         Button(tr("Submit", "提交")) { session.submitCode(authCode) }
                             .buttonStyle(.borderedProminent)
@@ -524,7 +524,7 @@ struct AddAccountSheet: View {
             .disabled(session.loginURL == nil)
             Text(tr("If the page shows the account already signed in on this Mac, use \u{201C}Sign in with another account\u{201D}, or sign out on that page first.",
                     "如果页面显示的是本机已登录的账号，点「用其他账号登录」,或先在页面上退出登录再换账号。"))
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -567,17 +567,17 @@ struct AddAccountSheet: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(tr("Paste the contents of \(provider.credentialsFile)", "粘贴 \(provider.credentialsFile) 的内容"))
-                    .font(.system(size: 12.5, weight: .medium))
+                    .scaledFont(size: 12.5, weight: .medium)
                 Text(provider == .claude
                      ? tr("On the other Mac, Claude Code may keep it in the Keychain instead: run `security find-generic-password -s \"Claude Code-credentials\" -w` there and paste the output.",
                           "另一台 Mac 上 Claude Code 也可能把它存在钥匙串里：在那台机器运行 `security find-generic-password -s \"Claude Code-credentials\" -w`,粘贴输出即可。")
                      : tr("It's stored only on this Mac, in a private folder used just for this account.",
                           "凭据只保存在本机，放在这个账号专用的私有目录里。"))
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $pasteText)
-                    .font(.system(size: 11, design: .monospaced))
+                    .scaledFont(size: 11, design: .monospaced)
                     .frame(height: 150)
                     .padding(6)
                     .background(.background.secondary)
@@ -590,7 +590,7 @@ struct AddAccountSheet: View {
                 }
                 if let pasteError {
                     Text(pasteError)
-                        .font(.system(size: 11.5))
+                        .scaledFont(size: 11.5)
                         .foregroundStyle(.red)
                 }
             }
@@ -619,14 +619,14 @@ struct AddAccountSheet: View {
     private func successView(name: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 22))
+                .scaledFont(size: 22)
                 .foregroundStyle(.green)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("Added \(name)", "已添加 \(name)"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
                 Text(tr("It appears in the list and the popover after its first refresh.",
                         "首次刷新后会显示在列表和弹出窗口里。"))
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
             }
         }
@@ -637,7 +637,7 @@ struct AddAccountSheet: View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text(text)
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -645,18 +645,18 @@ struct AddAccountSheet: View {
     private func errorBlock(_ message: String, detail: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
             if let detail, !detail.isEmpty {
                 Text(detail.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .scaledFont(size: 10.5, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .lineLimit(6)
                     .textSelection(.enabled)
             }
             Text(tr("Go back to try again, or paste credentials instead.", "可以返回重试，或改用粘贴凭据。"))
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
         }
     }

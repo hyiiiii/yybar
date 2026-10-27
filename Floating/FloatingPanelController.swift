@@ -16,6 +16,10 @@ final class FloatingPanelController: NSObject {
     private static let defaultMargin: CGFloat = 16
     /// 拖动到距屏幕边缘小于此阈值时自动吸附
     private static let snapThreshold: CGFloat = 20
+    /// 拖出屏幕左 / 右边缘超过这么多时收起成贴边窄条(像微信通话小窗)
+    private static let collapseOverhang: CGFloat = 12
+    /// 收起时拖动窄条：开始拖动时的鼠标位置和窗口位置
+    private var dockDragStart: (mouse: CGPoint, frame: CGRect)?
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -57,8 +61,45 @@ final class FloatingPanelController: NSObject {
         var frame = panel.frame
         let dh = fit.height - frame.height
         frame.origin.y -= dh
+        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            if let edge = SettingsStore.shared.floatingDockEdge {
+                // 收起时贴住那条边
+                frame.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
+                frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
+            } else if abs(frame.maxX - visible.maxX) < 1 {
+                // 贴着右边时保持右边不动(从右边展开时往左长)
+                frame.origin.x = visible.maxX - fit.width
+            }
+        }
         frame.size = fit
         panel.setFrame(frame, display: true)
+    }
+
+    /// 收起成贴在 edge 那条边上的窄条(只显示各行的剩余百分比)。
+    private func collapse(to edge: FloatingDockEdge) {
+        SettingsStore.shared.floatingDockEdge = edge
+        panel?.isMovableByWindowBackground = false
+        resizeToFitContent()
+    }
+
+    /// 点收起的窄条：展开回原来的悬浮窗，仍贴着那条边。
+    func expand() {
+        guard SettingsStore.shared.floatingDockEdge != nil else { return }
+        SettingsStore.shared.floatingDockEdge = nil
+        panel?.isMovableByWindowBackground = true
+        resizeToFitContent()
+    }
+
+    /// 收起时拖动窄条：只沿着边上下移动。
+    func dragDocked(ended: Bool) {
+        guard let panel, let visible = (panel.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let mouse = NSEvent.mouseLocation
+        let start = dockDragStart ?? (mouse, panel.frame)
+        dockDragStart = ended ? nil : start
+        var frame = panel.frame
+        frame.origin.y = min(max(start.frame.origin.y + mouse.y - start.mouse.y, visible.minY), visible.maxY - frame.height)
+        panel.setFrame(frame, display: true)
+        if ended { SettingsStore.shared.floatingPanelFrame = frame }
     }
 
     private func hide() {
@@ -85,6 +126,8 @@ final class FloatingPanelController: NSObject {
         hosting.frame = panel.contentView?.bounds ?? .zero
         hosting.autoresizingMask = [.width, .height]
         panel.setFrame(adjustedFrame(initialFrame), display: false)
+        // 上次退出时是收起的：窄条自己处理拖动
+        panel.isMovableByWindowBackground = settings.floatingDockEdge == nil
 
         self.panel = panel
         self.hostingView = hosting
@@ -131,6 +174,18 @@ final class FloatingPanelController: NSObject {
     private func snapToEdgeIfNeeded() {
         guard let panel else { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
+        // 已经收起：位置由 dragDocked 控制
+        guard SettingsStore.shared.floatingDockEdge == nil else { return }
+        // 拖出左 / 右屏幕边缘：收起成贴边的窄条
+        let visible = screen.visibleFrame
+        if panel.frame.minX < visible.minX - Self.collapseOverhang {
+            collapse(to: .left)
+            return
+        }
+        if panel.frame.maxX > visible.maxX + Self.collapseOverhang {
+            collapse(to: .right)
+            return
+        }
         let snapped = snappedFrame(panel.frame, on: screen)
         guard snapped != panel.frame else { return }
         panel.setFrame(snapped, display: true, animate: true)

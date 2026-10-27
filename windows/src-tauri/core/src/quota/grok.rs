@@ -90,7 +90,8 @@ pub async fn refresh_credentials() -> bool {
 /// 同上；`home` 是其他账号自己的 GROK_HOME。
 pub async fn refresh_credentials_in(home: Option<&std::path::Path>) -> bool {
     let Some(binary) = binary() else { return false };
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = tokio::process::Command::new(&binary);
+    cmd.env("PATH", paths::child_path(&binary));
     if let Some(home) = home {
         cmd.env("GROK_HOME", home);
     }

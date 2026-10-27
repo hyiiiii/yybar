@@ -48,13 +48,14 @@ struct SettingsRootView: View {
         }
     }
 
-    /// 设置大页里的一个部分：标题 + 内容，内容限宽 640pt。
+    /// 设置大页里的一个部分：标题 + 内容，内容限宽 640pt(随字号放大),在窗口里水平居中。
     private func settingsSection<Content: View>(_ tab: MainTab, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             SectionHeading(title: tab.title)
             content()
         }
-        .frame(maxWidth: 640, alignment: .topLeading)
+        .frame(maxWidth: 640 * SettingsStore.shared.textSize.scale, alignment: .topLeading)
+        .frame(maxWidth: .infinity)
         .sectionAnchor(tab)
     }
 
@@ -66,10 +67,10 @@ struct SettingsRootView: View {
         if let notice = appState.accountSwitchNotice {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: notice.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(notice.isError ? Color.orange : Color.green)
                 Text(notice.text)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -128,10 +129,10 @@ struct SettingsRootView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.uturn.backward.circle")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(.secondary)
                         Text(tr("Restore removed on-Mac accounts", "恢复已删除的本机账号"))
-                            .font(.system(size: 12.5))
+                            .scaledFont(size: 12.5)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -366,7 +367,7 @@ struct SettingsRootView: View {
             }
             if let hookStatus {
                 Text(hookStatus)
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: 10.5)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
@@ -374,7 +375,7 @@ struct SettingsRootView: View {
             }
             if let hookError {
                 Text(hookError)
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: 10.5)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
@@ -553,10 +554,10 @@ struct SettingsRootView: View {
                 }
                 Text(tr("Usage is assigned to each turn's completion date. Disabling sync keeps recovered history.",
                         "按每轮结束日期统计，跨午夜任务计入结束当天；关闭同步会保留已恢复的历史。"))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .scaledFont(size: 11).foregroundStyle(.secondary)
                 if settings.claudeCloudUsageEnabled {
                     Text(appState.usageService.cloudStatus)
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                        .scaledFont(size: 11.5).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
 
@@ -564,7 +565,7 @@ struct SettingsRootView: View {
                 PrefsRow(label: "Last refresh", chinese: "上次刷新") {
                     HStack(spacing: 10) {
                         Text(lastRefreshText)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: 11.5)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                         Button {
@@ -597,6 +598,20 @@ struct SettingsRootView: View {
                 .fixedSize()
             }
             Divider()
+            PrefsRow(label: "Text size", chinese: "字体大小") {
+                Picker("", selection: Binding(
+                    get: { settings.textSize },
+                    set: { newValue in withAnimation(.easeInOut(duration: 0.2)) { settings.textSize = newValue } }
+                )) {
+                    ForEach(TextSize.allCases) { size in
+                        Text(size.label).tag(size)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            Divider()
             PrefsRow(label: "Launch at login", chinese: "开机自动启动") {
                 Toggle("", isOn: Binding(
                     get: { settings.launchAtLogin },
@@ -616,7 +631,7 @@ struct SettingsRootView: View {
                 Divider()
                 PrefsRow(label: "Error", chinese: "错误") {
                     Text(launchAtLoginError)
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.red)
                         .lineLimit(2)
                         .frame(maxWidth: 260, alignment: .trailing)
@@ -625,7 +640,7 @@ struct SettingsRootView: View {
             Divider()
             PrefsRow(label: "Version", chinese: "版本") {
                 Text(appVersion)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -635,7 +650,7 @@ struct SettingsRootView: View {
     private var footer: some View {
         Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code, Grok, Grok Bot, Gemini and Antigravity",
                 "yybar \(appVersion) · Codex、Claude Code、Grok、Grok Bot、Gemini 和 Antigravity 的额度与用量"))
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)
     }
@@ -677,12 +692,12 @@ private struct PrefsGroup<Content: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if !title.isEmpty {
                         Text(tr(title, chinese))
-                            .font(.system(size: 12, weight: .semibold))
+                            .scaledFont(size: 12, weight: .semibold)
                             .kerning(-0.05)
                     }
                     if let desc, let chineseDesc {
                         Text(tr(desc, chineseDesc))
-                            .font(.system(size: 10.5))
+                            .scaledFont(size: 10.5)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -712,10 +727,10 @@ private struct PrefsRow<Trailing: View>: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(tr(label, chinese))
-                    .font(.system(size: 12.5))
+                    .scaledFont(size: 12.5)
                 if let desc, let chineseDesc {
                     Text(tr(desc, chineseDesc))
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -755,7 +770,7 @@ private struct ServiceMatrixHeader: View {
             Text(tr("Quota", "额度")).frame(width: ServiceMatrixColumn.quota)
             Color.clear.frame(width: ServiceMatrixColumn.action, height: 1)
         }
-        .font(.system(size: 10.5))
+        .scaledFont(size: 10.5)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -807,7 +822,7 @@ struct ServiceMatrixRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(title)
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .scaledFont(size: 12.5, weight: .semibold)
                         if let plan, !plan.isEmpty, detected {
                             PlanTag(plan: plan, service: logoName)
                         }
@@ -816,7 +831,7 @@ struct ServiceMatrixRow: View {
                         }
                     }
                     Text(detected ? (email ?? "—") : tr("Not detected", "未识别"))
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(detected ? Color.secondary : Color.orange)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -866,7 +881,7 @@ struct ServiceMatrixRow: View {
                         showingQuota.toggle()
                     } label: {
                         Image(systemName: "gauge.with.dots.needle.67percent")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(showingQuota ? Color.accentColor : Color.secondary)
                     }
                     .buttonStyle(.plain)
@@ -884,7 +899,7 @@ struct ServiceMatrixRow: View {
                 if let onDelete, detected {
                     Button(action: onDelete) {
                         Image(systemName: "minus.circle")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -931,7 +946,7 @@ private struct PlanTag: View {
         case .team: color = .teal
         }
         return Text(plan.prefix(1).uppercased() + plan.dropFirst())
-            .font(.system(size: 10, weight: tier == .free ? .regular : .medium))
+            .scaledFont(size: 10, weight: tier == .free ? .regular : .medium)
             .foregroundStyle(color)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
@@ -953,7 +968,7 @@ private struct RenewalTag: View {
         let soon = days <= 3
         let basis = renewal.basis.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
         Text(tr("Renews \(english)", "\(month)月\(day)日续费"))
-            .font(.system(size: 10))
+            .scaledFont(size: 10)
             .monospacedDigit()
             .foregroundStyle(soon ? Color.orange : Color.secondary)
             .padding(.horizontal, 5)

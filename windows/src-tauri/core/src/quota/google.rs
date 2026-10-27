@@ -55,6 +55,7 @@ fn isolated_env(cmd: &mut tokio::process::Command, home: &std::path::Path) {
 
 async fn run(binary: &PathBuf, work: &PathBuf, home: Option<&std::path::Path>) -> Result<UsageResult, QuotaError> {
     let mut cmd = tokio::process::Command::new(binary);
+    cmd.env("PATH", paths::child_path(binary));
     if let Some(home) = home {
         isolated_env(&mut cmd, home);
     }

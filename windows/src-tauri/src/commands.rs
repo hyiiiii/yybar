@@ -51,6 +51,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         hide_popover,
         fit_popover,
         fit_floating,
+        expand_floating,
         finish_onboarding,
         open_url,
         backdrop,
@@ -99,6 +100,9 @@ async fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     }
     if before.floating_enabled != after.floating_enabled {
         windows::sync_floating(&app);
+    }
+    if before.text_size != after.text_size {
+        windows::apply_text_size(&app);
     }
     if before.web_auto_upload != after.web_auto_upload {
         crate::web::auto_upload_changed(&app);
@@ -273,6 +277,12 @@ fn fit_popover(app: AppHandle, height: f64) {
 #[tauri::command]
 fn fit_floating(app: AppHandle, width: f64, height: f64) {
     windows::fit_floating(&app, width, height);
+}
+
+/// 点悬浮窗收起后的窄条：展开。
+#[tauri::command]
+fn expand_floating(app: AppHandle) {
+    windows::expand_floating(&app);
 }
 
 /// 引导完成：记下来，关掉引导窗口，可直接打开统计。

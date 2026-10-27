@@ -156,6 +156,7 @@ export const api = {
   hidePopover: () => call("hide_popover"),
   fitPopover: (height: number) => call("fit_popover", { height }),
   fitFloating: (width: number, height: number) => call("fit_floating", { width, height }),
+  expandFloating: () => (inTauri ? call("expand_floating") : Promise.resolve(void applyDemoSettings({ floatingDock: null }))),
   finishOnboarding: (openStats: boolean) => call("finish_onboarding", { openStats }),
   openUrl: (url: string) => call("open_url", { url }),
   backdrop: () => call<string>("backdrop"),

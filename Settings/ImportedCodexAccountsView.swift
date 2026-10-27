@@ -35,7 +35,7 @@ struct OtherAccountRows: View {
                         }
                         .draggable(account.id) {
                             Text(rowTitle(account))
-                                .font(.system(size: 12.5))
+                                .scaledFont(size: 12.5)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(.background.secondary)
@@ -217,10 +217,10 @@ struct AddAccountButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.accentColor)
                 Text(tr("Add account…", "添加账号…"))
-                    .font(.system(size: 12.5))
+                    .scaledFont(size: 12.5)
                     .foregroundStyle(.primary)
                 Spacer()
             }
@@ -266,11 +266,11 @@ struct AddImportedCodexAccountSheet: View {
             // 标题栏
             HStack {
                 Text(tr("Add Codex Account", "添加 Codex 账号"))
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .scaledFont(size: 16)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -296,7 +296,7 @@ struct AddImportedCodexAccountSheet: View {
                     // 错误
                     if let err = parseError ?? saveError {
                         Text(err)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: 11.5)
                             .foregroundStyle(.red)
                             .padding(.horizontal, 2)
                     }
@@ -331,17 +331,17 @@ struct AddImportedCodexAccountSheet: View {
     private var jsonSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(tr("Paste auth.json content", "粘贴 auth.json 内容"))
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: 12, weight: .semibold)
             Text(tr(
                 "Supports a single auth.json or a JSON array of multiple accounts (e.g. cc-switch export). The display name is taken from the email prefix automatically.",
                 "支持单个 auth.json,也支持多账号的 JSON 数组(如 cc-switch 导出)。显示名自动取邮箱 @ 前的部分。"
             ))
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
             TextEditor(text: $jsonText)
-                .font(.system(size: 11, design: .monospaced))
+                .scaledFont(size: 11, design: .monospaced)
                 .frame(height: 120)
                 .padding(6)
                 .background(.background.secondary)
@@ -363,17 +363,17 @@ struct AddImportedCodexAccountSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if let email = p.email {
                         Text(email)
-                            .font(.system(size: 12, weight: .semibold))
+                            .scaledFont(size: 12, weight: .semibold)
                     }
                     if let plan = p.planType {
                         Text(plan.capitalized)
-                            .font(.system(size: 10.5))
+                            .scaledFont(size: 10.5)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -382,7 +382,7 @@ struct AddImportedCodexAccountSheet: View {
                     }
                 }
                 Text("ID: \(p.chatgptAccountId)")
-                    .font(.system(size: 10, design: .monospaced))
+                    .scaledFont(size: 10, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -401,9 +401,9 @@ struct AddImportedCodexAccountSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                 Text(tr("Found \(batch.count) accounts", "找到 \(batch.count) 个账号"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(.primary)
                 Spacer()
             }
@@ -413,12 +413,12 @@ struct AddImportedCodexAccountSheet: View {
                     HStack(spacing: 8) {
                         if let email = p.email {
                             Text(email)
-                                .font(.system(size: 11.5))
+                                .scaledFont(size: 11.5)
                                 .lineLimit(1)
                         }
                         if let plan = p.planType {
                             Text(plan.capitalized)
-                                .font(.system(size: 10))
+                                .scaledFont(size: 10)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
@@ -427,7 +427,7 @@ struct AddImportedCodexAccountSheet: View {
                         }
                         Spacer()
                         Text(p.chatgptAccountId)
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .scaledFont(size: 9.5, design: .monospaced)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -452,7 +452,7 @@ struct AddImportedCodexAccountSheet: View {
         // 显示开关(单账号 / 批量通用,默认开启)
         Toggle(isOn: $visibleInPopover) {
             Text(tr("Show in popover", "在弹出面板中显示"))
-                .font(.system(size: 12.5))
+                .scaledFont(size: 12.5)
         }
         .toggleStyle(.switch)
         .tint(.green)

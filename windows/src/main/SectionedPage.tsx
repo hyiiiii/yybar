@@ -70,10 +70,10 @@ export function SectionedPage({ sections, request, active, onActive, children }:
   );
 }
 
-/** 大页里的一个部分。 */
+/** 大页里的一个部分。限宽的部分（设置页）在内容区里水平居中，跟着窗口宽度自适应。 */
 export function Section({ tab, children, maxWidth }: { tab: MainTab; children: ReactNode; maxWidth?: number }) {
   return (
-    <section className="section" data-section={tab} style={maxWidth ? { maxWidth } : undefined}>
+    <section className="section" data-section={tab} style={maxWidth ? { maxWidth, width: "100%", marginInline: "auto" } : undefined}>
       {children}
     </section>
   );

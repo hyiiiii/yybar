@@ -70,6 +70,41 @@ enum ResetTimeDisplay: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// 主窗口(统计 / 设置 / bar)的字号档位。
+enum TextSize: String, CaseIterable, Identifiable {
+    case small
+    case standard
+    case large
+    case extraLarge
+
+    var id: String { rawValue }
+
+    /// 相对标准字号的倍数。
+    var scale: CGFloat {
+        switch self {
+        case .small: return 0.9
+        case .standard: return 1
+        case .large: return 1.1
+        case .extraLarge: return 1.2
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .small: return tr("Small", "小")
+        case .standard: return tr("Default", "标准")
+        case .large: return tr("Large", "大")
+        case .extraLarge: return tr("Larger", "特大")
+        }
+    }
+}
+
+/// 悬浮窗收起时贴着的屏幕边。
+enum FloatingDockEdge: String {
+    case left
+    case right
+}
+
 enum MenuBarWindowChoice: String, CaseIterable, Identifiable {
     case fiveHour
     case weekly
@@ -137,6 +172,8 @@ final class SettingsStore {
 
     /// 是否在 Popover 中显示 OpenAI / Anthropic 服务状态圆点
     var showServiceStatus: Bool { didSet { defaults.set(showServiceStatus, forKey: Keys.showServiceStatus) } }
+    /// 主窗口字号(见 `Font.ui`)。
+    var textSize: TextSize { didSet { defaults.set(textSize.rawValue, forKey: Keys.textSize) } }
 
     // 通用
     var appLanguage: AppLanguage { didSet { defaults.set(appLanguage.rawValue, forKey: Keys.appLanguage) } }
@@ -192,6 +229,8 @@ final class SettingsStore {
         let rtdRaw = defaults.string(forKey: Keys.resetTimeDisplay) ?? ResetTimeDisplay.relative.rawValue
         resetTimeDisplay = ResetTimeDisplay(rawValue: rtdRaw) ?? .relative
         showServiceStatus = defaults.object(forKey: Keys.showServiceStatus) as? Bool ?? true
+        textSize = TextSize(rawValue: defaults.string(forKey: Keys.textSize) ?? "") ?? .standard
+        floatingDockEdge = FloatingDockEdge(rawValue: defaults.string(forKey: Keys.floatingDockEdge) ?? "")
         // 通用：launchAtLogin 以系统当前注册状态为准
         let langRaw = defaults.string(forKey: Keys.appLanguage) ?? AppLanguage.system.rawValue
         appLanguage = AppLanguage(rawValue: langRaw) ?? .system
@@ -267,6 +306,11 @@ final class SettingsStore {
 
     // MARK: - Floating panel frame
 
+    /// 悬浮窗拖出屏幕左 / 右边缘后收起成贴边的窄条，记住贴的哪一边;nil 为展开。
+    var floatingDockEdge: FloatingDockEdge? {
+        didSet { defaults.set(floatingDockEdge?.rawValue, forKey: Keys.floatingDockEdge) }
+    }
+
     /// 悬浮窗 frame，nil 表示尚未拖动过；启动时由 controller 还原
     var floatingPanelFrame: CGRect? {
         get {
@@ -341,10 +385,12 @@ final class SettingsStore {
         static let usageInterval = "yybar.settings.usageInterval"
         static let resetTimeDisplay = "yybar.settings.resetTimeDisplay"
         static let showServiceStatus = "yybar.settings.showServiceStatus"
+        static let textSize = "yybar.settings.textSize"
         static let launchAtLogin = "yybar.settings.launchAtLogin"
         static let appLanguage = "yybar.settings.appLanguage"
         static let didShowKeychainPrompt = "yybar.settings.didShowKeychainPrompt"
         static let didCompleteOnboarding = "yybar.settings.didCompleteOnboarding"
+        static let floatingDockEdge = "yybar.settings.floatingDockEdge"
         static let floatingFrameX = "yybar.settings.floatingFrame.x"
         static let floatingFrameY = "yybar.settings.floatingFrame.y"
         static let floatingFrameW = "yybar.settings.floatingFrame.w"

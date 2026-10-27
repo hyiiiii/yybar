@@ -165,8 +165,19 @@ fn tooltip(app: UsageApp, name: Option<&str>, snapshot: Option<&yybar_core::quot
     lines.join("\n").chars().take(127).collect()
 }
 
-/// 状态变了（额度、设置、使用中）时调用：增删图标、重画数字。
+/// 状态变了（额度、设置、使用中）时调用：增删图标、重画数字。可以在任何线程调用，实际重画放到主线程做。
+///
+/// 托盘图标的 set_icon / set_tooltip 在后台线程调用时会把活交给主线程并原地等它做完；以前后台线程
+/// 拿着 drawn 锁这样等，主线程恰好也在重画（呼吸节拍每 100 毫秒一次）、在等同一把锁，两边互等，
+/// 整个程序就卡死了（开着久了、CLI 用得多时容易碰上）。现在只在主线程重画，并且调用托盘接口时不拿锁。
 pub fn update(handle: &AppHandle) {
+    let h = handle.clone();
+    // 已经在主线程时 run_on_main_thread 直接执行
+    let _ = handle.run_on_main_thread(move || redraw(&h));
+}
+
+/// 重画托盘图标（只在主线程调用）。
+fn redraw(handle: &AppHandle) {
     let tray = handle.state::<TrayState>();
     let state = handle.state::<AppState>();
     let (settings, entries) = {
@@ -184,34 +195,40 @@ pub fn update(handle: &AppHandle) {
     };
     // 语言变了：菜单文字要换，全部重建。
     let chinese = yybar_core::l10n::is_chinese();
-    {
+    let rebuild: Vec<String> = {
         let mut lang = tray.language.lock().unwrap();
-        if lang.is_some_and(|l| l != chinese) {
-            for id in tray.drawn.lock().unwrap().keys().cloned().collect::<Vec<_>>() {
-                let _ = handle.remove_tray_by_id(&id);
-            }
-            tray.drawn.lock().unwrap().clear();
-            tray.tooltips.lock().unwrap().clear();
-        }
+        let changed = lang.is_some_and(|l| l != chinese);
         *lang = Some(chinese);
+        if changed {
+            tray.tooltips.lock().unwrap().clear();
+            tray.drawn.lock().unwrap().drain().map(|(id, _)| id).collect()
+        } else {
+            Vec::new()
+        }
+    };
+    for id in rebuild {
+        let _ = handle.remove_tray_by_id(&id);
     }
 
     let wanted: Vec<String> = if entries.is_empty() { vec![PLACEHOLDER.into()] } else { entries.iter().map(|e| e.id.clone()).collect() };
     // 删掉不要的
-    {
+    let stale: Vec<String> = {
         let mut drawn = tray.drawn.lock().unwrap();
         let stale: Vec<String> = drawn.keys().filter(|k| !wanted.contains(k)).cloned().collect();
-        for id in stale {
-            let _ = handle.remove_tray_by_id(&id);
-            drawn.remove(&id);
-            tray.tooltips.lock().unwrap().remove(&id);
+        let mut tips = tray.tooltips.lock().unwrap();
+        for id in &stale {
+            drawn.remove(id);
+            tips.remove(id);
         }
+        stale
+    };
+    for id in stale {
+        let _ = handle.remove_tray_by_id(&id);
     }
     if entries.is_empty() {
-        let mut drawn = tray.drawn.lock().unwrap();
-        if !drawn.contains_key(PLACEHOLDER) {
+        let missing = tray.drawn.lock().unwrap().insert(PLACEHOLDER.into(), (None, 0)).is_none();
+        if missing {
             create_icon(handle, PLACEHOLDER, placeholder_image());
-            drawn.insert(PLACEHOLDER.into(), (None, 0));
             if let Some(t) = handle.tray_by_id(PLACEHOLDER) {
                 let _ = t.set_tooltip(Some("yybar"));
             }
@@ -240,27 +257,24 @@ pub fn update(handle: &AppHandle) {
             0.0
         };
         let key = (remaining.map(|r| r.round() as i32), (phase * 12.0).round() as u8);
-        let mut drawn = tray.drawn.lock().unwrap();
-        let exists = drawn.contains_key(&id);
-        if !exists || drawn.get(&id) != Some(&key) {
+        // 先在锁里记下新状态、判断要不要重画，放开锁再调托盘接口
+        let previous = tray.drawn.lock().unwrap().insert(id.clone(), key);
+        if previous != Some(key) {
             let image = Image::new_owned(tray_render::render(*app, remaining, phase), tray_render::SIZE, tray_render::SIZE);
-            if exists {
+            if previous.is_some() {
                 if let Some(t) = handle.tray_by_id(&id) {
                     let _ = t.set_icon(Some(image));
                 }
             } else {
                 create_icon(handle, &id, image);
             }
-            drawn.insert(id.clone(), key);
         }
-        drop(drawn);
         let tip = tooltip(*app, name.as_deref(), snapshot.as_ref(), if local { today.get(app).copied() } else { None });
-        let mut tips = tray.tooltips.lock().unwrap();
-        if tips.get(&id) != Some(&tip) {
+        let tip_changed = tray.tooltips.lock().unwrap().insert(id.clone(), tip.clone()).as_ref() != Some(&tip);
+        if tip_changed {
             if let Some(t) = handle.tray_by_id(&id) {
                 let _ = t.set_tooltip(Some(&tip));
             }
-            tips.insert(id, tip);
         }
     }
     if breathing || state.activity.needs_ticking() {
@@ -270,19 +284,14 @@ pub fn update(handle: &AppHandle) {
 
 /// 今日花费（只算有价格的部分；Grok 费用来自日志）。
 fn today_costs(state: &AppState) -> HashMap<UsageApp, f64> {
-    let today = chrono::Local::now().date_naive();
-    let mut out = HashMap::new();
-    for b in state.usage.lock().unwrap().buckets().iter().filter(|b| b.day == today) {
-        *out.entry(b.app).or_insert(0.0) += b.cost_usd;
-    }
-    out
+    state.usage.lock().unwrap().costs_on(chrono::Local::now().date_naive())
 }
 
 /// 日志写入（监听线程）→ 立即重画，并在有活动时保持节拍。
 pub fn activity_changed(handle: &AppHandle) {
     let h = handle.clone();
     let _ = handle.run_on_main_thread(move || {
-        update(&h);
+        redraw(&h);
         publish_if_activity_changed(&h);
     });
 }
@@ -322,7 +331,7 @@ fn ensure_ticker(handle: &AppHandle) {
             if !breathing && !needs {
                 let h2 = h.clone();
                 let _ = h.run_on_main_thread(move || {
-                    update(&h2);
+                    redraw(&h2);
                     publish_if_activity_changed(&h2);
                 });
                 *h.state::<TrayState>().ticker_running.lock().unwrap() = false;
@@ -330,7 +339,7 @@ fn ensure_ticker(handle: &AppHandle) {
             }
             let h2 = h.clone();
             let _ = h.run_on_main_thread(move || {
-                update(&h2);
+                redraw(&h2);
                 publish_if_activity_changed(&h2);
             });
             tokio::time::sleep(std::time::Duration::from_millis(if breathing { 100 } else { 1000 })).await;

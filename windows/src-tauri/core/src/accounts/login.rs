@@ -93,7 +93,7 @@ pub fn binary(provider: Provider) -> Option<PathBuf> {
     match provider {
         Provider::Codex => {
             extra.push(home.join(".bun").join("bin"));
-            paths::find_executable("codex", &extra)
+            paths::find_executable("codex", &extra).or_else(codex_bundled)
         }
         Provider::Claude => {
             extra.push(home.join(".claude").join("local"));
@@ -102,6 +102,54 @@ pub fn binary(provider: Provider) -> Option<PathBuf> {
         Provider::Grok => crate::quota::grok::binary(),
         Provider::Google => crate::quota::google::binary(),
     }
+}
+
+/// 没装 Codex CLI、只装了编辑器里的 Codex 插件（VS Code / Cursor / Windsurf 等，插件 id `openai.chatgpt`）时，
+/// 用插件自带的 codex 可执行文件登录。取版本号最新的插件。
+fn codex_bundled() -> Option<PathBuf> {
+    // 状态快照每次发布都会问一遍，结果缓存一分钟
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, Option<PathBuf>)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, found)) = cache.as_ref() {
+        if at.elapsed() < Duration::from_secs(60) {
+            return found.clone();
+        }
+    }
+    let found = scan_codex_plugins();
+    *cache = Some((Instant::now(), found.clone()));
+    found
+}
+
+fn scan_codex_plugins() -> Option<PathBuf> {
+    let home = paths::home();
+    let exe = if cfg!(windows) { "codex.exe" } else { "codex" };
+    let mut plugins: Vec<PathBuf> = [".vscode", ".vscode-insiders", ".cursor", ".windsurf", ".trae", ".kiro"]
+        .iter()
+        .filter_map(|editor| std::fs::read_dir(home.join(editor).join("extensions")).ok())
+        .flat_map(|it| it.flatten().map(|e| e.path()))
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("openai.chatgpt-")))
+        .collect();
+    plugins.sort_by_key(|p| std::cmp::Reverse(plugin_version(p)));
+    plugins.iter().find_map(|plugin| find_file(&plugin.join("bin"), exe, 2))
+}
+
+/// `openai.chatgpt-26.1015.2-win32-x64` → [26, 1015, 2]
+fn plugin_version(dir: &std::path::Path) -> Vec<u64> {
+    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    name.trim_start_matches("openai.chatgpt-").split('-').next().unwrap_or("").split('.').map(|p| p.parse().unwrap_or(0)).collect()
+}
+
+/// 在目录里（最多往下 depth 层）找名为 name 的文件。
+fn find_file(dir: &std::path::Path, name: &str, depth: u32) -> Option<PathBuf> {
+    let candidate = dir.join(name);
+    if candidate.is_file() {
+        return Some(candidate);
+    }
+    if depth == 0 {
+        return None;
+    }
+    std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).find_map(|p| find_file(&p, name, depth - 1))
 }
 
 impl LoginSession {
@@ -133,6 +181,7 @@ impl LoginSession {
             }
         }
         cmd.current_dir(&dir)
+            .env("PATH", paths::child_path(&binary))
             .env("NO_COLOR", "1")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -367,6 +416,13 @@ pub fn switch_account_url(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_versions_sort() {
+        let v = |n: &str| plugin_version(std::path::Path::new(n));
+        assert_eq!(v("openai.chatgpt-26.1015.2-win32-x64"), vec![26, 1015, 2]);
+        assert!(v("openai.chatgpt-26.1015.2-win32-x64") > v("openai.chatgpt-0.4.9-win32-x64"));
+    }
 
     #[test]
     fn finds_login_links() {

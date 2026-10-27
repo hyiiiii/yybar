@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
+use yybar_core::storage::settings::DockEdge;
 use yybar_core::tr;
 
 use crate::app_state::AppState;
@@ -26,6 +27,8 @@ pub const ONBOARDING: &str = "onboarding";
 
 const POPOVER_GAP: f64 = 10.0;
 const SNAP_THRESHOLD: f64 = 20.0;
+/// 悬浮窗拖出屏幕左 / 右边缘超过这么多（逻辑像素）时收起成贴边窄条
+const COLLAPSE_OVERHANG: f64 = 12.0;
 const FLOATING_MARGIN: f64 = 16.0;
 
 #[derive(Default)]
@@ -181,6 +184,7 @@ pub fn open_main(app: &AppHandle, tab: Option<&str>) {
             .build();
         match result {
             Ok(w) => {
+                let _ = w.set_zoom(app.state::<AppState>().settings().text_size.scale());
                 let _ = w.set_focus();
             }
             Err(e) => log::warn!("open main window: {e}"),
@@ -189,6 +193,13 @@ pub fn open_main(app: &AppHandle, tab: Option<&str>) {
 }
 
 // ---------- 引导 ----------
+
+/// 设置 · 通用 · 字体大小：按倍数缩放主窗口网页（同浏览器缩放，布局跟着变）。
+pub fn apply_text_size(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.set_zoom(app.state::<AppState>().settings().text_size.scale());
+    }
+}
 
 pub fn open_onboarding(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(ONBOARDING) {
@@ -295,6 +306,8 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
+/// 拖动结束：拖出屏幕左 / 右边缘超过 COLLAPSE_OVERHANG 时收起成贴边窄条（像微信通话小窗）；
+/// 已收起时只能贴着左 / 右边上下移动（松手时靠近哪边贴哪边）；其余情况离屏幕边 20 像素内吸附。
 fn snap_and_persist(app: &AppHandle) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
@@ -303,19 +316,39 @@ fn snap_and_persist(app: &AppHandle) {
         .ok()
         .flatten()
         .or_else(|| w.current_monitor().ok().flatten());
+    let docked = app.state::<AppState>().settings().floating_dock;
+    let mut dock = docked;
     let (mut x, mut y) = (pos.x, pos.y);
     if let Some(m) = monitor {
         let work = m.work_area();
         let t = (SNAP_THRESHOLD * m.scale_factor()) as i32;
+        let overhang = (COLLAPSE_OVERHANG * m.scale_factor()) as i32;
         let (left, top) = (work.position.x, work.position.y);
-        let right = left + work.size.width as i32 - size.width as i32;
+        let work_right = left + work.size.width as i32;
+        let right = work_right - size.width as i32;
         let bottom = top + work.size.height as i32 - size.height as i32;
-        if (x - left).abs() < t {
-            x = left;
-        } else if (right - x).abs() < t {
-            x = right;
+        if docked.is_some() {
+            dock = Some(if x + size.width as i32 / 2 < left + work.size.width as i32 / 2 { DockEdge::Left } else { DockEdge::Right });
+        } else if x < left - overhang {
+            dock = Some(DockEdge::Left);
+        } else if x + size.width as i32 > work_right + overhang {
+            dock = Some(DockEdge::Right);
         }
-        if (y - top).abs() < t {
+        match dock {
+            // 收起后窗口会按窄条重新量尺寸（fit_floating 贴边），这里先贴边、限制在屏幕上下之间
+            Some(DockEdge::Left) => x = left,
+            Some(DockEdge::Right) => x = right,
+            None => {
+                if (x - left).abs() < t {
+                    x = left;
+                } else if (right - x).abs() < t {
+                    x = right;
+                }
+            }
+        }
+        if dock.is_some() {
+            y = y.clamp(top, bottom.max(top));
+        } else if (y - top).abs() < t {
             y = top;
         } else if (bottom - y).abs() < t {
             y = bottom;
@@ -325,25 +358,59 @@ fn snap_and_persist(app: &AppHandle) {
             let _ = w.set_position(PhysicalPosition::new(x, y));
         }
     }
-    let state = app.state::<AppState>();
-    let mut g = state.inner.lock().unwrap();
-    g.settings.floating_position = Some((x, y));
-    g.settings.save();
+    {
+        let state = app.state::<AppState>();
+        let mut g = state.inner.lock().unwrap();
+        g.settings.floating_position = Some((x, y));
+        g.settings.floating_dock = dock;
+        g.settings.save();
+    }
+    if dock != docked {
+        crate::app_state::publish(app);
+    }
 }
 
-/// 悬浮窗大小跟随内容，保持右上角不动（默认贴在屏幕右上角）。
+/// 点收起的窄条：展开回原来的悬浮窗，仍贴着那条边（fit_floating 按贴边方向长）。
+pub fn expand_floating(app: &AppHandle) {
+    {
+        let state = app.state::<AppState>();
+        let mut g = state.inner.lock().unwrap();
+        if g.settings.floating_dock.is_none() {
+            return;
+        }
+        g.settings.floating_dock = None;
+        g.settings.save();
+    }
+    crate::app_state::publish(app);
+}
+
+/// 悬浮窗大小跟随内容：收起时贴住那条边；展开时贴着屏幕左边就保持左边不动，否则保持右上角不动（默认贴在屏幕右上角）。
 pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
     let (Ok(size), Ok(pos)) = (w.outer_size(), w.outer_position()) else { return };
-    let nw = (width.clamp(120.0, 640.0) * scale).round() as u32;
+    let nw = (width.clamp(24.0, 640.0) * scale).round() as u32;
     let nh = (height.clamp(28.0, 600.0) * scale).round() as u32;
-    if size.width != nw || size.height != nh {
-        let right = pos.x + size.width as i32;
-        *app.state::<WindowState>().floating_moved_at.lock().unwrap() = None;
-        let _ = w.set_size(PhysicalSize::new(nw, nh));
-        let _ = w.set_position(PhysicalPosition::new(right - nw as i32, pos.y));
+    if size.width == nw && size.height == nh {
+        return;
     }
+    let dock = app.state::<AppState>().settings().floating_dock;
+    let work = w
+        .monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0)
+        .ok()
+        .flatten()
+        .or_else(|| w.current_monitor().ok().flatten())
+        .map(|m| *m.work_area());
+    let right = pos.x + size.width as i32;
+    let x = match (dock, work) {
+        (Some(DockEdge::Left), Some(a)) => a.position.x,
+        (Some(DockEdge::Right), Some(a)) => a.position.x + a.size.width as i32 - nw as i32,
+        (None, Some(a)) if pos.x <= a.position.x => pos.x,
+        _ => right - nw as i32,
+    };
+    *app.state::<WindowState>().floating_moved_at.lock().unwrap() = None;
+    let _ = w.set_size(PhysicalSize::new(nw, nh));
+    let _ = w.set_position(PhysicalPosition::new(x, pos.y));
 }
 
 // ---------- 材质 ----------

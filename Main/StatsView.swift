@@ -248,6 +248,8 @@ fileprivate struct StatsSelections: Equatable {
 
 struct StatsView: View {
     @Environment(AppState.self) private var appState
+    /// 图表坐标轴文字不是普通视图，用不了 scaledFont,直接乘字号倍数。
+    @Environment(\.textScale) private var textScale
     /// 顶部按钮改变内容前记下正在看的位置，排版后补回，页面不跳。
     @State private var anchorKeeper = ScrollAnchorKeeper()
     /// 用量数据的按天索引，数据变化时才重建(避免每次重绘对全部记录反复扫描)。
@@ -353,7 +355,7 @@ struct StatsView: View {
             modelsTable
             Text(tr("Unknown prices show as — and are excluded from estimated cost.",
                     "未知定价的模型显示为 —，不计入估算费用。"))
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
         }
     }
@@ -498,7 +500,7 @@ struct StatsView: View {
             }
         } label: {
             Image(systemName: split ? "arrow.triangle.merge" : "arrow.triangle.branch")
-                .font(.system(size: 11, weight: .medium))
+                .scaledFont(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
                 .frame(width: 18, height: 16)
                 .contentShape(Rectangle())
@@ -518,7 +520,7 @@ struct StatsView: View {
                 }
                 // 字重固定：选中只改背景和描边，切换时按钮宽度不变，工具栏不会左右跳。
                 Text(item.chipLabel)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -590,7 +592,7 @@ struct StatsView: View {
                 .labelsHidden()
                 .help(tr("To", "止"))
         }
-        .font(.system(size: 12))
+        .scaledFont(size: 12)
         .fixedSize()
     }
 
@@ -746,7 +748,7 @@ struct StatsView: View {
             }
         } label: {
             Image(systemName: mergeTokens ? "arrow.triangle.branch" : "arrow.triangle.merge")
-                .font(.system(size: 11, weight: .medium))
+                .scaledFont(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 16)
                 .contentShape(Rectangle())
@@ -780,7 +782,7 @@ struct StatsView: View {
     private var metricControl: some View {
         if answersOnly {
             Text(tr("Answers", "回答次数"))
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
         } else {
             metricPicker
@@ -824,7 +826,7 @@ struct StatsView: View {
                     .frame(width: 14, height: 1)
                     .alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 3.5 }
                 Text("\(tr("avg", "日均")) \(formatMetric(average))")
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .contentTransition(.numericText())
@@ -888,7 +890,7 @@ struct StatsView: View {
                     // (原来 stride 每 N 天 + centered 会把标签居中到 N 天区间里，偏到后面两天多。)
                     AxisMarks(values: Self.dayLabelTicks(samples.map(\.day))) { _ in
                         AxisValueLabel(format: .dateTime.month(.defaultDigits).day(), anchor: .top)
-                            .font(.system(size: 10))
+                            .font(.system(size: 10 * textScale))
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -899,7 +901,7 @@ struct StatsView: View {
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(formatMetricAxis(v))
-                                    .font(.system(size: 10))
+                                    .scaledFont(size: 10)
                                     .foregroundStyle(Color.secondary)
                                     .monospacedDigit()
                             }
@@ -933,7 +935,7 @@ struct StatsView: View {
                     ServiceLogo(app: app, size: 11)
                     if names {
                         Text(app.statsShortTitle)
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .fixedSize()
@@ -983,7 +985,7 @@ struct StatsView: View {
     private func dayTooltip(_ sample: DailySample) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(StatsFormatter.day(sample.day))
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
             ForEach(visibleApps, id: \.self) { app in
                 HStack(spacing: 5) {
                     ServiceLogo(app: app, size: 10)
@@ -994,7 +996,7 @@ struct StatsView: View {
                          : formatMetric(sample.value(for: app)))
                         .monospacedDigit()
                 }
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
             }
         }
         .padding(.horizontal, 8)
@@ -1064,7 +1066,7 @@ struct StatsView: View {
                                     HStack(spacing: 6) {
                                         ServiceLogo(app: row.app, size: 14)
                                         Text(row.app.statsShortTitle)
-                                            .font(.system(size: 12))
+                                            .scaledFont(size: 12)
                                             .lineLimit(1)
                                         if index == 0 { pairButton(group) }
                                     }
@@ -1091,7 +1093,7 @@ struct StatsView: View {
                                     ForEach(group, id: \.self) { ServiceLogo(app: $0, size: 14) }
                                 }
                                 Text(group.count == 2 ? group.map(\.statsShortTitle).joined(separator: " · ") : group[0].statsTitle)
-                                    .font(.system(size: 12))
+                                    .scaledFont(size: 12)
                                     .lineLimit(1)
                                 if group.count == 2 { pairButton(group) }
                             }
@@ -1120,7 +1122,7 @@ struct StatsView: View {
                 }
 
                 Text(singleDayFootnote(total: todayTotal, average: averageTotal, isToday: isToday))
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
             }
@@ -1145,7 +1147,7 @@ struct StatsView: View {
             }
         } label: {
             Image(systemName: split ? "arrow.triangle.merge" : "arrow.triangle.branch")
-                .font(.system(size: 11, weight: .medium))
+                .scaledFont(size: 11, weight: .medium)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 16)
                 .contentShape(Rectangle())
@@ -1179,7 +1181,7 @@ struct StatsView: View {
     /// 合并的 Gemini · Antigravity:「Antigravity 数值 · Gemini 次数 / 均 … · …」。
     private func mixedPairValue(value: Double, average: Double, count: SingleDayRow) -> some View {
         Text("\(formatMetric(value)) · \(Self.answersText(count.value)) / \(tr("avg", "均")) \(formatMetric(average)) · \(Self.answersText(count.average))")
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .lineLimit(1)
@@ -1189,7 +1191,7 @@ struct StatsView: View {
 
     private func singleDayValue(value: Double, average: Double, app: UsageApp) -> some View {
         Text("\(formatValue(value, app: app)) / \(tr("avg", "均")) \(formatValue(average, app: app))")
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .contentTransition(.numericText())
@@ -1488,7 +1490,7 @@ struct StatsView: View {
             }
         }
         .help(tr("Gemini Apps doesn't report tokens or cost", "Gemini App 不提供 token 和费用"))
-        .font(.system(size: 12))
+        .scaledFont(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -1518,7 +1520,7 @@ struct StatsView: View {
                          "Grok Bot 账单只给总 token；未返回正数金额的行暂无模型成本估值，不代表免费调用。")
                     : tr("Estimated cost", "估算费用"))
         }
-        .font(.system(size: 12))
+        .scaledFont(size: 12)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -1544,10 +1546,10 @@ struct StatsView: View {
                 Text(title)
                 if modelSortKey == key {
                     Image(systemName: modelSortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .scaledFont(size: 8, weight: .bold)
                 }
             }
-            .font(.system(size: 11, weight: modelSortKey == key ? .semibold : .regular))
+            .scaledFont(size: 11, weight: modelSortKey == key ? .semibold : .regular)
             .foregroundStyle(modelSortKey == key ? Color.primary : Color.secondary)
         }
         .buttonStyle(.plain)
@@ -1634,11 +1636,11 @@ struct StatsView: View {
                 Text(timelineWindow == .fiveHour
                      ? tr("Today 5H Quota", "今日 5H 额度")
                      : tr("Today WK Quota", "今日 WK 额度"))
-                    .font(.system(size: 18, weight: .semibold))
+                    .scaledFont(size: 18, weight: .semibold)
                 // 只在今天中途才开始记录时提示一句(说明曲线为什么不是从 0 点开始)。
                 if let note = timelineRecordingNote {
                     Text(note)
-                        .font(.system(size: 11.5))
+                        .scaledFont(size: 11.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -1655,7 +1657,7 @@ struct StatsView: View {
             .labelsHidden()
             .fixedSize()
             Text(StatsFormatter.day(Date()))
-                .font(.system(size: 11, design: .monospaced))
+                .scaledFont(size: 11, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 8)
         }
@@ -1914,7 +1916,7 @@ struct StatsView: View {
 
     private func placeholderHeight(_ height: CGFloat, message: String) -> some View {
         Text(message)
-            .font(.system(size: 12))
+            .scaledFont(size: 12)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
             .frame(height: height)
@@ -2030,7 +2032,7 @@ private struct Panel<Content: View>: View {
             HStack(alignment: .firstTextBaseline) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(tr(title, chinese))
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .scaledFont(size: 12.5, weight: .semibold)
                     if let titleAccessory { titleAccessory }
                 }
                 Spacer()
@@ -2086,7 +2088,7 @@ private struct TokenActivityPanel: View {
             summaryRow
             HStack {
                 Text(answers ? tr("Answer activity", "回答活动") : tr("Token activity", "Token 活动"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
                 Spacer()
                 HStack(spacing: 14) {
                     modeButton(.daily, tr("Daily", "每天"))
@@ -2111,7 +2113,7 @@ private struct TokenActivityPanel: View {
             hover = nil
         } label: {
             Text(title)
-                .font(.system(size: 12.5, weight: mode == value ? .semibold : .regular))
+                .scaledFont(size: 12.5, weight: mode == value ? .semibold : .regular)
                 .foregroundStyle(mode == value ? Color.primary : Color.secondary)
         }
         .buttonStyle(.plain)
@@ -2138,13 +2140,13 @@ private struct TokenActivityPanel: View {
     private func summaryCell(_ value: String, _ label: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 16, weight: .medium))
+                .scaledFont(size: 16, weight: .medium)
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .font(.system(size: 11.5))
+                .scaledFont(size: 11.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -2271,7 +2273,7 @@ private struct TokenActivityPanel: View {
             ForEach(columns, id: \.self) { index in
                 let start = starts[index]
                 Text(tr(start.formatted(.dateTime.month(.abbreviated)), "\(Self.calendar.component(.month, from: start))月"))
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .offset(x: CGFloat(index) * pitch)
@@ -2394,7 +2396,7 @@ private struct TooltipBubble: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .scaledFont(size: 11.5, weight: .medium)
                     .monospacedDigit()
             }
         }
@@ -2427,7 +2429,7 @@ private struct KPICard: View {
         VStack(alignment: .leading, spacing: 4) {
             // 小按钮放在 overlay 里，不撑高标题行，三张卡的数字保持对齐。
             Text(title)
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.trailing, accessory == nil ? 0 : 22)
@@ -2437,14 +2439,14 @@ private struct KPICard: View {
                 }
             // 数值单行 + 按宽度缩放,窄窗口下不折行;合并 / 拆分时数字滚动过渡。
             Text(value)
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(size: 22, weight: .semibold)
                 .kerning(-0.5)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .contentTransition(.numericText())
             Text(detail ?? " ")
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -2523,7 +2525,7 @@ private struct QuotaTile: View {
                 }
                 if let note {
                     Text(note)
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .padding(.top, unavailable ? 6 : 0)
@@ -2547,16 +2549,16 @@ struct LimitBarRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .frame(width: labelWidth, alignment: .leading)
             ProgressBar(value: (window?.remainingPercent ?? 0) / 100, tint: window == nil ? .secondary : tint, height: 6)
             Text(percentText)
-                .font(.system(size: 11.5, weight: .medium))
+                .scaledFont(size: 11.5, weight: .medium)
                 .monospacedDigit()
                 .foregroundStyle(percentColor)
                 .frame(width: 36, alignment: .trailing)
             ResetTimeText(resetsAt: window?.resetsAt)
-                .font(.system(size: 10.5))
+                .scaledFont(size: 10.5)
                 .foregroundStyle(.secondary)
                 .frame(width: 52, alignment: .trailing)
         }
@@ -2580,6 +2582,7 @@ struct LimitBarRow: View {
 // 悬停显示该时刻各账号的剩余;下方账号列表可逐个开关曲线，「详情」展开该账号的变动记录。
 
 private struct QuotaTimelineOverview: View {
+    @Environment(\.textScale) private var textScale
     /// 显示曲线 / 展开详情 / 5H·WK 切换的动画(与概览的切换动画一致)。
     static let animation = Animation.spring(response: 0.45, dampingFraction: 0.86)
 
@@ -2640,7 +2643,7 @@ private struct QuotaTimelineOverview: View {
                 Text(visibleSections.isEmpty
                      ? tr("Turn on an account below to show its line.", "在下方打开账号即可显示曲线。")
                      : tr("No quota data yet", "还没有额度数据"))
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 240)
@@ -2684,7 +2687,7 @@ private struct QuotaTimelineOverview: View {
                     AxisMarks(values: .automatic(desiredCount: 6)) { _ in
                         AxisGridLine().foregroundStyle(.quaternary)
                         AxisValueLabel(format: .dateTime.hour().minute())
-                            .font(.system(size: 10))
+                            .font(.system(size: 10 * textScale))
                             .foregroundStyle(Color.secondary)
                     }
                 }
@@ -2694,7 +2697,7 @@ private struct QuotaTimelineOverview: View {
                         AxisValueLabel {
                             if let v = value.as(Int.self) {
                                 Text("\(v)%")
-                                    .font(.system(size: 10))
+                                    .scaledFont(size: 10)
                                     .foregroundStyle(Color.secondary)
                             }
                         }
@@ -2734,7 +2737,7 @@ private struct QuotaTimelineOverview: View {
     private func tooltip(at time: Date, colors: [String: Color]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(StatsFormatter.time(time))
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
                 .monospacedDigit()
             ForEach(visibleSections) { section in
                 HStack(spacing: 6) {
@@ -2747,7 +2750,7 @@ private struct QuotaTimelineOverview: View {
                     Text(value(of: section, at: time).map { "\($0)%" } ?? "—")
                         .monospacedDigit()
                 }
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
             }
         }
         .padding(.horizontal, 8)
@@ -2768,13 +2771,13 @@ private struct QuotaTimelineOverview: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .scaledFont(size: 10, weight: .semibold)
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(accountsCollapsed ? 0 : 90))
                         Text(tr("Accounts", "账号"))
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .scaledFont(size: 12.5, weight: .semibold)
                         Text("\(sections.count)")
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
@@ -2785,7 +2788,7 @@ private struct QuotaTimelineOverview: View {
                 Spacer()
                 if !accountsCollapsed {
                     Text(tr("Show in chart", "显示曲线"))
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -2799,7 +2802,7 @@ private struct QuotaTimelineOverview: View {
                     Group {
                         if section.events.isEmpty {
                             Text(tr("No changes today", "今天暂无变动"))
-                                .font(.system(size: 11.5))
+                                .scaledFont(size: 11.5)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
@@ -2824,7 +2827,7 @@ private struct QuotaTimelineOverview: View {
                 .fill(color)
                 .frame(width: 14, height: 4)
             Text(section.title)
-                .font(.system(size: 12.5, weight: .medium))
+                .scaledFont(size: 12.5, weight: .medium)
                 .lineLimit(1)
             Spacer(minLength: 12)
             metric(tr("Now", "当前"), section.currentRemaining.map { "\($0)%" } ?? "--")
@@ -2840,7 +2843,7 @@ private struct QuotaTimelineOverview: View {
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .font(.system(size: 11.5))
+                .scaledFont(size: 11.5)
             }
             .buttonStyle(.borderless)
             .frame(width: 56)
@@ -2863,10 +2866,10 @@ private struct QuotaTimelineOverview: View {
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
             Text(label)
-                .font(.system(size: 9.5))
+                .scaledFont(size: 9.5)
                 .foregroundStyle(.tertiary)
             Text(value)
-                .font(.system(size: 11.5, weight: .medium))
+                .scaledFont(size: 11.5, weight: .medium)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
@@ -2930,14 +2933,14 @@ private struct QuotaTimelineTable: View {
         alignment: Alignment
     ) -> some View {
         Text(tr(english, chinese))
-            .font(.system(size: 10.5, weight: .semibold))
+            .scaledFont(size: 10.5, weight: .semibold)
             .foregroundStyle(.tertiary)
             .frame(width: width, alignment: alignment)
     }
 
     private func tableText(_ text: String, width: CGFloat, alignment: Alignment) -> some View {
         Text(text)
-            .font(.system(size: 11.5, design: .monospaced))
+            .scaledFont(size: 11.5, design: .monospaced)
             .foregroundStyle(.secondary)
             .frame(width: width, alignment: alignment)
     }

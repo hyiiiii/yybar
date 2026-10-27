@@ -70,7 +70,8 @@ struct MainWindowRootView: View {
             // 侧边栏可由标题栏左侧按钮 / ⌃⌘S 隐藏。
             if appState.sidebarVisible {
                 sidebar
-                    .frame(width: 150)
+                    // 侧边栏宽度跟着字号一起放大，名字不被截断
+                    .frame(width: 150 * SettingsStore.shared.textSize.scale)
                     .transition(.move(edge: .leading))
 
                 Divider()
@@ -87,6 +88,7 @@ struct MainWindowRootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .environment(\.textScale, SettingsStore.shared.textSize.scale)
         .frame(minWidth: 760, minHeight: 560)
     }
 
@@ -115,7 +117,7 @@ struct MainWindowRootView: View {
                     HStack(spacing: 7) {
                         WebAvatar(profile: profile, size: 20)
                         Text("@\(profile.login)")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .scaledFont(size: 11.5, weight: .medium)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -133,7 +135,7 @@ struct MainWindowRootView: View {
                 Task { await appState.refreshNow() }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(refreshRotation))
             }
@@ -147,7 +149,7 @@ struct MainWindowRootView: View {
         VStack(alignment: .leading, spacing: 1) {
             if let title {
                 Text(title)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .scaledFont(size: 10.5, weight: .semibold)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 4)
@@ -169,13 +171,13 @@ struct MainWindowRootView: View {
                         PlayingCardsIcon(size: 12)
                     } else {
                         Image(systemName: page.icon)
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                     }
                 }
                 .frame(width: 16)
                 .foregroundStyle(active ? Color.white : Color.secondary)
                 Text(page.title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .scaledFont(size: 12.5, weight: .medium)
                     .foregroundStyle(active ? Color.white : Color.primary)
                 Spacer()
             }
@@ -206,7 +208,7 @@ struct SidebarToggleButton: View {
             withAnimation(.easeInOut(duration: 0.2)) { appState.sidebarVisible.toggle() }
         } label: {
             Image(systemName: "sidebar.left")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 22)
                 .contentShape(Rectangle())
@@ -424,10 +426,10 @@ struct SectionHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .scaledFont(size: 18, weight: .semibold)
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
             }
         }

@@ -50,6 +50,15 @@ impl Aggregator {
         self.buckets.is_empty()
     }
 
+    /// 某一天各服务的费用合计（不复制整张表；托盘每 100 毫秒重画都要用）。
+    pub fn costs_on(&self, day: NaiveDate) -> HashMap<UsageApp, f64> {
+        let mut out = HashMap::new();
+        for b in self.buckets.values().filter(|b| b.day == day) {
+            *out.entry(b.app).or_insert(0.0) += b.cost_usd;
+        }
+        out
+    }
+
     /// 按 天 → 服务 → 模型 排好序的全部桶。
     pub fn snapshot(&self) -> Vec<UsageBucket> {
         let mut list: Vec<UsageBucket> = self.buckets.values().cloned().collect();

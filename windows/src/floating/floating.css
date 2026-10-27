@@ -60,3 +60,41 @@ body,
   font-size: 10.5px;
   color: var(--text-secondary);
 }
+
+/* 收起：贴着屏幕左 / 右边的窄条，贴边一侧直角，每行小图标 + 剩余百分比 */
+.hud.collapsed {
+  min-width: 0;
+  width: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 0;
+  cursor: pointer;
+}
+
+.hud.collapsed.dock-right {
+  border-radius: 10px 0 0 10px;
+  border-right: none;
+}
+
+.hud.collapsed.dock-left {
+  border-radius: 0 10px 10px 0;
+  border-left: none;
+}
+
+.tab-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tab-percent {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.tab-chevron {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
