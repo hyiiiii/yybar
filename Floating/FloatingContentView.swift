@@ -201,8 +201,9 @@ private struct FloatingRow: View {
     }
 }
 
-/// 悬浮窗(展开和收起)上的鼠标处理：按下时把拖动交给系统(`performDrag`,松手才返回),
+/// 悬浮窗(展开和收起)上的鼠标处理：按下时把拖动交给系统(`performDrag`),等左键松开后
 /// 再告诉 controller 这次有没有拖动过(见 FloatingPanelController.mouseReleased)。
+/// performDrag 把拖动交给窗口服务器后立刻返回，不能拿它返回的时刻当拖完。
 /// 用 AppKit 视图接：非激活面板里第一下点击也能收到。
 private struct FloatingMouse: NSViewRepresentable {
     let help: String
@@ -225,7 +226,15 @@ final class FloatingMouseView: NSView {
         guard let window else { return }
         let before = window.frame.origin
         window.performDrag(with: event)
-        let after = window.frame.origin
-        FloatingPanelController.shared.mouseReleased(moved: hypot(after.x - before.x, after.y - before.y) >= 3)
+        Task { @MainActor [weak window] in
+            while NSEvent.pressedMouseButtons & 1 != 0 {
+                try? await Task.sleep(nanoseconds: 30_000_000)
+            }
+            // 松手后窗口最后一次移动可能稍晚才到
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            guard let window else { return }
+            let after = window.frame.origin
+            FloatingPanelController.shared.mouseReleased(moved: hypot(after.x - before.x, after.y - before.y) >= 3)
+        }
     }
 }

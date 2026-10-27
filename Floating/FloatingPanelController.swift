@@ -94,7 +94,10 @@ final class FloatingPanelController: NSObject {
         guard let panel else { return }
         let settings = SettingsStore.shared
         guard settings.floatingDockEdge != nil else {
-            if moved { snapToEdgeIfNeeded() }
+            if moved {
+                snapToEdgeIfNeeded()
+                settings.floatingPanelFrame = panel.frame
+            }
             return
         }
         guard moved else {
