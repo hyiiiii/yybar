@@ -27,6 +27,7 @@ use yybar_core::usage::activity::ActivityMonitor;
 use yybar_core::usage::pricing::{self, ModelPrice};
 use yybar_core::usage::service::{self as usage_service, Reprice, ScanRoots, UsageService};
 use yybar_core::usage::UsageBucket;
+use yybar_core::web::{self as site, AccountPlan};
 use yybar_core::{l10n, now_secs, tr, UsageApp};
 
 use crate::accounts::{self, OtherAccountView, SwitchNotice};
@@ -332,6 +333,54 @@ impl Inner {
         self.detected(app) && !self.is_removed(app)
     }
 
+    /// 网站个人主页 @ 后面的订阅：App 里启用着的账号各一条（服务 + 套餐 + 账号摘要，不传邮箱），免费的也传，
+    /// 没读到套餐的不传。Claude Max 的 5x / 20x 拼成 max_5x / max_20x。和 Mac 一样，Antigravity 的套餐是 Google 订阅，记成 gemini。
+    pub fn web_account_plans(&self) -> Vec<AccountPlan> {
+        let mut plans: Vec<AccountPlan> = Vec::new();
+        let mut add = |app: &'static str, identity: Option<&str>, plan: Option<&str>| {
+            let (Some(identity), Some(plan)) = (identity.filter(|i| !i.is_empty()), plan.filter(|p| !p.trim().is_empty())) else { return };
+            let entry = AccountPlan::new(app, identity, plan);
+            if !plans.iter().any(|p| p.app == entry.app && p.account == entry.account) {
+                plans.push(entry);
+            }
+        };
+        let shown = |app: UsageApp| self.settings.is_enabled(app) && self.local_shown(app);
+        if shown(UsageApp::Codex) {
+            let codex = self.codex.as_ref();
+            let plan = codex.and_then(|a| a.plan_type.clone()).or_else(|| self.codex_quota.as_ref().and_then(|q| q.plan_type.clone()));
+            add("codex", codex.and_then(|a| a.email.as_deref().or(a.account_id.as_deref())), plan.as_deref());
+        }
+        if shown(UsageApp::Claude) {
+            let claude = self.claude.as_ref();
+            let plan = site::claude_plan(claude.and_then(|a| a.subscription_type.as_deref()), claude.and_then(|a| a.rate_limit_tier.as_deref()));
+            add("claude", claude.and_then(|a| a.email.as_deref()), plan.as_deref());
+        }
+        if shown(UsageApp::Grok) {
+            let grok = self.grok.as_ref();
+            add("grok", grok.map(|a| a.email.as_deref().unwrap_or(&a.identity)), self.grok_plan.as_deref());
+        }
+        if shown(UsageApp::Agy) {
+            add("gemini", self.google_email.as_deref(), self.google_plan.as_deref());
+        }
+        // 其他账号看它自己那一行的「启用」
+        for a in self.listed_others().into_iter().filter(|a| a.enabled) {
+            let (app, service) = match a.provider {
+                Provider::Codex => ("codex", UsageApp::Codex),
+                Provider::Claude => ("claude", UsageApp::Claude),
+                Provider::Grok => ("grok", UsageApp::Grok),
+                Provider::Google => ("gemini", UsageApp::Agy),
+            };
+            let plan = match a.provider {
+                Provider::Claude => site::claude_plan(a.plan.as_deref(), a.rate_limit_tier.as_deref()),
+                _ => a.plan.clone(),
+            };
+            if self.settings.is_enabled(service) {
+                add(app, Some(a.email.as_deref().unwrap_or(&a.id)), plan.as_deref());
+            }
+        }
+        plans
+    }
+
     fn detected(&self, app: UsageApp) -> bool {
         match app {
             UsageApp::Codex => self.codex.is_some(),
@@ -604,6 +653,7 @@ pub async fn refresh_quotas(app: &AppHandle, reason: RefreshReason) {
         accounts::refresh_all(app, reason),
     );
     publish(app);
+    web::accounts_did_update(app);
 }
 
 async fn load_codex_quota(app: &AppHandle, reason: RefreshReason) {

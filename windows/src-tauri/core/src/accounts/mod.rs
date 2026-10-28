@@ -103,6 +103,9 @@ pub struct OtherAccount {
     /// 仅 Codex：当前付费周期结束日（下次续费日）。
     #[serde(default)]
     pub subscription_active_until: Option<i64>,
+    /// 仅 Claude：凭据 / 资料接口的 rate_limit_tier（default_claude_max_5x / _20x），区分 Max 的两档。旧数据没有。
+    #[serde(default)]
+    pub rate_limit_tier: Option<String>,
 }
 
 fn yes() -> bool {
@@ -269,6 +272,7 @@ pub struct Identified {
     pub plan: Option<String>,
     pub subscription_active_until: Option<i64>,
     pub subscription_started_at: Option<i64>,
+    pub rate_limit_tier: Option<String>,
 }
 
 /// Codex：`auth.json` → `codex:<account_id>[:<user_id>]`（Team 下同一个 account 不同用户是不同账号）。
@@ -290,7 +294,7 @@ pub fn identify_codex(dir: &Path) -> Result<Identified, AccountError> {
         email: account.email,
         plan: account.plan_type,
         subscription_active_until: account.subscription_active_until,
-        subscription_started_at: None,
+        ..Default::default()
     })
 }
 
@@ -314,6 +318,7 @@ pub fn identify_claude(dir: &Path) -> Result<Identified, AccountError> {
         plan: account.subscription_type,
         subscription_active_until: None,
         subscription_started_at: oauth.as_ref().and_then(|o| credentials::parse_iso(o.get("subscriptionCreatedAt"))),
+        rate_limit_tier: account.rate_limit_tier,
     })
 }
 
@@ -352,6 +357,7 @@ mod tests {
             folder: folder.into(),
             subscription_started_at: None,
             subscription_active_until: None,
+            rate_limit_tier: None,
         }
     }
 

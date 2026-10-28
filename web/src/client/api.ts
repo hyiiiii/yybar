@@ -9,6 +9,13 @@ export interface PublicUser {
   badges?: string[];
 }
 
+/** App 传上来的订阅：同一服务同一套餐的账号数（个人主页 @ 后面那一排） */
+export interface PlanSummary {
+  app: App;
+  plan: string;
+  count: number;
+}
+
 /** 德州统计：手数和几个比率（0～1，没打过是 null） */
 export interface PokerStats {
   hands: number;
@@ -66,7 +73,7 @@ export interface Points {
 }
 
 export interface Profile {
-  user: PublicUser & { joinedAt: string; showOnBoard?: boolean };
+  user: PublicUser & { joinedAt: string; showOnBoard?: boolean; plans?: PlanSummary[] };
   totals: Totals;
   series: SeriesPoint[];
   models: ModelRow[];
@@ -84,7 +91,7 @@ export interface Look {
 }
 
 export interface MeResponse extends Partial<Omit<Profile, "user">> {
-  user: (PublicUser & { joinedAt: string; showOnBoard: boolean }) | null;
+  user: (PublicUser & { joinedAt: string; showOnBoard: boolean; plans?: PlanSummary[] }) | null;
   look?: Look;
   /** 道具库存 */
   items?: Record<"timecard" | "peek" | "runout", number>;

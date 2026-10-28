@@ -1,6 +1,6 @@
 // 主窗口 · bar（对应 Mac `BarView`）：和统计、设置都不同的独立页，不放标题和说明文字。
 // 上面是一间像素风的木头小酒馆，直接画在页面上（不另起背景卡片）：屋顶立着 yybar 跑马灯招牌，门口站着 Claude 风格的
-// 像素小家伙招手；点酒馆任意处用浏览器打开 yybar 网站的德州大厅。
+// 像素小家伙招手；点酒馆任意处用浏览器打开 yybar 网站的个人主页（/me）。
 // 下面是上传卡片：连接 GitHub、待上传 / 已上传、自动上传（每天 12:00）、一键上传（每天一次），逻辑在后台 web.rs。
 // 像素画照 Mac 版逐格搬过来（4px 一格，酒馆 104 × 70 格）。
 
@@ -142,7 +142,7 @@ function Scene({ onEnter }: { onEnter: () => void }) {
   const flicker = Math.floor(t * 2) % 3;
   const w = (SCENE_W + GROUND_PAD * 2) * PX;
   return (
-    <div className="bar-scene" onClick={onEnter} title={tr("Open the poker lobby", "打开德州大厅")}>
+    <div className="bar-scene" onClick={onEnter} title={tr("Open my page on the yybar website", "打开 yybar 网站的个人主页")}>
       <div className="bar-scene-inner">
       <svg width={w} height={68 * PX} viewBox={`${-GROUND_PAD * PX} 0 ${w} ${68 * PX}`} shapeRendering="crispEdges" aria-hidden>
         <defs>

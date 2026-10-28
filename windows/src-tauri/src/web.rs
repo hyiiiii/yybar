@@ -7,6 +7,8 @@
 //! - 自动上传（默认关）：每天中午 12:00 先扫一遍本地统计再传没标签的天；12:00 时电脑在睡眠或没开 yybar，
 //!   之后第一次扫描完补传。一天只自动传一次，没传成功下次扫描完再试。
 //! - 网站不再认令牌（401）时自动断开，提示重新连接；其他失败保留标签和设置，下次再传。
+//! - 订阅（网站个人主页 @ 后面那一排）：每次刷新完额度交过来，和上次传成功的不一样就马上传，一样的每天补传一次
+//!   （网站 30 天没收到就不显示这台电脑的）；没传成功一小时后再试。
 
 use std::time::Duration;
 
@@ -17,7 +19,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use yybar_core::usage::UsageBucket;
-use yybar_core::web::{self as site, Ledger, Pending, Profile, WebError};
+use yybar_core::web::{self as site, AccountPlan, Ledger, Pending, Profile, WebError};
 use yybar_core::{now_secs, tr};
 
 use crate::app_state::{self, AppState};
@@ -44,6 +46,12 @@ pub struct WebState {
     pending_state: Option<String>,
     message: Option<(String, bool)>,
     noon_task: Option<JoinHandle<()>>,
+    /// 订阅：最近一次刷新交过来的、上次传成功的（和时间）、上次没传成功的时间
+    account_plans: Option<Vec<AccountPlan>>,
+    sent_account_plans: Option<Vec<AccountPlan>>,
+    account_plans_sent_at: Option<i64>,
+    account_plans_failed_at: Option<i64>,
+    account_plans_in_flight: bool,
 }
 
 impl WebState {
@@ -197,6 +205,7 @@ async fn finish_connect(app: &AppHandle, token: String) {
             sync_uploaded(app, &token, &profile.login).await;
             schedule_noon(app);
             trigger_auto_upload(app);
+            sync_account_plans(app);
         }
         Err(e) => {
             {
@@ -235,9 +244,54 @@ pub fn disconnect(app: &AppHandle) {
         w.ledger = Ledger::default();
         w.phase = Phase::Idle;
         w.message = None;
+        w.sent_account_plans = None;
+        w.account_plans_sent_at = None;
+        w.account_plans_failed_at = None;
     }
     schedule_noon(app);
     app_state::publish(app);
+}
+
+// ---------- 订阅 ----------
+
+/// 刷新完额度调用：把各账号的订阅交给网站（变了马上传，没变每天一次）。
+pub fn accounts_did_update(app: &AppHandle) {
+    let plans = app.state::<AppState>().inner.lock().unwrap().web_account_plans();
+    app.state::<AppState>().web.lock().unwrap().account_plans = Some(plans);
+    sync_account_plans(app);
+}
+
+fn sync_account_plans(app: &AppHandle) {
+    let now = now_secs();
+    let (token, plans) = {
+        let s = app.state::<AppState>();
+        let mut w = s.web.lock().unwrap();
+        let (Some(token), Some(plans)) = (w.token.clone(), w.account_plans.clone()) else { return };
+        if w.account_plans_in_flight
+            || w.account_plans_failed_at.is_some_and(|t| now - t < 3600)
+            || (w.sent_account_plans.as_ref() == Some(&plans) && w.account_plans_sent_at.is_some_and(|t| now - t < 86400))
+        {
+            return;
+        }
+        w.account_plans_in_flight = true;
+        (token, plans)
+    };
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = site::put_accounts(&token, &plans).await;
+        let s = h.state::<AppState>();
+        let mut w = s.web.lock().unwrap();
+        w.account_plans_in_flight = false;
+        match result {
+            Ok(()) => {
+                w.sent_account_plans = Some(plans);
+                w.account_plans_sent_at = Some(now);
+                w.account_plans_failed_at = None;
+            }
+            // 令牌失效由上传那边断开、提示；这里一小时后再试
+            Err(_) => w.account_plans_failed_at = Some(now),
+        }
+    });
 }
 
 // ---------- 上传 ----------

@@ -25,4 +25,5 @@ export interface UserRow {
   badges: string;
 }
 
-export type AppEnv = { Bindings: Env; Variables: { user: UserRow } };
+/** tokenId：App 接口（requireApiToken）里这次请求用的上传令牌，一台设备一个 */
+export type AppEnv = { Bindings: Env; Variables: { user: UserRow; tokenId: number } };

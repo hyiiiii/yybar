@@ -238,10 +238,10 @@ async fn web_upload_now(app: AppHandle) {
     crate::web::upload_now(&app).await;
 }
 
-/// 用浏览器打开 yybar 网站（德州大厅）。
+/// 用浏览器打开 yybar 网站的个人主页。
 #[tauri::command]
 fn open_site(app: AppHandle) -> Result<(), String> {
-    app.opener().open_url(yybar_core::web::SITE, None::<&str>).map_err(|e| e.to_string())
+    app.opener().open_url(format!("{}/me", yybar_core::web::SITE), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

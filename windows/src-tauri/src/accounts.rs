@@ -254,6 +254,10 @@ pub async fn refresh_one(app: &AppHandle, id: &str, reason: RefreshReason) {
                         a.subscription_started_at = fetched.started_at;
                         changed = true;
                     }
+                    if let Some(tier) = fetched.rate_limit_tier.filter(|t| a.provider == Provider::Claude && Some(t) != a.rate_limit_tier.as_ref()) {
+                        a.rate_limit_tier = Some(tier);
+                        changed = true;
+                    }
                     if changed {
                         g.save_others();
                     }
@@ -298,6 +302,7 @@ struct Fetched {
     email: Option<String>,
     profile_checked: bool,
     started_at: Option<i64>,
+    rate_limit_tier: Option<String>,
     renewal_checked: bool,
     active_until: Option<i64>,
 }
@@ -341,6 +346,7 @@ async fn fetch(a: &OtherAccount, profile_due: bool) -> Result<Fetched, QuotaErro
                     out.plan = p.plan;
                     out.email = p.email;
                     out.started_at = p.subscription_started_at;
+                    out.rate_limit_tier = p.rate_limit_tier;
                 }
             }
             Ok(out)
@@ -394,6 +400,7 @@ fn finish_add(app: &AppHandle, provider: Provider, folder: String, id: Identifie
             folder,
             subscription_started_at: id.subscription_started_at,
             subscription_active_until: id.subscription_active_until,
+            rate_limit_tier: id.rate_limit_tier,
         };
         let saved = accounts::upsert(&mut g.others, account);
         g.save_others();
@@ -426,6 +433,7 @@ fn is_local(app: &AppHandle, provider: Provider, id: &Identified) -> bool {
         folder: String::new(),
         subscription_started_at: None,
         subscription_active_until: None,
+        rate_limit_tier: None,
     };
     g.mirrors_local(&probe)
 }
@@ -789,6 +797,7 @@ fn after_switch(app: &AppHandle, target: &OtherAccount, old_snapshot: Option<Quo
             folder,
             subscription_started_at: ident.subscription_started_at,
             subscription_active_until: ident.subscription_active_until,
+            rate_limit_tier: ident.rate_limit_tier,
         };
         let saved = accounts::upsert(&mut g.others, account);
         if let Some(s) = old_snapshot {

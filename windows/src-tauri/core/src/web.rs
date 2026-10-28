@@ -9,6 +9,9 @@
 //! - 只传今天以前、已经过完的天（本地日期），按 天 × 服务 × 模型 汇总；Windows 上是 Codex / Claude / Grok / Antigravity。
 //! - 网站对每个（日期, 服务）只收第一次；本机也按（日期, 服务）打标签（`web-uploads-<login>.json`），每次只传没标签的。
 //! - 一次最多 100 天，多了分批。
+//!
+//! 订阅（网站个人主页 @ 后面那一排）：各服务账号的套餐，一个账号一条 `{ app, account, plan }`，`account` 是账号的摘要，
+//! 不传邮箱；`PUT /api/v1/accounts`，网站按设备整份替换。
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -16,6 +19,7 @@ use std::path::PathBuf;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::credentials::read_json;
 use crate::paths;
@@ -314,6 +318,45 @@ pub fn parse_uploaded(v: &Value) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// 一个账号的订阅。`account` 是「yybar:服务:账号（小写）」的 SHA-256 前 16 位十六进制，和 Mac 版算法一样：
+/// 同一个账号在 Mac 和 Windows 上传，网站认得出是同一个，不重复计数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AccountPlan {
+    pub app: &'static str,
+    pub account: String,
+    pub plan: String,
+}
+
+impl AccountPlan {
+    pub fn new(app: &'static str, identity: &str, plan: &str) -> Self {
+        let digest = Sha256::digest(format!("yybar:{app}:{}", identity.to_lowercase()).as_bytes());
+        AccountPlan {
+            app,
+            account: digest[..8].iter().map(|b| format!("{b:02x}")).collect(),
+            plan: plan.trim().chars().take(40).collect(),
+        }
+    }
+}
+
+/// Claude 的套餐：Max 按 rateLimitTier（default_claude_max_20x）写成 max_20x / max_5x，其他照 subscriptionType（和 Mac 一样）。
+pub fn claude_plan(subscription_type: Option<&str>, rate_limit_tier: Option<&str>) -> Option<String> {
+    let is_max = subscription_type.is_none_or(|s| s.to_lowercase().contains("max"));
+    let tier = rate_limit_tier.map(str::to_lowercase).filter(|_| is_max).and_then(|t| {
+        let start = t.find("max_")?;
+        let rest = &t[start + 4..];
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        (digits > 0 && rest[digits..].starts_with('x')).then(|| t[start..start + 4 + digits + 1].to_string())
+    });
+    tier.or_else(|| subscription_type.map(str::to_string))
+}
+
+/// 把这台电脑上各账号的订阅交给网站（整份替换这台电脑上次传的）。
+pub async fn put_accounts(token: &str, accounts: &[AccountPlan]) -> Result<(), WebError> {
+    let body = serde_json::json!({ "accounts": accounts });
+    send(client().put(format!("{SITE}/api/v1/accounts")).json(&body), token).await?;
+    Ok(())
+}
+
 /// 传一批（最多 100 天）。返回（这次有新服务收下的天数，整天都传过、跳过的天数）。
 pub async fn upload_chunk(token: &str, days: &[UploadDay]) -> Result<(usize, usize), WebError> {
     let body = serde_json::json!({ "days": days });
@@ -375,5 +418,24 @@ mod tests {
         let legacy = serde_json::json!({"days": ["2026-10-20"]});
         assert_eq!(parse_uploaded(&legacy).len(), 3);
         assert!(random_state().len() >= 32);
+    }
+
+    #[test]
+    fn claude_max_tiers() {
+        assert_eq!(claude_plan(Some("max"), Some("default_claude_max_20x")).as_deref(), Some("max_20x"));
+        assert_eq!(claude_plan(Some("max"), Some("default_claude_max_5x")).as_deref(), Some("max_5x"));
+        assert_eq!(claude_plan(Some("max"), None).as_deref(), Some("max"));
+        assert_eq!(claude_plan(Some("pro"), Some("default_claude_ai")).as_deref(), Some("pro"));
+        assert_eq!(claude_plan(Some("team"), Some("default_claude_max_5x")).as_deref(), Some("team"));
+        assert_eq!(claude_plan(None, Some("default_claude_max_20x")).as_deref(), Some("max_20x"));
+    }
+
+    #[test]
+    fn account_digest_matches_mac() {
+        // Mac：SHA256("yybar:codex:a@example.com") 前 8 字节
+        let a = AccountPlan::new("codex", "A@Example.com", "  pro ");
+        assert_eq!(a.account, "b3a1bda91f071c46");
+        assert_eq!(a.plan, "pro");
+        assert_eq!(serde_json::to_value(&a).unwrap(), serde_json::json!({"app": "codex", "account": "b3a1bda91f071c46", "plan": "pro"}));
     }
 }

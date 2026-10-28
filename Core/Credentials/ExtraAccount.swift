@@ -35,6 +35,8 @@ nonisolated struct ExtraAccount: Sendable, Equatable, Codable, Identifiable {
     var showInFloating: Bool? = nil
     /// 仅 Claude:订阅开始日(资料接口的 subscription_created_at),用于推算续费日;订阅不是 active 时为 nil。
     var subscriptionStartedAt: Date? = nil
+    /// 仅 Claude:凭据 / 资料接口的 rateLimitTier(default_claude_max_5x / _20x),区分 Max 的两档。旧数据没有。
+    var rateLimitTier: String? = nil
 
     /// 列表 / Popover 上的显示名：别名 > 邮箱 @ 前缀 > 服务名。
     var displayName: String {
@@ -170,6 +172,7 @@ enum ExtraAccountPaste {
         var tokens: ExtraClaudeTokens
         var email: String?
         var plan: String?
+        var rateLimitTier: String? = nil
     }
 
     /// 解析 `~/.claude/.credentials.json`(或 Keychain 中同格式的 JSON)。
@@ -190,7 +193,8 @@ enum ExtraAccountPaste {
         return .success(ClaudeParsed(
             tokens: ExtraClaudeTokens(accessToken: access, refreshToken: refresh, expiresAt: expiresAt),
             email: (oauth["emailAddress"] ?? oauth["email"]) as? String,
-            plan: oauth["subscriptionType"] as? String
+            plan: oauth["subscriptionType"] as? String,
+            rateLimitTier: oauth["rateLimitTier"] as? String
         ))
     }
 
@@ -302,6 +306,8 @@ enum ClaudeProfileClient {
         var plan: String?
         /// 订阅开始日;订阅状态不是 active(已取消等)时为 nil。
         var subscriptionStartedAt: Date? = nil
+        /// 组织的 rate_limit_tier(default_claude_max_20x 等)
+        var rateLimitTier: String? = nil
     }
 
     nonisolated static func fetch(accessToken: String) async -> Profile? {
@@ -320,7 +326,8 @@ enum ClaudeProfileClient {
         }
         let active = (organization?["subscription_status"] as? String).map { $0 == "active" } ?? true
         return Profile(email: email, plan: plan,
-                       subscriptionStartedAt: active ? SubscriptionRenewal.parseDate(organization?["subscription_created_at"]) : nil)
+                       subscriptionStartedAt: active ? SubscriptionRenewal.parseDate(organization?["subscription_created_at"]) : nil,
+                       rateLimitTier: organization?["rate_limit_tier"] as? String)
     }
 
     /// 切换本机 CLI 账号时，为没有保存 `oauthAccount` 的账号(粘贴 / 浏览器添加)补齐

@@ -18,6 +18,8 @@ pub struct ClaudeAccount {
     pub refresh_token: Option<String>,
     /// `~/.claude.json` oauthAccount 的订阅开始日，用来推算续费日。
     pub subscription_created_at: Option<i64>,
+    /// 凭据里的 `rateLimitTier`（如 default_claude_max_20x）：Max 分 5x / 20x 两档，只有这里区分得出来。
+    pub rate_limit_tier: Option<String>,
     /// 凭据文件位置（续期后写回这里）。
     pub path: PathBuf,
 }
@@ -69,6 +71,7 @@ pub fn parse(root: &Value, path: PathBuf) -> Option<ClaudeAccount> {
         refresh_token: str_field(oauth, &["refreshToken", "refresh_token"]).map(str::to_string),
         access_token: Some(access_token),
         subscription_created_at: None,
+        rate_limit_tier: str_field(oauth, &["rateLimitTier"]).map(str::to_string),
         path,
     })
 }

@@ -4,7 +4,7 @@ import SwiftUI
 //
 // 主窗口 · bar:和统计、设置都不同的独立页(见 docs/界面布局.md §3.0),不放标题和说明文字。
 // 上面是一间像素风的木头小酒馆，直接画在页面上(不另起背景卡片):屋顶立着 yybar 跑马灯招牌，
-// 门口站着 Claude 风格的像素小家伙招手;点酒馆任意处打开 yybar 网站的德州大厅(YYBarWeb)。
+// 门口站着 Claude 风格的像素小家伙招手;点酒馆任意处打开 yybar 网站的个人主页(YYBarWeb,/me;2026-10-28 前是德州大厅)。
 // 下面是上传卡片：连接 GitHub、待上传 / 已上传、自动上传、一键上传(每天一次),逻辑在 YYBarWebAccount。
 
 struct BarView: View {
@@ -13,8 +13,8 @@ struct BarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                // 点酒馆进网站的德州大厅(悬停有提示)
-                BarScene { NSWorkspace.shared.open(YYBarWeb.url) }
+                // 点酒馆进网站的个人主页(悬停有提示)
+                BarScene { NSWorkspace.shared.open(YYBarWeb.url.appendingPathComponent("me")) }
                     .frame(maxWidth: .infinity)
                 BarUploadCard()
             }
@@ -60,7 +60,7 @@ private struct BarScene: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: enter)
         .pointingHandCursor()
-        .help(tr("Open the poker lobby", "打开德州大厅"))
+        .help(tr("Open my page on the yybar website", "打开 yybar 网站的个人主页"))
     }
 }
 

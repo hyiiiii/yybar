@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 import Security
@@ -19,6 +20,9 @@ import Security
 // - 自动上传：每天中午 12:00 先扫一遍本地统计再传没标签的天(前一天早就过完、日志也落盘了);那时没开 App 或在睡眠，
 //   之后第一次扫描完补传，一天只自动传一次。
 // - 一键上传：每天只能成功点一次，点完当天变灰;没传成功(断网等)可以再点。
+//
+// 订阅(网站个人主页 @ 后面那一排):各服务账号的套餐，一个账号一条 { app, account, plan },account 是账号的摘要，
+// 不传邮箱。AppState 每次刷新完额度交过来，变了就 PUT /api/v1/accounts(网站按设备整份替换),没变每天补传一次。
 
 @MainActor
 @Observable
@@ -68,6 +72,12 @@ final class YYBarWebAccount {
     private var token: String?
     private var pendingState: String?
     private var lastSource = Source()
+    /// 订阅：AppState 最近交过来的、上次传成功的(和时间)、上次没传成功的时间。
+    private var accountPlans: [AccountPlan]?
+    private var sentAccountPlans: [AccountPlan]?
+    private var accountPlansSentAt: Date?
+    private var accountPlansFailedAt: Date?
+    private var accountPlansInFlight = false
     private static let autoUploadKey = "yybar.settings.webAutoUpload"
 
     // MARK: 本机标签
@@ -172,6 +182,7 @@ final class YYBarWebAccount {
             await syncUploadedDays()
             scheduleNoon()
             triggerAutoUpload()
+            syncAccountPlans()
         } catch {
             phase = .idle
             setMessage(tr("Couldn't connect: \(error.localizedDescription)", "连接失败：\(error.localizedDescription)"), error: true)
@@ -183,6 +194,9 @@ final class YYBarWebAccount {
         AccountTokenFiles.delete(kind: .yybarWeb, id: "account")
         token = nil
         profile = nil
+        sentAccountPlans = nil
+        accountPlansSentAt = nil
+        accountPlansFailedAt = nil
         ledger = Ledger()
         phase = .idle
         scheduleNoon()
@@ -361,6 +375,57 @@ final class YYBarWebAccount {
         }
     }
 
+    // MARK: 订阅
+
+    /// 一个账号的订阅。account 是「服务:账号」的 SHA-256 前 16 位，网站只用它在几台设备之间认出同一个账号。
+    struct AccountPlan: Encodable, Equatable {
+        var app: String
+        var account: String
+        var plan: String
+
+        init(app: UsageApp, identity: String, plan: String) {
+            self.app = app.rawValue
+            let digest = SHA256.hash(data: Data("yybar:\(app.rawValue):\(identity.lowercased())".utf8))
+            account = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+            self.plan = String(plan.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        }
+
+        /// Claude 的套餐：Max 按 rateLimitTier(default_claude_max_20x)写成 max_20x / max_5x,其他照 subscriptionType。
+        static func claudePlan(_ subscriptionType: String?, _ rateLimitTier: String?) -> String? {
+            guard subscriptionType == nil || subscriptionType?.lowercased().contains("max") == true,
+                  let tier = rateLimitTier?.lowercased(),
+                  let range = tier.range(of: #"max_\d+x"#, options: .regularExpression) else { return subscriptionType }
+            return String(tier[range])
+        }
+    }
+
+    /// AppState 刷新完额度交过来的订阅：和上次传成功的不一样就传，一样的每天补传一次(网站 30 天没收到就不显示这台设备的)。
+    func accountsDidUpdate(_ plans: [AccountPlan]) {
+        accountPlans = plans
+        syncAccountPlans()
+    }
+
+    private func syncAccountPlans() {
+        guard let token, let plans = accountPlans, !accountPlansInFlight else { return }
+        let now = Date()
+        // 上次没传成功(断网、网站还没更新)：一小时后再试;传成功过且没变：一天补传一次;变了：马上传
+        if let failed = accountPlansFailedAt, now.timeIntervalSince(failed) < 3600 { return }
+        if plans == sentAccountPlans, let sent = accountPlansSentAt, now.timeIntervalSince(sent) < 86400 { return }
+        accountPlansInFlight = true
+        Task {
+            defer { accountPlansInFlight = false }
+            do {
+                let _: AccountsResult = try await put("api/v1/accounts", token: token, body: AccountsBody(accounts: plans))
+                sentAccountPlans = plans
+                accountPlansSentAt = now
+                accountPlansFailedAt = nil
+            } catch {
+                // 令牌失效由上传那边断开、提示;这里一小时后再试
+                accountPlansFailedAt = now
+            }
+        }
+    }
+
     // MARK: 网络
 
     private struct WhoAmI: Decodable {
@@ -387,6 +452,8 @@ final class YYBarWebAccount {
     private struct UploadDay: Encodable { var day: String; var entries: [Entry] }
     private struct UploadBody: Encodable { var days: [UploadDay] }
     private struct UploadResult: Decodable { var accepted: [String]; var skipped: [String] }
+    private struct AccountsBody: Encodable { var accounts: [AccountPlan] }
+    private struct AccountsResult: Decodable { var ok: Bool }
     private struct ErrorBody: Decodable { var error: String }
 
     enum WebError: LocalizedError {
@@ -409,6 +476,14 @@ final class YYBarWebAccount {
     private func post<T: Decodable, B: Encodable>(_ path: String, token: String, body: B) async throws -> T {
         var req = makeRequest(path, token: token)
         req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(body)
+        return try await send(req)
+    }
+
+    private func put<T: Decodable, B: Encodable>(_ path: String, token: String, body: B) async throws -> T {
+        var req = makeRequest(path, token: token)
+        req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(body)
         return try await send(req)

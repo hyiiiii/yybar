@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
-import { Avatar, Badges, LoginButton } from "../components";
+import { Avatar, Badges, LoginButton, PlanChips } from "../components";
 import { notifyMeChanged, useMe } from "../useMe";
 import { ProfileView } from "./User";
 import { tr, useLang, useT } from "../i18n";
@@ -51,7 +51,10 @@ export function MePage() {
             {me.user.name || me.user.login}
             <Badges ids={me.user.badges} />
           </h1>
-          <span className="muted">@{me.user.login}</span>
+          <div className="profile-sub">
+            <span className="muted">@{me.user.login}</span>
+            <PlanChips plans={me.user.plans} />
+          </div>
         </div>
         <button className="btn btn-ghost push-right" onClick={logout} disabled={busy}>{t("退出登录", "Sign out")}</button>
       </div>

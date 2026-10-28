@@ -247,6 +247,37 @@ final class AppState {
         await loadAllImportedCodexQuotas(reason: reason)
         await loadAllExtraQuotas(reason: reason)
         logQuotaSummary()
+        webAccount.accountsDidUpdate(webAccountPlans)
+    }
+
+    /// 网站个人主页 @ 后面的订阅：App 里启用着的账号各一条(服务 + 套餐 + 账号摘要，不传邮箱),免费的也传，
+    /// 没读到套餐的不传。ChatGPT 的 Pro 分档本来就在 planType 里(prolite / pro / promax);Claude Max 的 5x / 20x
+    /// 在 rateLimitTier 里，拼成 max_5x / max_20x。Gemini App 和 agy 用的是同一份 Google 订阅，都记成 Gemini,同一个 Google 账号只算一次。
+    var webAccountPlans: [YYBarWebAccount.AccountPlan] {
+        let settings = SettingsStore.shared
+        var plans: [YYBarWebAccount.AccountPlan] = []
+        func add(_ app: UsageApp, _ identity: String?, _ plan: String?) {
+            guard let identity, !identity.isEmpty, let plan, !plan.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+            let entry = YYBarWebAccount.AccountPlan(app: app, identity: identity, plan: plan)
+            if !plans.contains(where: { $0.app == entry.app && $0.account == entry.account }) { plans.append(entry) }
+        }
+        // 本机账号看服务开关，其他账号看它自己那一行的「启用」(visibleInPopover)
+        if settings.showCodex { add(.codex, codexAccount?.email ?? codexAccount?.accountId, codexAccount?.planType) }
+        for account in otherCodexAccounts where account.visibleInPopover { add(.codex, account.email ?? account.id, account.planType) }
+        let claudePlan = YYBarWebAccount.AccountPlan.claudePlan
+        if settings.showClaude {
+            add(.claude, claudeAccount?.email, claudePlan(claudeAccount?.subscriptionType, claudeAccount?.rateLimitTier))
+        }
+        for account in extraAccounts(for: .claude) where account.visibleInPopover {
+            add(.claude, account.email ?? account.id, claudePlan(account.plan, account.rateLimitTier))
+        }
+        if settings.showGrok { add(.grok, grokAccount?.email ?? grokAccount?.identity, grokPlan) }
+        for account in extraAccounts(for: .grok) where account.visibleInPopover { add(.grok, account.email ?? account.id, account.plan) }
+        if settings.showGrokBot { add(.grokBot, grokBotEmail, grokBotQuota?.planType) }
+        if settings.showGemini { add(.gemini, geminiAppEmail, geminiAppQuota?.planType) }
+        if settings.showAgy { add(.gemini, googleEmail, googlePlan) }
+        for account in extraAccounts(for: .google) where account.visibleInPopover { add(.gemini, account.email ?? account.id, account.plan) }
+        return plans
     }
 
     /// 拉取 OpenAI / Anthropic / Cursor statuspage、xAI 状态 RSS 与 Google incidents。失败保留旧快照,不清空。
@@ -666,7 +697,8 @@ final class AppState {
                     visibleInPopover: target.visibleInPopover, addedAt: Date(), homeFolder: nil,
                     showInMenuBar: target.showInMenuBar, showInFloating: target.showInFloating,
                     subscriptionStartedAt: SubscriptionRenewal.parseDate(currentOAuthAccount?["subscriptionCreatedAt"])
-                        ?? claudeAccount?.subscriptionCreatedAt
+                        ?? claudeAccount?.subscriptionCreatedAt,
+                    rateLimitTier: oauth["rateLimitTier"] as? String ?? claudeAccount?.rateLimitTier
                 ))
                 savedOldId = id
             }
@@ -1023,7 +1055,8 @@ final class AppState {
         try ExtraAccountStore.saveClaudeTokens(parsed.tokens, id: id)
         let account = ExtraAccount(id: id, provider: .claude, alias: "", email: email, plan: plan,
                                    visibleInPopover: true, addedAt: Date(), homeFolder: nil,
-                                   subscriptionStartedAt: profile?.subscriptionStartedAt)
+                                   subscriptionStartedAt: profile?.subscriptionStartedAt,
+                                   rateLimitTier: profile?.rateLimitTier ?? parsed.rateLimitTier)
         try upsertExtraAccount(account)
         if profile != nil { extraPlanFetchedAt[id] = Date() }
         Task { await loadExtraQuota(account: account, reason: .userInitiated) }
@@ -1178,10 +1211,12 @@ final class AppState {
            let profile = await ClaudeProfileClient.fetch(accessToken: tokens.accessToken) {
             extraPlanFetchedAt[id] = Date()
             if let current = extraAccounts.first(where: { $0.id == id }),
-               current.plan != (profile.plan ?? current.plan) || current.subscriptionStartedAt != profile.subscriptionStartedAt {
+               current.plan != (profile.plan ?? current.plan) || current.subscriptionStartedAt != profile.subscriptionStartedAt
+                || current.rateLimitTier != (profile.rateLimitTier ?? current.rateLimitTier) {
                 updateExtraAccount(id: id) {
                     $0.plan = profile.plan ?? $0.plan
                     $0.subscriptionStartedAt = profile.subscriptionStartedAt
+                    $0.rateLimitTier = profile.rateLimitTier ?? $0.rateLimitTier
                 }
             }
         }

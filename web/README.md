@@ -81,6 +81,16 @@ npm test && npm run typecheck
 - App 只传今天以前（本地日期）、已经过完的天；服务端只收不晚于 UTC 今天的日期（任何时区的「本地昨天」都不晚于 UTC 今天）。
 - 限制：一次最多 120 天、每天 300 条；日期不早于 2023-01-01；单日总花费（App 报的或按价格表算的）超过 $5000 整个请求拒收（422）。
 
+`PUT /api/v1/accounts`：这台设备上各服务账号的订阅，个人主页 @ 后面那一排用（2026-10-28 起）。
+
+```json
+{ "accounts": [ { "app": "codex", "account": "b3a1bda91f071c46", "plan": "pro" }, { "app": "gemini", "account": "…", "plan": "Google AI Pro" } ] }
+```
+
+- 一个账号一条。`account` 是 App 端算的「`yybar:<服务>:<账号（小写邮箱等）>`」SHA-256 前 16 位十六进制，不传邮箱；Mac 和 Windows 算法一样，同一个账号在几台设备上传，网站认得出是同一个。`plan` 原样传 App 读到的套餐名（≤ 40 字，不收控制字符和尖括号）。Gemini App 和 Antigravity 是同一份 Google 订阅，App 都记成 `gemini`。
+- 存在 `user_accounts`（迁移 `0013_user_accounts.sql`）：每个上传令牌（一台设备）一份，每次整份替换。显示时几台设备按（服务, 账号）去重、同一账号取最近一次传的套餐，再按（服务, 套餐）计数；撤销了的令牌、30 天没再传的设备不算（`src/worker/accounts.ts`）。
+- App 每次刷新完额度交过来：和上次传成功的不一样就马上传，一样的每天补传一次，没传成功一小时后再试。一次最多 50 个账号；返回 `{ "ok": true, "count": n }`。
+
 ## 排行榜
 
 - 用图标切换两种排法，只列在「我的」里打开了「在排行榜和公开主页上显示我」的人。
@@ -89,6 +99,7 @@ npm test && npm run typecheck
 
 ## 个人主页
 
+- @用户名后面一排订阅小牌子（`PlanChips`，`src/client/components.tsx`）：服务的标 + 套餐名，同一服务同一套餐几个账号写「×n」，按 Codex → Claude → Grok → Grok Bot → Gemini 排，同一服务里高档在前（Pro Max > Pro > Pro Lite > Plus，Max 20x > Max 5x），免费的排最后。着色和 App 设置里的套餐标签一样：标准档蓝、高档紫（ChatGPT Pro 各档、Claude Max、SuperGrok Heavy、Google AI Ultra）、团队 / 企业青、免费灰。套餐名首字母大写；ChatGPT 的代号换成名字（`prolite` → Pro Lite、`promax` → Pro Max），Claude 的 `max_20x` → Max 20x，Google 的去掉开头的「Google」（`Google AI Pro` → `AI Pro`），悬停看服务全名和账号数。窄屏时整排换到 @用户名下一行。数据见上面 `PUT /api/v1/accounts`，`GET /api/me`、`GET /api/users/<login>` 的 `user.plans`（`[{ app, plan, count }]`）。
 - 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片（「总花费」旁边一个小问号，点开是服务端的模型价格表，按厂商分组，`src/client/Prices.tsx`），下面照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
 - 最上面一排服务筛选：全部 / Codex / Claude / Grok / Grok Bot / Gemini / Antigravity（只列有用量的），按钮上是各家的标（Codex、Claude、Grok、Gemini 和牌面花色同一套，染服务识别色；Grok Bot、Antigravity 用 App 里的标）；下面三块都跟着筛选走。
 - 拆开 / 合并和 App 里一样：Grok + Grok Bot、Gemini + Antigravity 两两一组，默认合并成一个按钮（两个标并排），后面跟一个只有图标的小按钮（分叉 / 汇合箭头），两组各拆各的；每次打开都是合并的，不记。切换时留下的按钮滑到新位置、新出来的放大淡入、小图标转半圈换过去，每日用量里同组的两段渐变成同一个颜色；选着的服务跟着换过去（拆开选前一家，合并选整组）。一组里只用过一家就只显示那一家，不带小按钮。
@@ -153,8 +164,13 @@ npm test && npm run typecheck
 - 德州的买入和离桌退回记在 `points_ledger`，余额 = 花费积分 + 流水合计。
 - 积分只能这样获得，不能充值、购买或兑现。
 
+## 页脚
+
+- 每页最下面靠右：GitHub 主页和邮箱（`Layout.tsx` 的 `CONTACT`，仓库是私有的所以链到主页）。
+
 ## 德州牌桌
 
+- 手机（≤ 600px）：别人的牌背面不摆，翻开的（摊牌、亮牌、偷偷看）摆出来，上面一排和左右两边的人摆在名牌下面，下面一排摆在头像上方；点头像弹出的卡片从靠屏幕边的那一侧展开，不再伸出屏幕（2026-10-28 前别人的牌在手机上一律不显示，摊牌也看不到）。
 - 无限注德州，每桌 6 个座位。筹码按美元显示：1 个筹码记作 $1（盲注 5/10 显示成 $5/$10）。桌子存在 D1 的 `poker_tables`，默认 4 张（`migrations/0006_fewer_tables.sql`）：#1000 机器人桌 $1/$2，#1001 $1/$2、#1002 $2/$5、#1003 $5/$10。打开牌桌页先看到机器人桌，大厅里它的桌号画成机器人图标。
 - 每张桌一个 Durable Object（`PokerTable`，按桌号取），牌局完全在服务端跑：洗牌用 `crypto.getRandomValues`，别人的底牌在摊牌前不会发到浏览器。
 - 连接：`GET /api/tables/<桌号>/ws` 升级为 WebSocket。带登录 cookie 可以入座，没登录只能旁观；只接受本站页面发起的连接。

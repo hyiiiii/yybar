@@ -91,11 +91,12 @@ Windows 任务栏不能常驻文字，所以**每个勾选了「任务栏」的�
 
 ### 2.7 bar（对应 Mac `BarView` + `YYBarWebAccount`）
 
-侧边栏和额度弹出窗口都能进。上半是像素小酒馆（招牌跑马灯、门口招呼的小人，12 帧 / 秒），点它在浏览器打开网站的德州大厅；下半是上传卡片。
+侧边栏和额度弹出窗口都能进。上半是像素小酒馆（招牌跑马灯、门口招呼的小人，12 帧 / 秒），点它在浏览器打开网站的个人主页（`/me`，2026-10-28 前是德州大厅）；下半是上传卡片。
 
 - **连接 GitHub**：「连接 GitHub…」在浏览器打开网站的 `/connect?state=…`，授权后网站跳回 `yybar://connect?token=…&state=…`（安装时注册的协议，`tauri-plugin-deep-link`；App 已在运行时由单实例插件把链接转给它），state 对得上才保存。连上后显示头像、@用户名、「断开」。
 - **上传**：只传 Codex / Claude / Grok / Antigravity 今天以前的整天 (天, 服务, 模型) 汇总，按 (天, 服务) 记账，传过的不重传，每批最多 100 天；连接时先从网站拉一次已传记录。「待上传」显示还没传的天数和按本机价格估的花费（实际以网站价格表为准）。一键上传每天一次。
 - **自动上传**：打开后每天本地 12:00 上传；那时 App 没开或还没扫完日志，就在下次扫描完成后补传。
+- **订阅**（2026-10-28）：网站个人主页 @ 后面那一排。`refresh_quotas` 末尾 `web::accounts_did_update` 取 `Inner::web_account_plans()`（启用着的服务里的本机账号 + `listed_others()` 里自己「启用」开着的账号，免费的也传；Claude 的套餐用 `core::web::claude_plan` 按凭据 / 资料接口的 `rateLimitTier` 写成 `max_5x` / `max_20x`，其他账号的档位存在 `OtherAccount.rate_limit_tier`；Antigravity / Google 其他账号记成 `gemini`），`core::web::AccountPlan::new` 算账号摘要（和 Mac 同一算法，`account_digest_matches_mac` 测试），`put_accounts` → `PUT /api/v1/accounts`。变了马上传、没变每天一次、失败一小时后再试，连上网站时也传一次。
 - 文案、网站地址与 Mac 版一致。
 
 ### 2.8 过渡动画
