@@ -52,7 +52,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         fit_popover,
         fit_floating,
         expand_floating,
-        drag_floating,
+        floating_press,
+        floating_release,
         finish_onboarding,
         open_url,
         backdrop,
@@ -280,10 +281,15 @@ fn fit_floating(app: AppHandle, width: f64, height: f64) {
     windows::fit_floating(&app, width, height);
 }
 
-/// 在悬浮窗上按下并拖动：交给系统拖，松手后吸附 / 收起 / 展开。
+/// 悬浮窗上按下 / 松手（按着时后台每帧跟鼠标移动窗口；对应 Mac FloatingMouseView）。
 #[tauri::command]
-fn drag_floating(app: AppHandle) {
-    windows::drag_floating(&app);
+fn floating_press(app: AppHandle) {
+    windows::floating_press(&app);
+}
+
+#[tauri::command]
+fn floating_release(app: AppHandle) {
+    windows::floating_release(&app);
 }
 
 /// 点悬浮窗收起后的窄条：展开。

@@ -18,6 +18,9 @@ body,
 
 .hud {
   animation: hud-in 0.16s ease-out;
+  /* 拖动由 usePress 自己处理：不选中文字、不让触屏手势抢走指针 */
+  user-select: none;
+  touch-action: none;
   display: inline-flex;
   flex-direction: column;
   gap: 7px;

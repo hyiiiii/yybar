@@ -9,6 +9,7 @@
 //! 所以新建主窗口 / 引导 / 悬浮窗一律交给后台任务做（`build_later`），调用方从哪里调都安全。
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -38,7 +39,10 @@ const TAB_WIDTH: f64 = 30.0;
 const SLIDE_FRAMES: u32 = 14;
 const SLIDE_FRAME_MS: u64 = 16;
 
-/// 左键还按着（拖动还没结束）。
+/// 按下后移动超过这么多（逻辑像素）才算拖动（和 Mac FloatingMouseView 一样）
+const DRAG_THRESHOLD: f64 = 3.0;
+
+/// 左键还按着。只在 Windows 上查得到；其他平台（开发时）一律当按着，松手只靠前端报。
 fn left_button_down() -> bool {
     #[cfg(windows)]
     {
@@ -48,7 +52,7 @@ fn left_button_down() -> bool {
     }
     #[cfg(not(windows))]
     {
-        false
+        true
     }
 }
 const FLOATING_MARGIN: f64 = 16.0;
@@ -63,6 +67,19 @@ pub struct WindowState {
     building: Mutex<HashSet<&'static str>>,
     /// 刚点了展开：等前端换成展开的内容、量好尺寸后（fit_floating），从这条边滑出来
     floating_slide_out: Mutex<Option<DockEdge>>,
+    /// 悬浮窗正在滑入 / 滑出（期间按下不理）
+    floating_sliding: AtomicBool,
+    /// 悬浮窗上按着的这一下（松手时取走）
+    floating_press: Mutex<Option<FloatingPress>>,
+    floating_press_seq: AtomicU64,
+}
+
+/// 按下悬浮窗时的鼠标和窗口位置（物理像素），和这一下有没有拖动过。
+struct FloatingPress {
+    id: u64,
+    cursor: PhysicalPosition<f64>,
+    origin: PhysicalPosition<i32>,
+    dragging: bool,
 }
 
 /// 在后台任务里新建窗口（见文件头：避免 WebView2 在同步命令 / 事件回调里卡死）。同一个窗口正在建时忽略。
@@ -312,40 +329,94 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-/// 前端在悬浮窗上按下时调用（收起的窄条也一样，单击 / 拖动都在这里分辨）：交给系统拖（start_dragging 立刻返回），等左键松开后再判断
-/// 吸附 / 收起 / 展开（见 snap_and_persist）。拖动看鼠标有没有移动：贴着屏幕边往外推时系统不挪窗口，
-/// 但这也是一次拖动（推到边 → 收起）。
-pub fn drag_floating(app: &AppHandle) {
-    let Some(w) = app.get_webview_window(FLOATING) else { return };
-    let start_cursor = app.cursor_position().ok();
-    let start_pos = w.outer_position().ok();
-    let _ = w.start_dragging();
+/// 前端在悬浮窗（展开的或收起的窄条）上按下左键：记下鼠标和窗口位置（物理像素），之后按着的时候每帧跟一次鼠标，
+/// 移动超过 3 像素才算拖动、窗口跟着鼠标走（可以推出屏幕边）——对应 Mac `FloatingMouseView`。
+/// 不再交给系统拖、松手后再看位置：那样分不清单击和拖动，动画中再按一下还会被当成拖动、又收回去。
+/// 跟鼠标靠后台每帧查一次光标，不靠网页的 mousemove（窗口跟着光标动时可能收不到）。
+/// 松手：前端报上来（floating_release），或后台看到左键已经松开（在窗口外松手等），先到的算。
+/// 滑入 / 滑出动画进行中按下的不理（对应 Mac 的 `animating`）。
+pub fn floating_press(app: &AppHandle) {
+    let ws = app.state::<WindowState>();
+    let id = ws.floating_press_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    {
+        let mut press = ws.floating_press.lock().unwrap();
+        *press = None;
+        if ws.floating_sliding.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(w) = app.get_webview_window(FLOATING) else { return };
+        let (Ok(cursor), Ok(origin)) = (app.cursor_position(), w.outer_position()) else { return };
+        *press = Some(FloatingPress { id, cursor, origin, dragging: false });
+    }
     let h = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(80)).await;
-        while left_button_down() {
-            tokio::time::sleep(Duration::from_millis(40)).await;
-        }
-        // 松手后窗口最后一次移动可能稍晚才到
-        tokio::time::sleep(Duration::from_millis(60)).await;
-        let h2 = h.clone();
-        let _ = h.run_on_main_thread(move || {
-            let cursor = h2.cursor_position().ok();
-            let pos = h2.get_webview_window(FLOATING).and_then(|w| w.outer_position().ok());
-            let cursor_moved = matches!((start_cursor, cursor), (Some(a), Some(b)) if (a.x - b.x).hypot(a.y - b.y) >= 5.0);
-            let window_moved = matches!((start_pos, pos), (Some(a), Some(b)) if (a.x - b.x).abs() + (a.y - b.y).abs() >= 3);
-            if cursor_moved || window_moved {
-                snap_and_persist(&h2, cursor);
-            } else {
-                // 没拖动：收起的窄条上就是单击 → 展开（展开的悬浮窗上单击什么也不做）
-                expand_floating(&h2);
+        loop {
+            tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
+            let pressing = h.state::<WindowState>().floating_press.lock().unwrap().as_ref().is_some_and(|p| p.id == id);
+            if !pressing {
+                break;
             }
-        });
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || {
+                if left_button_down() {
+                    let ws = h2.state::<WindowState>();
+                    let mut press = ws.floating_press.lock().unwrap();
+                    if let Some(press) = press.as_mut().filter(|p| p.id == id) {
+                        follow_cursor(&h2, press);
+                    }
+                } else {
+                    finish_press(&h2, Some(id));
+                }
+            });
+        }
     });
+}
+
+fn follow_cursor(app: &AppHandle, press: &mut FloatingPress) {
+    let (Some(w), Ok(cursor)) = (app.get_webview_window(FLOATING), app.cursor_position()) else { return };
+    let (dx, dy) = (cursor.x - press.cursor.x, cursor.y - press.cursor.y);
+    if !press.dragging {
+        if dx.hypot(dy) < DRAG_THRESHOLD * w.scale_factor().unwrap_or(1.0) {
+            return;
+        }
+        press.dragging = true;
+    }
+    let _ = w.set_position(PhysicalPosition::new(press.origin.x + dx.round() as i32, press.origin.y + dy.round() as i32));
+}
+
+/// 前端报松手。
+pub fn floating_release(app: &AppHandle) {
+    finish_press(app, None);
+}
+
+/// 松手（对应 Mac `FloatingPanelController.mouseReleased`）：拖动过 → 吸附 / 收起 / 贴回边 / 就地展开（snap_and_persist）；
+/// 没拖动 → 收起的窄条上就是单击，从边上滑出展开（展开时单击什么也不做）。`only` 给了就只收这一次按下。
+fn finish_press(app: &AppHandle, only: Option<u64>) {
+    let ws = app.state::<WindowState>();
+    let press = {
+        let mut slot = ws.floating_press.lock().unwrap();
+        if only.is_some_and(|id| slot.as_ref().map(|p| p.id) != Some(id)) {
+            return;
+        }
+        slot.take()
+    };
+    let Some(mut press) = press else { return };
+    if ws.floating_sliding.load(Ordering::SeqCst) {
+        return;
+    }
+    // 松手时的光标位置再跟一次（最后一帧可能还没跟上）
+    follow_cursor(app, &mut press);
+    if press.dragging {
+        snap_and_persist(app);
+    } else {
+        expand_floating(app);
+    }
 }
 
 /// 悬浮窗滑动到 to_x（保持 y），每帧在主线程挪一次窗口；动完在主线程执行 then。
 fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<Box<dyn FnOnce(&AppHandle) + Send>>) {
+    let ws = app.state::<WindowState>();
+    ws.floating_sliding.store(true, Ordering::SeqCst);
     let h = app.clone();
     tauri::async_runtime::spawn(async move {
         for i in 1..=SLIDE_FRAMES {
@@ -360,6 +431,7 @@ fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<
             });
             tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
         }
+        h.state::<WindowState>().floating_sliding.store(false, Ordering::SeqCst);
         if let Some(then) = then {
             let h2 = h.clone();
             let _ = h.run_on_main_thread(move || then(&h2));
@@ -381,7 +453,7 @@ fn save_floating(app: &AppHandle, position: (i32, i32), dock: Option<DockEdge>) 
 /// - 展开时：离屏幕左 / 右边不到 24 像素或伸出边外 → 整块滑进屏幕边、换成窄条（那一边接着另一块屏幕时只贴边）；
 ///   离上 / 下边 20 像素内吸附。
 /// - 收起时：放回屏幕边附近 → 滑回去贴好；拖远了就地展开。
-fn snap_and_persist(app: &AppHandle, _cursor: Option<PhysicalPosition<f64>>) {
+fn snap_and_persist(app: &AppHandle) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
     let Some(m) = w

@@ -94,8 +94,8 @@ struct FloatingContentView: View {
         }
         .clipShape(shape)
         .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
-        .overlay(FloatingMouse(help: tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there",
-                                        "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")))
+        // 窄条不加悬停提示(2026-10-28 起)
+        .overlay(FloatingMouse(help: nil))
         .fixedSize()
     }
 
@@ -206,7 +206,7 @@ private struct FloatingRow: View {
 /// performDrag 又立刻返回、拿不到松手的时刻。用 AppKit 视图接：非激活面板里第一下点击也能收到，
 /// 鼠标拖出窗口外也一直收到拖动和松手。
 private struct FloatingMouse: NSViewRepresentable {
-    let help: String
+    let help: String?
 
     func makeNSView(context: Context) -> FloatingMouseView {
         let view = FloatingMouseView()

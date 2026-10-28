@@ -1,17 +1,41 @@
 // 桌面悬浮窗（对应 Mac `FloatingContentView`）：每行 18px tile + 4px 进度条 + 剩余百分比（状态色）。
-// Grok 显示周期额度，其余显示 5H。勾了「悬浮窗」的其他账号排在同服务本机账号后面；同一服务有几行时每行加账号名。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附；双击打开统计。
+// Grok 显示周期额度，其余显示 5H。勾了「悬浮窗」的其他账号排在同服务本机账号后面；同一服务有几行时每行加账号名。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附。
 // 拖出屏幕左 / 右边缘时收起成贴边窄条（像微信通话小窗），每行只剩小图标和剩余百分比；单击窄条展开，拖动窄条沿边上下移动（贴边逻辑在 windows.rs）。
+// 按下、拖动、松手的处理和 Mac 版一样（FloatingMouseView）：见 usePress。
 
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type PointerEvent } from "react";
 import { api, useAppState } from "../shared/api";
 import { ProgressBar, ServiceTile, statusColor } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
 import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type UsageApp } from "../shared/types";
 
+/** 悬浮窗（展开的、收起的窄条都一样）上的鼠标：按下、松手报给后台。按着时后台每帧跟一次光标，超过 3 像素才让窗口
+ *  跟着鼠标走；松手时按有没有拖动过决定单击展开、吸附、收起或贴回边（windows.rs floating_press）。
+ *  按下时捕获指针，在窗口外松手也收得到；万一没收到，后台看到左键松开也会收尾。 */
+function usePress() {
+  const pressed = useRef(false);
+  const release = () => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    api.floatingRelease();
+  };
+  return {
+    onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pressed.current = true;
+      api.floatingPress();
+    },
+    onPointerUp: release,
+    onLostPointerCapture: release,
+  };
+}
+
 export function Floating() {
   const state = useAppState();
   const ref = useRef<HTMLDivElement>(null);
+  const press = usePress();
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -49,12 +73,8 @@ export function Floating() {
         ref={ref}
         key={`dock-${dock}`}
         className={`hud collapsed dock-${dock}`}
-        // 按下就交给系统拖；松手后后台判断：没移动 = 单击展开，移动了 = 拖动（放回屏幕边继续收着，拖远了就地展开）。
-        // 窄条只有 30 宽，等前端看到「移动了 3 像素」再开始拖，快速一甩时鼠标早已离开窄条
-        onMouseDown={(e) => {
-          if (e.button === 0) api.dragFloating();
-        }}
-        title={tr("Click to expand · drag it back to the edge to keep it tucked, or away to open it there", "单击展开 · 拖动：放回屏幕边继续收着，拖远了就在那里展开")}
+        // 没拖动 = 单击展开；拖动过 = 放回屏幕边继续收着，拖远了就地展开
+        {...press}
       >
         {rows.map((s) => {
           const rem = remaining(headlineWindow(s.app, s.quota));
@@ -77,11 +97,8 @@ export function Floating() {
       ref={ref}
       key="open"
       className="hud"
-      onMouseDown={(e) => {
-        if (e.button === 0 && e.detail === 1) api.dragFloating();
-      }}
-      onDoubleClick={() => api.openMain("overview")}
-      title={tr("Drag to move · double-click to open Statistics · drag past the screen edge to tuck it away", "拖动可移动 · 双击打开统计 · 拖出屏幕边缘可收起")}
+      {...press}
+      title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}
     >
       {rows.map((s) => {
         const w = headlineWindow(s.app, s.quota);
