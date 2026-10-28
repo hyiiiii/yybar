@@ -42,6 +42,21 @@ const SLIDE_FRAME_MS: u64 = 16;
 /// 按下后移动超过这么多（逻辑像素）才算拖动（和 Mac FloatingMouseView 一样）
 const DRAG_THRESHOLD: f64 = 3.0;
 
+/// 一次改完窗口的位置和尺寸（物理像素）。分成 set_size + set_position 两步时，中间那一帧窗口可能整个在屏幕外
+/// （比如收在左边：先缩成窄条宽，那时还在「只露一条」的位置），看着就是闪一下。
+fn set_frame(w: &WebviewWindow, x: i32, y: i32, width: u32, height: u32) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        if let Ok(hwnd) = w.hwnd() {
+            unsafe { SetWindowPos(hwnd.0 as _, std::ptr::null_mut(), x, y, width as i32, height as i32, SWP_NOZORDER | SWP_NOACTIVATE) };
+            return;
+        }
+    }
+    let _ = w.set_size(PhysicalSize::new(width, height));
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+}
+
 /// 左键还按着。只在 Windows 上查得到；其他平台（开发时）一律当按着，松手只靠前端报。
 fn left_button_down() -> bool {
     #[cfg(windows)]
@@ -587,8 +602,7 @@ pub fn expand_floating(app: &AppHandle) {
         let tab = (TAB_WIDTH * m.scale_factor()).round() as i32;
         let (left, right) = (a.position.x, a.position.x + a.size.width as i32);
         let (from, to) = if edge == DockEdge::Left { (left - size.width as i32 + tab, left) } else { (right - tab, right - size.width as i32) };
-        let _ = w.set_size(size);
-        let _ = w.set_position(PhysicalPosition::new(from, pos.y));
+        set_frame(w, from, pos.y, size.width, size.height);
         Some((from, to, pos.y))
     })();
     match placed {
@@ -650,8 +664,7 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         let tab = (TAB_WIDTH * scale).round() as i32;
         let (left, right) = (a.position.x, a.position.x + a.size.width as i32);
         let (from, to) = if edge == DockEdge::Left { (left - nw as i32 + tab, left) } else { (right - tab, right - nw as i32) };
-        let _ = w.set_size(PhysicalSize::new(nw, nh));
-        let _ = w.set_position(PhysicalPosition::new(from, pos.y));
+        set_frame(&w, from, pos.y, nw, nh);
         slide_floating(
             app,
             from,
@@ -670,8 +683,7 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         (None, Some(a)) if pos.x <= a.position.x => pos.x,
         _ => right - nw as i32,
     };
-    let _ = w.set_size(PhysicalSize::new(nw, nh));
-    let _ = w.set_position(PhysicalPosition::new(x, pos.y));
+    set_frame(&w, x, pos.y, nw, nh);
 }
 
 // ---------- 材质 ----------
