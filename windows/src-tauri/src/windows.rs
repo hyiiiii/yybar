@@ -72,6 +72,11 @@ pub struct WindowState {
     /// 悬浮窗上按着的这一下（松手时取走）
     floating_press: Mutex<Option<FloatingPress>>,
     floating_press_seq: AtomicU64,
+    /// 上次展开时的窗口尺寸：点窄条展开时先把窗口摆成这个尺寸、放在只露一条的位置，再换内容、滑出来，
+    /// 不等前端量尺寸（换内容和挪窗口分两步时，中间会有一两帧对不上，看着像闪一下）
+    floating_expanded_size: Mutex<Option<PhysicalSize<u32>>>,
+    /// 滑动中前端报上来的尺寸：滑完再用（滑动时改尺寸、位置会和动画打架）
+    floating_pending_fit: Mutex<Option<(f64, f64)>>,
 }
 
 /// 按下悬浮窗时的鼠标和窗口位置（物理像素），和这一下有没有拖动过。
@@ -400,12 +405,11 @@ fn finish_press(app: &AppHandle, only: Option<u64>) {
         }
         slot.take()
     };
-    let Some(mut press) = press else { return };
+    let Some(press) = press else { return };
     if ws.floating_sliding.load(Ordering::SeqCst) {
         return;
     }
-    // 松手时的光标位置再跟一次（最后一帧可能还没跟上）
-    follow_cursor(app, &mut press);
+    // 不在这里再跟一次光标：处理松手时光标可能已经移走了，窗口会被带过去（最多差一帧，看不出来）
     if press.dragging {
         snap_and_persist(app);
     } else {
@@ -432,6 +436,11 @@ fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<
             tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
         }
         h.state::<WindowState>().floating_sliding.store(false, Ordering::SeqCst);
+        let pending = h.state::<WindowState>().floating_pending_fit.lock().unwrap().take();
+        if let Some((width, height)) = pending {
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || fit_floating(&h2, width, height));
+        }
         if let Some(then) = then {
             let h2 = h.clone();
             let _ = h.run_on_main_thread(move || then(&h2));
@@ -518,6 +527,7 @@ fn snap_and_persist(app: &AppHandle) {
         };
         let has_neighbor = if edge == DockEdge::Left { neighbor(screen.x - 1) } else { neighbor(screen_right + 1) };
         if !has_neighbor {
+            *app.state::<WindowState>().floating_expanded_size.lock().unwrap() = Some(size);
             // 整块滑进屏幕边，只露出一条，再换成窄条（fit_floating 把窄条贴在同一位置）
             let tucked = if edge == DockEdge::Left { left - width + tab } else { work_right - tab };
             let edge_pos = if edge == DockEdge::Left { left } else { work_right - tab };
@@ -550,7 +560,9 @@ fn snap_and_persist(app: &AppHandle) {
     }
 }
 
-/// 点收起的窄条：换回展开的内容，从那条边滑出来（fit_floating 量到展开的尺寸后开始滑）。
+/// 点收起的窄条：换回展开的内容，从那条边滑出来。
+/// 量过展开的尺寸时：先把窗口摆成那个尺寸、放在只露一条的位置（这时还是窄条的内容，窄条贴着露出来的那一侧），
+/// 再换内容，下一帧开始滑。没量过（收着重启过）就等 fit_floating 量到尺寸再滑。
 pub fn expand_floating(app: &AppHandle) {
     let edge = {
         let state = app.state::<AppState>();
@@ -560,14 +572,57 @@ pub fn expand_floating(app: &AppHandle) {
         g.settings.save();
         edge
     };
-    *app.state::<WindowState>().floating_slide_out.lock().unwrap() = Some(edge);
-    crate::app_state::publish(app);
+    let ws = app.state::<WindowState>();
+    let size = *ws.floating_expanded_size.lock().unwrap();
+    let w = app.get_webview_window(FLOATING);
+    let placed = (|| {
+        let (size, w) = (size?, w.as_ref()?);
+        let (pos, cur) = (w.outer_position().ok()?, w.outer_size().ok()?);
+        let m = w
+            .monitor_from_point(pos.x as f64 + cur.width as f64 / 2.0, pos.y as f64 + cur.height as f64 / 2.0)
+            .ok()
+            .flatten()
+            .or_else(|| w.current_monitor().ok().flatten())?;
+        let a = m.work_area();
+        let tab = (TAB_WIDTH * m.scale_factor()).round() as i32;
+        let (left, right) = (a.position.x, a.position.x + a.size.width as i32);
+        let (from, to) = if edge == DockEdge::Left { (left - size.width as i32 + tab, left) } else { (right - tab, right - size.width as i32) };
+        let _ = w.set_size(size);
+        let _ = w.set_position(PhysicalPosition::new(from, pos.y));
+        Some((from, to, pos.y))
+    })();
+    match placed {
+        Some((from, to, y)) => {
+            // 动画从现在就算开始：按下不理、前端报的尺寸滑完再用
+            ws.floating_sliding.store(true, Ordering::SeqCst);
+            crate::app_state::publish(app);
+            let h = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                let h2 = h.clone();
+                let _ = h.run_on_main_thread(move || {
+                    slide_floating(&h2, from, to, y, Some(Box::new(move |app: &AppHandle| {
+                        save_floating(app, (to, y), None);
+                    })));
+                });
+            });
+        }
+        None => {
+            *ws.floating_slide_out.lock().unwrap() = Some(edge);
+            crate::app_state::publish(app);
+        }
+    }
 }
 
 /// 悬浮窗大小跟随内容：收起时贴住那条边；刚点了展开时先摆在「只露出一条」的位置再滑出来；
 /// 其余展开时贴着屏幕左边就保持左边不动，否则保持右上角不动（默认贴在屏幕右上角）。
 pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
+    let ws = app.state::<WindowState>();
+    if ws.floating_sliding.load(Ordering::SeqCst) {
+        *ws.floating_pending_fit.lock().unwrap() = Some((width, height));
+        return;
+    }
     let scale = w.scale_factor().unwrap_or(1.0);
     let (Ok(size), Ok(pos)) = (w.outer_size(), w.outer_position()) else { return };
     let nw = (width.clamp(24.0, 640.0) * scale).round() as u32;
@@ -576,6 +631,9 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         return;
     }
     let dock = app.state::<AppState>().settings().floating_dock;
+    if dock.is_none() && nw as f64 > (TAB_WIDTH + 10.0) * scale {
+        *ws.floating_expanded_size.lock().unwrap() = Some(PhysicalSize::new(nw, nh));
+    }
     let work = w
         .monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0)
         .ok()

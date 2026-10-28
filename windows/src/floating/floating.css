@@ -9,15 +9,14 @@ body,
   display: inline-block;
 }
 
-/* 收起 / 展开换内容时淡入（窗口本身的滑入滑出在 windows.rs） */
-@keyframes hud-in {
-  from {
-    opacity: 0;
-  }
+/* 收在左边的窄条贴着窗口右侧：收起 / 展开的那一下窗口还是展开的宽度、只有右边一条露在屏幕上，
+   窄条要正好在露出来的那一条里。收 / 展换内容不做淡入（会闪一下），动的只有窗口的滑入滑出（windows.rs） */
+body:has(.hud.dock-left) {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .hud {
-  animation: hud-in 0.16s ease-out;
   /* 拖动由 usePress 自己处理：不选中文字、不让触屏手势抢走指针 */
   user-select: none;
   touch-action: none;
@@ -103,12 +102,6 @@ body,
   font-size: 11px;
   font-weight: 600;
   letter-spacing: -0.3px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hud {
-    animation: none;
-  }
 }
 
 .tab-chevron {

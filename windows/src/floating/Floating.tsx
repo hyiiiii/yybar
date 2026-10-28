@@ -48,7 +48,7 @@ export function Floating() {
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-    // 收起 / 展开时根节点换了（带淡入动画），要重新观察尺寸
+    // 收起 / 展开时根节点换了，要重新观察尺寸
   }, [state != null, state?.settings.floatingDock ?? null]);
 
   type Row = { key: string; app: UsageApp; name: string | null; quota: QuotaSnapshot | null };
