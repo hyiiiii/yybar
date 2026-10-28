@@ -1,4 +1,4 @@
-// 个人主页 @ 后面的订阅：每台设备整份替换，多台设备按账号摘要去重，撤销的令牌和 30 天没传的设备不算。
+// 个人主页 @ 后面的订阅：每台设备整份替换，多台设备按账号摘要去重，撤销的令牌和 90 天没传的设备不算。
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { fakeD1, migrate } from "./d1";
@@ -61,7 +61,8 @@ describe("account plans", () => {
     const now = new Date("2026-10-28T12:00:00Z");
     expect(await plansOf(d1, 1, now)).toEqual([{ app: "codex", plan: "plus", count: 1 }]);
 
-    // 30 天以后两台都没再传：一个都不算
-    expect(await plansOf(d1, 1, new Date("2026-12-01T00:00:00Z"))).toEqual([]);
+    // 90 天以后两台都没再传：一个都不算；89 天时还算
+    expect(await plansOf(d1, 1, new Date("2027-01-24T12:00:00Z"))).toEqual([{ app: "codex", plan: "plus", count: 1 }]);
+    expect(await plansOf(d1, 1, new Date("2027-02-01T00:00:00Z"))).toEqual([]);
   });
 });

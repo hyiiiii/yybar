@@ -6,8 +6,8 @@ import { isoDay } from "./util";
 export const ACCOUNT_LIMITS = {
   perUpload: 50,
   planLength: 40,
-  /** 一台设备这么多天没再传，它传过的账号就不算了（换了电脑、卸了 App） */
-  staleDays: 30,
+  /** 一台设备这么多天没再上传，它传过的账号就不算了（换了电脑、卸了 App）。订阅随用量一起传，手动传得少也够用 */
+  staleDays: 90,
 };
 
 export interface AccountRow {
@@ -59,7 +59,7 @@ export async function saveAccounts(db: D1Database, userId: number, tokenId: numb
 
 /**
  * 主页上的订阅：几台设备传的账号按 (服务, 账号) 去重（同一账号取最近一次传的套餐），再按 (服务, 套餐) 计数。
- * 撤销了的令牌、30 天没再传的设备不算。按服务顺序排，同一服务里账号多的在前。
+ * 撤销了的令牌、90 天没再传的设备不算。按服务顺序排，同一服务里账号多的在前。
  */
 export async function plansOf(db: D1Database, userId: number, now = new Date()): Promise<PlanSummary[]> {
   const since = `${isoDay(new Date(now.getTime() - ACCOUNT_LIMITS.staleDays * 86400_000))}T00:00:00.000Z`;

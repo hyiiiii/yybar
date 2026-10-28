@@ -147,6 +147,7 @@ final class AppState {
         reloadExtraAccounts()
         await migrateAccountTokensFromKeychain()
         webAccount.scanUsage = { [weak self] in await self?.usageService.scanNow() }
+        webAccount.accountPlans = { [weak self] in self?.webAccountPlans ?? [] }
         webAccount.bootstrap()
         usageService.bootstrap(appState: self)
         await loadCodex()
@@ -247,7 +248,6 @@ final class AppState {
         await loadAllImportedCodexQuotas(reason: reason)
         await loadAllExtraQuotas(reason: reason)
         logQuotaSummary()
-        webAccount.accountsDidUpdate(webAccountPlans)
     }
 
     /// 网站个人主页 @ 后面的订阅：App 里启用着的账号各一条(服务 + 套餐 + 账号摘要，不传邮箱),免费的也传，

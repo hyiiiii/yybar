@@ -653,7 +653,6 @@ pub async fn refresh_quotas(app: &AppHandle, reason: RefreshReason) {
         accounts::refresh_all(app, reason),
     );
     publish(app);
-    web::accounts_did_update(app);
 }
 
 async fn load_codex_quota(app: &AppHandle, reason: RefreshReason) {

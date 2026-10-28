@@ -22,7 +22,7 @@ import Security
 // - 一键上传：每天只能成功点一次，点完当天变灰;没传成功(断网等)可以再点。
 //
 // 订阅(网站个人主页 @ 后面那一排):各服务账号的套餐，一个账号一条 { app, account, plan },account 是账号的摘要，
-// 不传邮箱。AppState 每次刷新完额度交过来，变了就 PUT /api/v1/accounts(网站按设备整份替换),没变每天补传一次。
+// 不传邮箱。随用量一起上传：每次上传(一键 / 自动)都 PUT /api/v1/accounts,网站按设备整份替换。
 
 @MainActor
 @Observable
@@ -72,12 +72,8 @@ final class YYBarWebAccount {
     private var token: String?
     private var pendingState: String?
     private var lastSource = Source()
-    /// 订阅：AppState 最近交过来的、上次传成功的(和时间)、上次没传成功的时间。
-    private var accountPlans: [AccountPlan]?
-    private var sentAccountPlans: [AccountPlan]?
-    private var accountPlansSentAt: Date?
-    private var accountPlansFailedAt: Date?
-    private var accountPlansInFlight = false
+    /// 当前各账号的订阅(AppState.webAccountPlans);AppState 启动时设好，上传时取。
+    var accountPlans: (@MainActor () -> [AccountPlan])?
     private static let autoUploadKey = "yybar.settings.webAutoUpload"
 
     // MARK: 本机标签
@@ -182,7 +178,6 @@ final class YYBarWebAccount {
             await syncUploadedDays()
             scheduleNoon()
             triggerAutoUpload()
-            syncAccountPlans()
         } catch {
             phase = .idle
             setMessage(tr("Couldn't connect: \(error.localizedDescription)", "连接失败：\(error.localizedDescription)"), error: true)
@@ -194,9 +189,6 @@ final class YYBarWebAccount {
         AccountTokenFiles.delete(kind: .yybarWeb, id: "account")
         token = nil
         profile = nil
-        sentAccountPlans = nil
-        accountPlansSentAt = nil
-        accountPlansFailedAt = nil
         ledger = Ledger()
         phase = .idle
         scheduleNoon()
@@ -315,6 +307,10 @@ final class YYBarWebAccount {
 
     private func upload(_ source: Source, manual: Bool) async {
         guard let token, let login = profile?.login, phase == .idle else { return }
+        phase = .uploading
+        defer { phase = .idle }
+        // 订阅随用量一起传，不管有没有新的天
+        await uploadAccountPlans(token: token)
         let todo = pending(source)
         guard !todo.days.isEmpty else {
             if manual { setMessage(tr("Nothing new to upload — every finished day is already in.", "没有新的天要传：今天以前的都传过了。")) }
@@ -324,8 +320,6 @@ final class YYBarWebAccount {
             }
             return
         }
-        phase = .uploading
-        defer { phase = .idle }
         // 按天整理成网站要的格式：每天只放还没传过的服务，一次最多传 100 天
         var byDay: [String: [Entry]] = [:]
         for b in source.buckets where Self.uploadApps.contains(b.app) {
@@ -399,31 +393,11 @@ final class YYBarWebAccount {
         }
     }
 
-    /// AppState 刷新完额度交过来的订阅：和上次传成功的不一样就传，一样的每天补传一次(网站 30 天没收到就不显示这台设备的)。
-    func accountsDidUpdate(_ plans: [AccountPlan]) {
-        accountPlans = plans
-        syncAccountPlans()
-    }
-
-    private func syncAccountPlans() {
-        guard let token, let plans = accountPlans, !accountPlansInFlight else { return }
-        let now = Date()
-        // 上次没传成功(断网、网站还没更新)：一小时后再试;传成功过且没变：一天补传一次;变了：马上传
-        if let failed = accountPlansFailedAt, now.timeIntervalSince(failed) < 3600 { return }
-        if plans == sentAccountPlans, let sent = accountPlansSentAt, now.timeIntervalSince(sent) < 86400 { return }
-        accountPlansInFlight = true
-        Task {
-            defer { accountPlansInFlight = false }
-            do {
-                let _: AccountsResult = try await put("api/v1/accounts", token: token, body: AccountsBody(accounts: plans))
-                sentAccountPlans = plans
-                accountPlansSentAt = now
-                accountPlansFailedAt = nil
-            } catch {
-                // 令牌失效由上传那边断开、提示;这里一小时后再试
-                accountPlansFailedAt = now
-            }
-        }
+    /// 订阅随用量一起上传：每次上传(一键 / 自动，不管有没有新的天)都把当前的订阅整份交给网站。
+    /// 没传成功不影响用量上传，下次上传再传。
+    private func uploadAccountPlans(token: String) async {
+        guard let plans = accountPlans?() else { return }
+        let _: AccountsResult? = try? await put("api/v1/accounts", token: token, body: AccountsBody(accounts: plans))
     }
 
     // MARK: 网络
