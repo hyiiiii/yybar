@@ -26,12 +26,17 @@ pub const FLOATING: &str = "floating";
 pub const ONBOARDING: &str = "onboarding";
 
 const POPOVER_GAP: f64 = 10.0;
+/// 悬浮窗松手时离屏幕上 / 下边缘小于这么多（逻辑像素）就吸附过去
 const SNAP_THRESHOLD: f64 = 20.0;
-/// 悬浮窗拖出屏幕左 / 右边缘超过窗口宽度的三分之一（至少这么多逻辑像素）时收起成贴边窄条。
-/// 默认位置离右边只有 16 像素，阈值太小时轻轻碰一下就会收起来。
-const COLLAPSE_OVERHANG: f64 = 40.0;
+/// 悬浮窗松手时离屏幕左 / 右边缘不到这么远（逻辑像素，或已经伸出边外）就收起成贴边窄条（像微信通话小窗）
+const DOCK_DISTANCE: f64 = 24.0;
 /// 拖完收起的窄条，离屏幕左 / 右边不超过这么远（逻辑像素）就重新贴边，拖得更远就在那里展开
 const REDOCK_DISTANCE: f64 = 60.0;
+/// 收起的窄条宽度（逻辑像素，和 floating.css 的 .hud.collapsed 一致）
+const TAB_WIDTH: f64 = 30.0;
+/// 滑入 / 滑出屏幕边的动画：帧数 × 每帧间隔 ≈ 220 毫秒
+const SLIDE_FRAMES: u32 = 14;
+const SLIDE_FRAME_MS: u64 = 16;
 
 /// 左键还按着（拖动还没结束）。
 fn left_button_down() -> bool {
@@ -56,6 +61,8 @@ pub struct WindowState {
     pub pending_tab: Mutex<Option<String>>,
     /// 正在后台新建的窗口（连点两下不会建出两个）
     building: Mutex<HashSet<&'static str>>,
+    /// 刚点了展开：等前端换成展开的内容、量好尺寸后（fit_floating），从这条边滑出来
+    floating_slide_out: Mutex<Option<DockEdge>>,
 }
 
 /// 在后台任务里新建窗口（见文件头：避免 WebView2 在同步命令 / 事件回调里卡死）。同一个窗口正在建时忽略。
@@ -337,103 +344,156 @@ pub fn drag_floating(app: &AppHandle) {
     });
 }
 
-/// 拖动结束：拖出屏幕左 / 右边缘超过窗口宽度 1/3（或鼠标已经顶到屏幕左 / 右边）时收起成贴边窄条（像微信通话小窗）；
-/// 已收起时放回屏幕边附近继续收着、拖远了就地展开；其余情况离屏幕边 20 像素内吸附。
-fn snap_and_persist(app: &AppHandle, cursor: Option<PhysicalPosition<f64>>) {
+/// 悬浮窗滑动到 to_x（保持 y），每帧在主线程挪一次窗口；动完在主线程执行 then。
+fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<Box<dyn FnOnce(&AppHandle) + Send>>) {
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for i in 1..=SLIDE_FRAMES {
+            let t = i as f64 / SLIDE_FRAMES as f64;
+            let eased = t * t * (3.0 - 2.0 * t);
+            let x = from_x + ((to_x - from_x) as f64 * eased).round() as i32;
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || {
+                if let Some(w) = h2.get_webview_window(FLOATING) {
+                    let _ = w.set_position(PhysicalPosition::new(x, y));
+                }
+            });
+            tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
+        }
+        if let Some(then) = then {
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || then(&h2));
+        }
+    });
+}
+
+fn save_floating(app: &AppHandle, position: (i32, i32), dock: Option<DockEdge>) -> bool {
+    let state = app.state::<AppState>();
+    let mut g = state.inner.lock().unwrap();
+    let changed = g.settings.floating_dock != dock;
+    g.settings.floating_position = Some(position);
+    g.settings.floating_dock = dock;
+    g.settings.save();
+    changed
+}
+
+/// 拖动结束：
+/// - 展开时：离屏幕左 / 右边不到 24 像素或伸出边外 → 整块滑进屏幕边、换成窄条（那一边接着另一块屏幕时只贴边）；
+///   离上 / 下边 20 像素内吸附。
+/// - 收起时：放回屏幕边附近 → 滑回去贴好；拖远了就地展开。
+fn snap_and_persist(app: &AppHandle, _cursor: Option<PhysicalPosition<f64>>) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
-    let monitor = w
+    let Some(m) = w
         .monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0)
         .ok()
         .flatten()
-        .or_else(|| w.current_monitor().ok().flatten());
+        .or_else(|| w.current_monitor().ok().flatten())
+    else {
+        return;
+    };
     let docked = app.state::<AppState>().settings().floating_dock;
-    let mut dock = docked;
-    let (mut x, mut y) = (pos.x, pos.y);
-    if let Some(m) = monitor {
-        let work = m.work_area();
-        let t = (SNAP_THRESHOLD * m.scale_factor()) as i32;
-        let overhang = (COLLAPSE_OVERHANG * m.scale_factor()).max(size.width as f64 / 3.0) as i32;
-        let redock = (REDOCK_DISTANCE * m.scale_factor()) as i32;
-        let (left, top) = (work.position.x, work.position.y);
-        let work_right = left + work.size.width as i32;
-        let right = work_right - size.width as i32;
-        let bottom = top + work.size.height as i32 - size.height as i32;
-        let center = x + size.width as i32 / 2;
-        // 那一边接着另一块屏幕时是在换屏，不收
-        let screen = m.position();
-        let screen_right = screen.x + m.size().width as i32;
-        let mid_y = (y + size.height as i32 / 2) as f64;
-        let neighbor = |px: i32| w.monitor_from_point(px as f64, mid_y).ok().flatten().is_some_and(|n| n.position() != m.position());
-        // 鼠标推到屏幕边就推不动了：按着靠边的位置往外推时窗口只能超出一点点，所以鼠标顶到边也算
-        let pushed_left = cursor.is_some_and(|c| c.x <= screen.x as f64 + 1.0) && x <= left + 4;
-        let pushed_right = cursor.is_some_and(|c| c.x >= (screen_right - 2) as f64) && x + size.width as i32 >= work_right - 4;
-        if docked.is_some() {
-            // 拖动收起的窄条：放回屏幕边附近继续收着，拖远了就在那里展开
-            dock = if center - left < redock {
-                Some(DockEdge::Left)
-            } else if work_right - center < redock {
-                Some(DockEdge::Right)
-            } else {
-                None
-            };
-        } else if (x < left - overhang || pushed_left) && !neighbor(screen.x - 1) {
-            dock = Some(DockEdge::Left);
-        } else if (x + size.width as i32 > work_right + overhang || pushed_right) && !neighbor(screen_right + 1) {
-            dock = Some(DockEdge::Right);
-        }
-        match dock {
-            // 收起后窗口会按窄条重新量尺寸（fit_floating 贴边），这里先贴边、限制在屏幕上下之间
-            Some(DockEdge::Left) => x = left,
-            Some(DockEdge::Right) => x = right,
-            // 窄条拖离了屏幕边：就地展开（展开后 fit_floating 按内容量尺寸）
-            None if docked.is_some() => {}
+    let scale = m.scale_factor();
+    let work = m.work_area();
+    let (left, top) = (work.position.x, work.position.y);
+    let work_right = left + work.size.width as i32;
+    let bottom = top + work.size.height as i32 - size.height as i32;
+    let width = size.width as i32;
+    let tab = (TAB_WIDTH * scale).round() as i32;
+    let y = pos.y.clamp(top, bottom.max(top));
+
+    if docked.is_some() {
+        let redock = (REDOCK_DISTANCE * scale) as i32;
+        let center = pos.x + width / 2;
+        let edge = if center - left < redock {
+            Some(DockEdge::Left)
+        } else if work_right - center < redock {
+            Some(DockEdge::Right)
+        } else {
+            None
+        };
+        match edge {
+            Some(edge) => {
+                // 放回屏幕边：滑回去贴好
+                let to = if edge == DockEdge::Left { left } else { work_right - width };
+                save_floating(app, (to, y), Some(edge));
+                slide_floating(app, pos.x, to, y, None);
+            }
             None => {
-                if (x - left).abs() < t {
-                    x = left;
-                } else if (right - x).abs() < t {
-                    x = right;
-                }
+                // 拖离了屏幕边：就地展开（前端淡入，fit_floating 按内容量尺寸）
+                save_floating(app, (pos.x, pos.y), None);
+                crate::app_state::publish(app);
             }
         }
-        if dock.is_some() {
-            y = y.clamp(top, bottom.max(top));
-        } else if (y - top).abs() < t {
-            y = top;
-        } else if (bottom - y).abs() < t {
-            y = bottom;
-        }
-        if (x, y) != (pos.x, pos.y) {
-            let _ = w.set_position(PhysicalPosition::new(x, y));
-        }
+        return;
     }
-    {
-        let state = app.state::<AppState>();
-        let mut g = state.inner.lock().unwrap();
-        g.settings.floating_position = Some((x, y));
-        g.settings.floating_dock = dock;
-        g.settings.save();
+
+    let dock_distance = (DOCK_DISTANCE * scale) as i32;
+    let screen = m.position();
+    let screen_right = screen.x + m.size().width as i32;
+    let mid_y = (pos.y + size.height as i32 / 2) as f64;
+    let neighbor = |px: i32| w.monitor_from_point(px as f64, mid_y).ok().flatten().is_some_and(|n| n.position() != m.position());
+    let near_left = pos.x < left + dock_distance;
+    let near_right = pos.x + width > work_right - dock_distance;
+    let mut x = pos.x;
+    if near_left || near_right {
+        let edge = if near_left && near_right {
+            if pos.x + width / 2 < left + work.size.width as i32 / 2 { DockEdge::Left } else { DockEdge::Right }
+        } else if near_left {
+            DockEdge::Left
+        } else {
+            DockEdge::Right
+        };
+        let has_neighbor = if edge == DockEdge::Left { neighbor(screen.x - 1) } else { neighbor(screen_right + 1) };
+        if !has_neighbor {
+            // 整块滑进屏幕边，只露出一条，再换成窄条（fit_floating 把窄条贴在同一位置）
+            let tucked = if edge == DockEdge::Left { left - width + tab } else { work_right - tab };
+            let edge_pos = if edge == DockEdge::Left { left } else { work_right - tab };
+            slide_floating(
+                app,
+                pos.x,
+                tucked,
+                y,
+                Some(Box::new(move |app: &AppHandle| {
+                    if save_floating(app, (edge_pos, y), Some(edge)) {
+                        crate::app_state::publish(app);
+                    }
+                })),
+            );
+            return;
+        }
+        x = if edge == DockEdge::Left { left } else { work_right - width };
     }
-    if dock != docked {
-        crate::app_state::publish(app);
+    let t = (SNAP_THRESHOLD * scale) as i32;
+    let snapped_y = if (pos.y - top).abs() < t {
+        top
+    } else if (bottom - pos.y).abs() < t {
+        bottom
+    } else {
+        y
+    };
+    save_floating(app, (x, snapped_y), None);
+    if (x, snapped_y) != (pos.x, pos.y) {
+        let _ = w.set_position(PhysicalPosition::new(x, snapped_y));
     }
 }
 
-/// 点收起的窄条：展开回原来的悬浮窗，仍贴着那条边（fit_floating 按贴边方向长）。
+/// 点收起的窄条：换回展开的内容，从那条边滑出来（fit_floating 量到展开的尺寸后开始滑）。
 pub fn expand_floating(app: &AppHandle) {
-    {
+    let edge = {
         let state = app.state::<AppState>();
         let mut g = state.inner.lock().unwrap();
-        if g.settings.floating_dock.is_none() {
-            return;
-        }
+        let Some(edge) = g.settings.floating_dock else { return };
         g.settings.floating_dock = None;
         g.settings.save();
-    }
+        edge
+    };
+    *app.state::<WindowState>().floating_slide_out.lock().unwrap() = Some(edge);
     crate::app_state::publish(app);
 }
 
-/// 悬浮窗大小跟随内容：收起时贴住那条边；展开时贴着屏幕左边就保持左边不动，否则保持右上角不动（默认贴在屏幕右上角）。
+/// 悬浮窗大小跟随内容：收起时贴住那条边；刚点了展开时先摆在「只露出一条」的位置再滑出来；
+/// 其余展开时贴着屏幕左边就保持左边不动，否则保持右上角不动（默认贴在屏幕右上角）。
 pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
@@ -450,6 +510,29 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         .flatten()
         .or_else(|| w.current_monitor().ok().flatten())
         .map(|m| *m.work_area());
+    // 刚点了展开：内容已经换成展开的（比窄条宽）才开始滑
+    let slide = if dock.is_none() && nw as f64 > (TAB_WIDTH + 10.0) * scale {
+        app.state::<WindowState>().floating_slide_out.lock().unwrap().take()
+    } else {
+        None
+    };
+    if let (Some(edge), Some(a)) = (slide, work) {
+        let tab = (TAB_WIDTH * scale).round() as i32;
+        let (left, right) = (a.position.x, a.position.x + a.size.width as i32);
+        let (from, to) = if edge == DockEdge::Left { (left - nw as i32 + tab, left) } else { (right - tab, right - nw as i32) };
+        let _ = w.set_size(PhysicalSize::new(nw, nh));
+        let _ = w.set_position(PhysicalPosition::new(from, pos.y));
+        slide_floating(
+            app,
+            from,
+            to,
+            pos.y,
+            Some(Box::new(move |app: &AppHandle| {
+                save_floating(app, (to, pos.y), None);
+            })),
+        );
+        return;
+    }
     let right = pos.x + size.width as i32;
     let x = match (dock, work) {
         (Some(DockEdge::Left), Some(a)) => a.position.x,

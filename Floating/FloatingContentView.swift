@@ -85,7 +85,7 @@ struct FloatingContentView: View {
             }
         }
         .padding(.vertical, 9)
-        .frame(width: 30)
+        .frame(width: FloatingPanelController.tabWidth)
         .background {
             ZStack {
                 Color(nsColor: .windowBackgroundColor).opacity(0.55)
@@ -201,10 +201,10 @@ private struct FloatingRow: View {
     }
 }
 
-/// 悬浮窗(展开和收起)上的鼠标处理：按下时把拖动交给系统(`performDrag`),等左键松开后
-/// 再告诉 controller 这次有没有拖动过(见 FloatingPanelController.mouseReleased)。
-/// performDrag 把拖动交给窗口服务器后立刻返回，不能拿它返回的时刻当拖完。
-/// 用 AppKit 视图接：非激活面板里第一下点击也能收到。
+/// 悬浮窗(展开和收起)上的鼠标处理：拖动时窗口跟着鼠标走，松手时告诉 controller 这次有没有拖动过
+/// (见 FloatingPanelController.mouseReleased)。自己移窗口：SwiftUI 内容上「按背景拖动」在新系统上不触发，
+/// performDrag 又立刻返回、拿不到松手的时刻。用 AppKit 视图接：非激活面板里第一下点击也能收到，
+/// 鼠标拖出窗口外也一直收到拖动和松手。
 private struct FloatingMouse: NSViewRepresentable {
     let help: String
 
@@ -220,25 +220,30 @@ private struct FloatingMouse: NSViewRepresentable {
 }
 
 final class FloatingMouseView: NSView {
+    private var startMouse: NSPoint = .zero
+    private var startOrigin: NSPoint = .zero
+    private var dragging = false
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
-        let before = window.frame.origin
-        let downAt = NSEvent.mouseLocation
-        window.performDrag(with: event)
-        Task { @MainActor [weak window] in
-            while NSEvent.pressedMouseButtons & 1 != 0 {
-                try? await Task.sleep(nanoseconds: 30_000_000)
-            }
-            // 松手后窗口最后一次移动可能稍晚才到
-            try? await Task.sleep(nanoseconds: 60_000_000)
-            guard let window else { return }
-            let after = window.frame.origin
-            let up = NSEvent.mouseLocation
-            // 拖动看鼠标有没有移动：贴着屏幕边往外推时系统不挪窗口，但这也是一次拖动(推到边 → 收起)
-            let moved = hypot(after.x - before.x, after.y - before.y) >= 3 || hypot(up.x - downAt.x, up.y - downAt.y) >= 5
-            FloatingPanelController.shared.mouseReleased(moved: moved)
-        }
+        startMouse = NSEvent.mouseLocation
+        startOrigin = window.frame.origin
+        dragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window else { return }
+        let p = NSEvent.mouseLocation
+        if !dragging, hypot(p.x - startMouse.x, p.y - startMouse.y) < 3 { return }
+        dragging = true
+        window.setFrameOrigin(NSPoint(x: startOrigin.x + p.x - startMouse.x, y: startOrigin.y + p.y - startMouse.y))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        FloatingPanelController.shared.mouseReleased(moved: dragging)
+        dragging = false
     }
 }

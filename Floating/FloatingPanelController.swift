@@ -13,13 +13,21 @@ final class FloatingPanelController: NSObject {
     /// 默认窗口大小（实际大小由 SwiftUI fixedSize 收缩决定，这里只是初始 contentRect）
     private static let defaultSize = CGSize(width: 160, height: 64)
     private static let defaultMargin: CGFloat = 16
-    /// 拖动到距屏幕边缘小于此阈值时自动吸附
+    /// 松手时离屏幕上 / 下边缘小于此距离就吸附过去
     private static let snapThreshold: CGFloat = 20
-    /// 拖出屏幕左 / 右边缘超过窗口宽度的这一比例(至少 40pt)时收起成贴边窄条(像微信通话小窗)。
-    /// 默认位置离右边只有 16pt,阈值太小时轻轻碰一下就会收起来。
-    private static func collapseOverhang(width: CGFloat) -> CGFloat { max(40, width / 3) }
+    /// 松手时窗口离屏幕左 / 右边缘不到这么远(或已经伸出边外)就收起成贴边窄条(像微信通话小窗)
+    private static let dockDistance: CGFloat = 24
     /// 拖完收起的窄条，离屏幕左 / 右边不超过这么远就重新贴边，拖得更远就在那里展开
     private static let redockDistance: CGFloat = 60
+    /// 收起的窄条宽度(和 FloatingContentView.collapsedTab 一致)
+    static let tabWidth: CGFloat = 30
+    /// 滑入 / 滑出屏幕边的动画时长
+    private static let slideDuration: TimeInterval = 0.22
+
+    /// 正在播放滑入 / 滑出动画：期间不按内容量尺寸，免得打断动画
+    private var animating = false
+    /// 刚点了展开：等 SwiftUI 换成展开的内容、量到它的尺寸后，从这条边滑出来
+    private var pendingSlideOut: FloatingDockEdge?
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -58,50 +66,89 @@ final class FloatingPanelController: NSObject {
     }
 
     private func applyFitOnce() {
-        guard let panel, let hosting = hostingView else { return }
+        guard let panel, let hosting = hostingView, !animating else { return }
         hosting.layoutSubtreeIfNeeded()
         let fit = hosting.fittingSize
         guard fit.width > 1, fit.height > 1 else { return }
+        guard let visible = (panel.screen ?? NSScreen.main)?.visibleFrame else { return }
         var frame = panel.frame
         let dh = fit.height - frame.height
         frame.origin.y -= dh
-        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame {
-            if let edge = SettingsStore.shared.floatingDockEdge {
-                // 收起时贴住那条边
-                frame.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
-                frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
-            } else if abs(frame.maxX - visible.maxX) < 1 {
-                // 贴着右边时保持右边不动(从右边展开时往左长)
-                frame.origin.x = visible.maxX - fit.width
-            }
+        if let edge = pendingSlideOut {
+            // 展开：先摆成「只露出贴边那一条」的位置，再滑出来(内容还没换成展开的就等下一次)
+            guard fit.width > Self.tabWidth + 10 else { return }
+            pendingSlideOut = nil
+            frame.size = fit
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
+            frame.origin.x = edge == .left ? visible.minX - fit.width + Self.tabWidth : visible.maxX - Self.tabWidth
+            panel.setFrame(frame, display: true)
+            var target = frame
+            target.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
+            animate(to: target)
+            return
+        }
+        if let edge = SettingsStore.shared.floatingDockEdge {
+            // 收起时贴住那条边
+            frame.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
+        } else if abs(frame.maxX - visible.maxX) < 1 {
+            // 贴着右边时保持右边不动(往左长)
+            frame.origin.x = visible.maxX - fit.width
         }
         frame.size = fit
+        guard frame != panel.frame else { return }
         panel.setFrame(frame, display: true)
     }
 
-    /// 收起成贴在 edge 那条边上的窄条(只显示各行的剩余百分比)。
-    private func collapse(to edge: FloatingDockEdge) {
-        SettingsStore.shared.floatingDockEdge = edge
-        resizeToFitContent()
+    /// 窗口位置 / 大小的过渡动画(滑入 / 滑出 / 贴回边)。
+    private func animate(to frame: CGRect, completion: (@MainActor () -> Void)? = nil) {
+        guard let panel else { return }
+        animating = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.slideDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        } completionHandler: {
+            Task { @MainActor [weak self] in
+                self?.animating = false
+                self?.persistFrame()
+                completion?()
+            }
+        }
     }
 
-    /// 点收起的窄条：展开回原来的悬浮窗，仍贴着那条边。
+    /// 收起：整块滑进屏幕边，只剩贴边的一条，再换成窄条(只显示各行的剩余百分比)。
+    private func collapse(to edge: FloatingDockEdge, visible: CGRect) {
+        guard let panel else { return }
+        var target = panel.frame
+        target.origin.x = edge == .left ? visible.minX - target.width + Self.tabWidth : visible.maxX - Self.tabWidth
+        target.origin.y = min(max(target.origin.y, visible.minY), visible.maxY - target.height)
+        animate(to: target) { [weak self] in
+            SettingsStore.shared.floatingDockEdge = edge
+            self?.resizeToFitContent()
+        }
+    }
+
+    /// 点收起的窄条：换回展开的内容，从那条边滑出来。
     func expand() {
-        guard SettingsStore.shared.floatingDockEdge != nil else { return }
+        guard let edge = SettingsStore.shared.floatingDockEdge else { return }
+        pendingSlideOut = edge
         SettingsStore.shared.floatingDockEdge = nil
         resizeToFitContent()
     }
 
-    /// 悬浮窗上的一次按下 → 松开结束(拖动由 FloatingMouseView 交给系统 performDrag,松手才回到这里)。
-    /// 展开时：拖动过就吸附 / 收起。收起时：没拖动 = 单击展开；拖动过 = 放回屏幕边继续收着，拖远了就在那里展开。
+    /// 悬浮窗上的一次按下 → 松开(拖动由 FloatingMouseView 跟着鼠标移窗口)。
+    /// 展开时：拖动过就看松手位置：靠近 / 伸出左右边 → 收起；靠近上下边 → 吸附。
+    /// 收起时：没拖动 = 单击展开；拖动过 = 放回屏幕边附近继续收着，拖远了就在那里展开。
     func mouseReleased(moved: Bool) {
-        guard let panel else { return }
+        guard let panel, !animating else { return }
         let settings = SettingsStore.shared
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? panel.screen ?? NSScreen.main
+        guard let screen else { return }
+        let visible = screen.visibleFrame
         guard settings.floatingDockEdge != nil else {
-            if moved {
-                snapToEdgeIfNeeded(cursor: NSEvent.mouseLocation)
-                settings.floatingPanelFrame = panel.frame
-            }
+            if moved { releaseExpanded(on: screen) }
             return
         }
         guard moved else {
@@ -109,24 +156,57 @@ final class FloatingPanelController: NSObject {
             return
         }
         var frame = panel.frame
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? panel.screen ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return }
-        if frame.midX - visible.minX < Self.redockDistance {
-            settings.floatingDockEdge = .left
-        } else if visible.maxX - frame.midX < Self.redockDistance {
-            settings.floatingDockEdge = .right
-        } else {
-            // 拖离了屏幕边：在松手的地方展开
+        let edge: FloatingDockEdge? = frame.midX - visible.minX < Self.redockDistance ? .left
+            : visible.maxX - frame.midX < Self.redockDistance ? .right : nil
+        guard let edge else {
+            // 拖离了屏幕边：在松手的地方展开(淡入)
+            panel.alphaValue = 0
             settings.floatingDockEdge = nil
+            resizeToFitContent()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                panel.animator().alphaValue = 1
+            }
+            return
         }
-        if let edge = settings.floatingDockEdge {
+        // 放回屏幕边：滑回去贴好
+        settings.floatingDockEdge = edge
+        frame.origin.x = edge == .left ? visible.minX : visible.maxX - frame.width
+        frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        animate(to: frame)
+    }
+
+    /// 展开的悬浮窗松手：离屏幕左 / 右边不到 24pt 或伸出边外就收起(那一边接着另一块屏幕时只吸附)，
+    /// 离上 / 下边 20pt 内吸附。
+    private func releaseExpanded(on screen: NSScreen) {
+        guard let panel else { return }
+        let visible = screen.visibleFrame
+        var frame = panel.frame
+        let hasNeighbor = { (x: CGFloat) in NSScreen.screens.contains { $0 != screen && $0.frame.contains(CGPoint(x: x, y: frame.midY)) } }
+        let nearLeft = frame.minX < visible.minX + Self.dockDistance
+        let nearRight = frame.maxX > visible.maxX - Self.dockDistance
+        if nearLeft || nearRight {
+            // 两边都靠(窗口比屏幕还宽)时看鼠标在哪半边
+            let edge: FloatingDockEdge = nearLeft && nearRight
+                ? (NSEvent.mouseLocation.x < visible.midX ? .left : .right)
+                : (nearLeft ? .left : .right)
+            if !hasNeighbor(edge == .left ? screen.frame.minX - 1 : screen.frame.maxX + 1) {
+                collapse(to: edge, visible: visible)
+                return
+            }
             frame.origin.x = edge == .left ? visible.minX : visible.maxX - frame.width
-            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
-            panel.setFrame(frame, display: true)
         }
-        settings.floatingPanelFrame = panel.frame
-        resizeToFitContent()
+        if abs(frame.minY - visible.minY) < Self.snapThreshold {
+            frame.origin.y = visible.minY
+        } else if abs(visible.maxY - frame.maxY) < Self.snapThreshold {
+            frame.origin.y = visible.maxY - frame.height
+        }
+        frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        if frame != panel.frame {
+            animate(to: frame)
+        } else {
+            persistFrame()
+        }
     }
 
     private func hide() {
@@ -186,55 +266,6 @@ final class FloatingPanelController: NSObject {
     private func persistFrame() {
         guard let panel else { return }
         SettingsStore.shared.floatingPanelFrame = panel.frame
-    }
-
-    /// 松手后：拖出屏幕左 / 右边缘(或鼠标已经顶到屏幕左 / 右边)就收起成窄条，否则离边 20pt 内吸附。
-    private func snapToEdgeIfNeeded(cursor: CGPoint) {
-        guard let panel else { return }
-        guard let screen = panel.screen ?? NSScreen.main else { return }
-        // 已经收起：位置由 mouseReleased 控制
-        guard SettingsStore.shared.floatingDockEdge == nil else { return }
-        // 拖出左 / 右屏幕边缘：收起成贴边的窄条(那一边接着另一块屏幕时是在换屏，不收)
-        let visible = screen.visibleFrame
-        let frame = panel.frame
-        let hasNeighbor = { (x: CGFloat) in NSScreen.screens.contains { $0 != screen && $0.frame.contains(CGPoint(x: x, y: frame.midY)) } }
-        let overhang = Self.collapseOverhang(width: frame.width)
-        // 鼠标推到屏幕边就推不动了：按着靠边的位置往外推时窗口只能超出一点点，所以鼠标顶到边也算
-        let pushedLeft = cursor.x <= screen.frame.minX + 2 && frame.minX < visible.minX + 4
-        let pushedRight = cursor.x >= screen.frame.maxX - 3 && frame.maxX > visible.maxX - 4
-        if frame.minX < visible.minX - overhang || pushedLeft, !hasNeighbor(screen.frame.minX - 1) {
-            collapse(to: .left)
-            return
-        }
-        if frame.maxX > visible.maxX + overhang || pushedRight, !hasNeighbor(screen.frame.maxX + 1) {
-            collapse(to: .right)
-            return
-        }
-        let snapped = snappedFrame(panel.frame, on: screen)
-        guard snapped != panel.frame else { return }
-        panel.setFrame(snapped, display: true, animate: true)
-        // setFrame 会再次触发 didMove,但 snapped == snappedFrame(snapped),不会无限循环
-        SettingsStore.shared.floatingPanelFrame = snapped
-    }
-
-    private func snappedFrame(_ frame: CGRect, on screen: NSScreen) -> CGRect {
-        let visible = screen.visibleFrame
-        let threshold = Self.snapThreshold
-        var origin = frame.origin
-
-        if abs(frame.minX - visible.minX) < threshold {
-            origin.x = visible.minX
-        } else if abs(visible.maxX - frame.maxX) < threshold {
-            origin.x = visible.maxX - frame.width
-        }
-
-        if abs(frame.minY - visible.minY) < threshold {
-            origin.y = visible.minY
-        } else if abs(visible.maxY - frame.maxY) < threshold {
-            origin.y = visible.maxY - frame.height
-        }
-
-        return CGRect(origin: origin, size: frame.size)
     }
 
     /// 若已保存的 frame 落在屏幕之外，回落到默认位置

@@ -24,7 +24,8 @@ export function Floating() {
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [state != null]);
+    // 收起 / 展开时根节点换了（带淡入动画），要重新观察尺寸
+  }, [state != null, state?.settings.floatingDock ?? null]);
 
   type Row = { key: string; app: UsageApp; name: string | null; quota: QuotaSnapshot | null };
   const rows: Row[] = [];
@@ -46,6 +47,7 @@ export function Floating() {
     return (
       <div
         ref={ref}
+        key={`dock-${dock}`}
         className={`hud collapsed dock-${dock}`}
         // 按下就交给系统拖；松手后后台判断：没移动 = 单击展开，移动了 = 拖动（放回屏幕边继续收着，拖远了就地展开）。
         // 窄条只有 30 宽，等前端看到「移动了 3 像素」再开始拖，快速一甩时鼠标早已离开窄条
@@ -73,6 +75,7 @@ export function Floating() {
   return (
     <div
       ref={ref}
+      key="open"
       className="hud"
       onMouseDown={(e) => {
         if (e.button === 0 && e.detail === 1) api.dragFloating();

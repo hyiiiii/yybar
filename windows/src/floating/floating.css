@@ -9,7 +9,15 @@ body,
   display: inline-block;
 }
 
+/* 收起 / 展开换内容时淡入（窗口本身的滑入滑出在 windows.rs） */
+@keyframes hud-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .hud {
+  animation: hud-in 0.16s ease-out;
   display: inline-flex;
   flex-direction: column;
   gap: 7px;
@@ -92,6 +100,12 @@ body,
   font-size: 11px;
   font-weight: 600;
   letter-spacing: -0.3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud {
+    animation: none;
+  }
 }
 
 .tab-chevron {
