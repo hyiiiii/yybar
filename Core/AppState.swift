@@ -82,8 +82,10 @@ final class AppState {
     /// Gemini App 每天每个模型的回答次数(当前 Google 账号的)。统计里 Gemini 没有 token,只看 Gemini 时按它显示。
     var geminiAnswerLog = GeminiAnswerLog()
     private var geminiModelsLastAttempt: Date?
-    /// 套餐名很少变：每小时(或换账号后)才重新读一次，减少发给 Google 的请求。
+    /// 套餐名很少变：每 6 小时(或换账号后)才重新读一次，减少发给 Google 的请求。
     private var geminiPlanFetchedAt: Date?
+    /// Google 拒绝过的 Chrome 登录(指纹 + 时间)。同一份登录 6 小时内定时刷新不再拿去请求，见 loadGeminiAppQuota。
+    private var geminiRejectedLogin: (id: String, at: Date)?
     private var geminiChromeKey: Data?
     private var geminiChromeKeychainDenied = false
     var agyQuota: QuotaSnapshot?
@@ -1874,9 +1876,12 @@ final class AppState {
         guard SettingsStore.shared.showGemini, !geminiAppRefreshState.inFlight else { return }
         let now = Date()
         if let until = geminiAppRefreshState.backoffUntil, until > now { return }
+        // Gemini App 借用 Chrome 的 Google 登录 Cookie 发请求。同一份登录被 Chrome 之外的程序频繁使用，
+        // Google 可能把它当成被盗用，让 Chrome 里的账号重新登录 / 验证。所以定时刷新最快 15 分钟一次
+        // (额度按 5 小时 / 每周算，变化慢),手动刷新不受这个限制。
         if reason == .periodic {
             if geminiChromeKeychainDenied { return }
-            if let last = geminiAppRefreshState.lastAttemptAt, now.timeIntervalSince(last) < 120 { return }
+            if let last = geminiAppRefreshState.lastAttemptAt, now.timeIntervalSince(last) < 15 * 60 { return }
         }
         geminiAppRefreshState.inFlight = true
         geminiAppRefreshState.lastAttemptAt = now
@@ -1940,10 +1945,16 @@ final class AppState {
             failed("Chrome 账号已变化，请重新刷新")
             return
         }
+        // Google 拒绝过这份登录(跳去登录页 / 401 / 403 / 要求网页验证):定时刷新不再反复拿它去请求，
+        // 免得 Google 更认定会话异常。Chrome 重新登录或通过验证后 Cookie 变了就恢复;手动刷新照常请求。
+        if reason == .periodic, let rejected = geminiRejectedLogin, rejected.id == login.loginID,
+           now.timeIntervalSince(rejected.at) < 6 * 3600 {
+            return
+        }
         switch await GeminiAppQuotaClient.fetch(session: login) {
         case .success(var snapshot):
             snapshot.planType = geminiAppQuota?.planType
-            if geminiPlanFetchedAt.map({ Date().timeIntervalSince($0) >= 3600 }) ?? true {
+            if geminiPlanFetchedAt.map({ Date().timeIntervalSince($0) >= 6 * 3600 }) ?? true {
                 geminiPlanFetchedAt = Date()
                 if let plan = await GeminiAppQuotaClient.fetchPlan(session: login) { snapshot.planType = plan }
             }
@@ -1960,9 +1971,10 @@ final class AppState {
             geminiAppRefreshState.lastSuccessAt = snapshot.fetchedAt
             geminiAppRefreshState.backoffUntil = nil
             geminiAppRefreshState.source = .api
-            // 会话元数据(回答次数 + 近期模型)独立限频，每 10 分钟最多读一次；失败不影响已成功的额度。
+            geminiRejectedLogin = nil
+            // 会话元数据(回答次数 + 近期模型)独立限频，每 30 分钟最多读一次；失败不影响已成功的额度。
             var activityNote = ""
-            if geminiModelsLastAttempt.map({ Date().timeIntervalSince($0) >= 600 }) ?? true {
+            if geminiModelsLastAttempt.map({ Date().timeIntervalSince($0) >= 30 * 60 }) ?? true {
                 geminiModelsLastAttempt = Date()
                 switch await GeminiAppQuotaClient.fetchActivity(session: login, log: geminiAnswerLog) {
                 case .success(let activity):
@@ -1984,6 +1996,9 @@ final class AppState {
                     if error.isRateLimited || error.requiresBrowserVerification {
                         geminiAppRefreshState.backoffUntil = Date().addingTimeInterval(rateLimitBackoff)
                     }
+                    if error.rejectsWebLogin {
+                        geminiRejectedLogin = (login.loginID, Date())
+                    }
                 }
             }
             let five = snapshot.fiveHour.map { String(format: "%.1f%%", $0.usedPercent) } ?? "—"
@@ -1992,6 +2007,9 @@ final class AppState {
         case .failure(let error):
             if error.isRateLimited || error.requiresBrowserVerification {
                 geminiAppRefreshState.backoffUntil = now.addingTimeInterval(rateLimitBackoff)
+            }
+            if error.rejectsWebLogin {
+                geminiRejectedLogin = (login.loginID, now)
             }
             if error.requiresBrowserVerification {
                 failed(geminiAppQuota == nil ? error.description : "Google 要求网页验证，当前显示上次额度；请在 Chrome 打开 Gemini 检查后重试")

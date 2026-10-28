@@ -135,6 +135,12 @@ enum QuotaError: Error, CustomStringConvertible {
         httpStatusCode == 401 || httpStatusCode == 403
     }
 
+    /// 借用的网页登录(Gemini App 用的 Chrome Cookie)被 Google 拒绝：跳去登录页、401 / 403,或要求网页验证。
+    var rejectsWebLogin: Bool {
+        if case .missingToken = self { return true }
+        return isAuthFailure || requiresBrowserVerification
+    }
+
     /// 是否为"需要用户重新登录"级别的失败。UI 可据此降级提示文案。
     var isAuthRevoked: Bool {
         if case .tokenRevoked = self { return true }

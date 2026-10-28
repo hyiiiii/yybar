@@ -87,9 +87,14 @@ struct MainWindowRootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 内容比侧边栏右边剩下的宽度还宽时(窗口拉到最窄、字号调大),只裁掉内容右边。
+            // 不加这层，整排被内容撑得比窗口宽、居中摆放，侧边栏左边被裁掉，看起来贴到了窗口左边。
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
         .environment(\.textScale, SettingsStore.shared.textSize.scale)
-        .frame(minWidth: 760, minHeight: 560)
+        // 800:标准字号下模型明细表格(5 列固定宽 + 模型名)刚好放得下
+        .frame(minWidth: 800 * SettingsStore.shared.textSize.scale, minHeight: 560)
     }
 
     private var sidebar: some View {
