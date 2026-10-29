@@ -28,7 +28,6 @@ struct SettingsRootView: View {
             settingsSection(.display) {
                 menuBarGroup(settings: settings)
                 statsDisplayGroup(settings: settings)
-                floatingGroup(settings: settings)
             }
             settingsSection(.refresh) {
                 refreshGroup(settings: settings)
@@ -203,7 +202,6 @@ struct SettingsRootView: View {
                 enabled: Binding(get: { settings.showCodex }, set: { settings.showCodex = $0 }),
                 menuBar: Binding(get: { settings.menuBarShowCodex }, set: { settings.menuBarShowCodex = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowCodex }, set: { settings.floatingShowCodex = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .codex).environment(appState)),
                 onDelete: { localDeleteTarget = .codex }
             )
@@ -218,7 +216,6 @@ struct SettingsRootView: View {
                 enabled: Binding(get: { settings.showClaude }, set: { settings.showClaude = $0 }),
                 menuBar: Binding(get: { settings.menuBarShowClaude }, set: { settings.menuBarShowClaude = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowClaude }, set: { settings.floatingShowClaude = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .claude).environment(appState)),
                 onDelete: { localDeleteTarget = .claude }
             )
@@ -238,7 +235,6 @@ struct SettingsRootView: View {
                 ),
                 menuBar: Binding(get: { settings.menuBarShowGrok }, set: { settings.menuBarShowGrok = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowGrok }, set: { settings.floatingShowGrok = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .grok).environment(appState)),
                 onDelete: { localDeleteTarget = .grok }
             )
@@ -293,7 +289,6 @@ struct SettingsRootView: View {
             enabled: enabled,
             menuBar: menuBar,
             floating: floating,
-            floatingAvailable: settings.floatingEnabled,
             quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState)),
             onDelete: { quotaOnlyDeleteTarget = app }
         )
@@ -458,48 +453,6 @@ struct SettingsRootView: View {
                 Toggle("", isOn: Binding(get: { settings.showServiceStatus }, set: { settings.showServiceStatus = $0 }))
                     .labelsHidden()
                     .toggleStyle(.switch)
-            }
-        }
-    }
-
-    private func floatingGroup(settings: SettingsStore) -> some View {
-        PrefsGroup(title: "Floating HUD", chinese: "悬浮窗") {
-            PrefsRow(
-                label: "Show floating window",
-                chinese: "显示悬浮窗",
-                desc: "A small always-on-top window. Pick its services on the Services page.",
-                chineseDesc: "固定在桌面上的小窗口，显示哪些服务在「服务」页勾选"
-            ) {
-                Toggle("", isOn: Binding(
-                    get: { settings.floatingEnabled },
-                    set: { newValue in
-                        settings.floatingEnabled = newValue
-                        FloatingPanelController.shared.sync()
-                    }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-            }
-            Divider()
-            PrefsRow(
-                label: "Style",
-                chinese: "样式",
-                desc: "Compact: one bar per account. Detailed: like the menu bar popover, with the plan and each limit's reset time.",
-                chineseDesc: "简略：每个账号一条进度条；详细：和菜单栏浮窗一样，带套餐和每个额度的重置时间"
-            ) {
-                Picker("", selection: Binding(
-                    get: { settings.floatingStyle },
-                    set: { newValue in
-                        settings.floatingStyle = newValue
-                        FloatingPanelController.shared.sync()
-                    }
-                )) {
-                    Text(tr("Compact", "简略")).tag(FloatingStyle.compact)
-                    Text(tr("Detailed", "详细")).tag(FloatingStyle.detailed)
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .fixedSize()
             }
         }
     }
@@ -851,7 +804,8 @@ enum ServiceMatrixColumn {
     static let textInset: CGFloat = 14 + radio + 26 + 10
     static let enabled: CGFloat = 56
     static let menuBar: CGFloat = 64
-    static let floating: CGFloat = 56
+    /// 悬浮窗列(表头文字右边还有选简略 / 详细的小按钮，2026-10-29 从 56 放宽)。
+    static let floating: CGFloat = 76
     /// 「查看额度」按钮列。
     static let quota: CGFloat = 40
     /// 删除按钮列。
@@ -866,7 +820,11 @@ private struct ServiceMatrixHeader: View {
             Spacer()
             Text(tr("On", "启用")).frame(width: ServiceMatrixColumn.enabled)
             Text(tr("Menu bar", "菜单栏")).frame(width: ServiceMatrixColumn.menuBar)
-            Text(tr("HUD", "悬浮窗")).frame(width: ServiceMatrixColumn.floating)
+            HStack(spacing: 3) {
+                Text(tr("HUD", "悬浮窗"))
+                FloatingStyleButton()
+            }
+            .frame(width: ServiceMatrixColumn.floating)
             Text(tr("Quota", "额度")).frame(width: ServiceMatrixColumn.quota)
             Color.clear.frame(width: ServiceMatrixColumn.action, height: 1)
         }
@@ -874,6 +832,57 @@ private struct ServiceMatrixHeader: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+    }
+}
+
+/// 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式(简略 / 详细，默认简略)，和行里「查看额度」按钮一样弹一个浮层。
+/// 悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉。
+private struct FloatingStyleButton: View {
+    @State private var showing = false
+
+    var body: some View {
+        @Bindable var settings = SettingsStore.shared
+        Button {
+            showing.toggle()
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .scaledFont(size: 10)
+                .foregroundStyle(showing ? Color.accentColor : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tr("Floating window style", "悬浮窗样式"))
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(tr("Floating window style", "悬浮窗样式"))
+                    .font(.system(size: 12, weight: .semibold))
+                ForEach([FloatingStyle.compact, .detailed], id: \.self) { style in
+                    Button {
+                        settings.floatingStyle = style
+                        FloatingPanelController.shared.sync()
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: settings.floatingStyle == style ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 13))
+                                .foregroundStyle(settings.floatingStyle == style ? Color.accentColor : Color.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(style == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"))
+                                    .font(.system(size: 12))
+                                Text(style == .compact
+                                     ? tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比")
+                                     : tr("Like the menu bar popover: plan, 5H / WK and reset times", "和菜单栏浮窗一样：套餐、5H / WK 和重置时间"))
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(14)
+            .frame(width: 270, alignment: .leading)
+        }
     }
 }
 
@@ -904,8 +913,6 @@ struct ServiceMatrixRow: View {
     @Binding var enabled: Bool
     var menuBar: Binding<Bool>? = nil
     var floating: Binding<Bool>? = nil
-    /// 悬浮窗总开关(「显示」页)关闭时，悬浮窗列不可勾选。
-    var floatingAvailable: Bool = true
     /// 「查看额度」浮层内容(取代原来点菜单栏图标弹出的额度窗口)。
     var quotaCard: AnyView? = nil
     var onDelete: (() -> Void)? = nil
@@ -966,9 +973,7 @@ struct ServiceMatrixRow: View {
                     Toggle("", isOn: floating)
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        .disabled(!enabled || !detected || !floatingAvailable)
-                        .help(floatingAvailable ? "" : tr("Turn on the floating window on the Display page first.",
-                                                          "先在「显示」页开启悬浮窗"))
+                        .disabled(!enabled || !detected)
                 } else {
                     Color.clear.frame(height: 1)
                 }

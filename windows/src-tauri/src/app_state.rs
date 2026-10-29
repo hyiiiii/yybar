@@ -204,7 +204,23 @@ impl AppState {
         if agy_gemini.is_none() {
             from_cache(&cache.agy, UsageApp::Agy);
         }
-        let others = other_accounts::load_all();
+        let mut others = other_accounts::load_all();
+        let mut settings = settings;
+        if !settings.floating_follows_checks {
+            // 悬浮窗改成跟着勾选走（2026-10-29）：以前总开关关着的，悬浮窗勾选都清掉，免得一升级悬浮窗就冒出来
+            if !settings.floating_enabled {
+                settings.floating_show_codex = false;
+                settings.floating_show_claude = false;
+                settings.floating_show_grok = false;
+                settings.floating_show_agy = false;
+                if others.iter().any(|o| o.show_in_floating) {
+                    others.iter_mut().for_each(|o| o.show_in_floating = false);
+                    let _ = other_accounts::save_all(&others);
+                }
+            }
+            settings.floating_follows_checks = true;
+            settings.save();
+        }
         let other_quotas: HashMap<String, QuotaSnapshot> = cache.other.iter().map(|(k, r)| (k.clone(), r.snapshot.clone())).collect();
         let other_refresh: HashMap<String, RefreshState> = cache
             .other
@@ -312,6 +328,14 @@ struct LocalClaudeProfile {
 const CLAUDE_PROFILE_INTERVAL: i64 = 6 * 3600;
 
 impl Inner {
+    /// 悬浮窗要不要显示（对应 Mac `FloatingPanelController.sync`）：有勾了「悬浮窗」的账号就显示——本机账号看服务开关、
+    /// 悬浮窗勾选和是否登录着，其他账号看它那一行的启用和勾选；一个都没有就关掉。
+    pub fn floating_wanted(&self) -> bool {
+        UsageApp::ALL
+            .iter()
+            .any(|&app| (self.settings.floating_shows(app) && self.local_shown(app)) || !self.shown_others(app, false).is_empty())
+    }
+
     /// 把资料接口读到的订阅盖到本机 Claude 账号上（同一个账号才盖）：等级、订阅开始日（订阅不是 active 时没有，就不显示续费日）、档位。
     fn with_claude_profile(&self, mut account: ClaudeAccount) -> ClaudeAccount {
         let same = |p: &LocalClaudeProfile| p.email.as_deref().map(str::to_lowercase) == account.email.as_deref().map(str::to_lowercase);
@@ -614,6 +638,8 @@ pub async fn refresh_service(app: &AppHandle, service: UsageApp) {
 fn load_credentials(app: &AppHandle) {
     load_local_credentials(app);
     accounts::sync_codex_homes(app);
+    // 本机 CLI 登录 / 退出后，悬浮窗要不要显示可能变了
+    crate::windows::sync_floating(app);
 }
 
 /// 重读本机凭据。身份变了（外部切换了账号）就清掉旧额度和磁盘缓存。

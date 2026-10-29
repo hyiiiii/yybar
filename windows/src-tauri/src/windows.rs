@@ -312,9 +312,10 @@ pub fn open_main(app: &AppHandle, tab: Option<&str>) {
     }
     *app.state::<WindowState>().pending_tab.lock().unwrap() = tab.map(str::to_string);
     build_later(app, MAIN, |app| {
+        let (width, height) = main_window_size(app);
         let result = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("main.html".into()))
             .title("yybar")
-            .inner_size(1080.0, 720.0)
+            .inner_size(width, height)
             .min_inner_size(760.0, 560.0)
             .center()
             .visible(true)
@@ -327,6 +328,18 @@ pub fn open_main(app: &AppHandle, tab: Option<&str>) {
             Err(e) => log::warn!("open main window: {e}"),
         }
     });
+}
+
+/// 主窗口打开时的大小（逻辑像素）：960 × 640，屏幕小时不超过工作区的 85%，但不小于最小尺寸 760 × 560。
+/// 2026-10-29 前固定 1080 × 720，小屏（或 125% 缩放的笔记本）上一打开就占满屏幕。
+fn main_window_size(app: &AppHandle) -> (f64, f64) {
+    let (mut width, mut height) = (960.0_f64, 640.0_f64);
+    if let Some(m) = app.primary_monitor().ok().flatten() {
+        let (scale, area) = (m.scale_factor(), m.work_area());
+        width = width.min(area.size.width as f64 / scale * 0.85);
+        height = height.min(area.size.height as f64 / scale * 0.85);
+    }
+    (width.max(760.0), height.max(560.0))
 }
 
 // ---------- 引导 ----------
@@ -367,16 +380,16 @@ pub fn close_onboarding(app: &AppHandle) {
 
 // ---------- 悬浮窗 ----------
 
-/// 按设置显示 / 隐藏悬浮窗（对应 Mac `FloatingPanelController.sync()`）。
+/// 按勾选显示 / 隐藏悬浮窗（对应 Mac `FloatingPanelController.sync()`）：有勾了「悬浮窗」的账号就显示，一个都没有就关掉。
 pub fn sync_floating(app: &AppHandle) {
-    let enabled = app.state::<AppState>().settings().floating_enabled;
+    let enabled = app.state::<AppState>().inner.lock().unwrap().floating_wanted();
     match (enabled, app.get_webview_window(FLOATING)) {
         (true, Some(w)) => {
             let _ = w.show();
         }
         (true, None) => build_later(app, FLOATING, |app| {
-            // 排队期间用户可能又关掉了悬浮窗
-            if !app.state::<AppState>().settings().floating_enabled {
+            // 排队期间用户可能又把勾都去掉了
+            if !app.state::<AppState>().inner.lock().unwrap().floating_wanted() {
                 return;
             }
             if let Err(e) = create_floating(app) {

@@ -262,6 +262,14 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M4.5 11V7.5M8 11V4M11.5 11V6" />
     </>
   ),
+  /** 两条滑杆（表头「悬浮窗样式」按钮） */
+  sliders: (
+    <>
+      <path d="M2.5 4.5h5.9M11.6 4.5h1.9M2.5 11.5h1.9M7.6 11.5h5.9" />
+      <circle cx="10" cy="4.5" r="1.6" />
+      <circle cx="6" cy="11.5" r="1.6" />
+    </>
+  ),
   gear: (
     <>
       <circle cx="8" cy="8" r="2.2" />

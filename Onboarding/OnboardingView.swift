@@ -335,18 +335,23 @@ private struct ConfigureStep: View {
                     }
                 }
 
+                // 悬浮窗跟着勾选走：勾了哪个服务就在桌面悬浮窗里显示，都不勾就没有悬浮窗
                 ConfigureRow(title: "Floating HUD",
                              chineseTitle: "桌面悬浮窗",
                              subtitle: "Pin a small percentage HUD to your desktop.",
                              chineseSubtitle: "在桌面常驻一个小悬浮窗") {
-                    Toggle(tr("Enabled", "启用"), isOn: Binding(
-                        get: { settings.floatingEnabled },
-                        set: { v in
-                            settings.floatingEnabled = v
+                    HStack(spacing: 12) {
+                        Toggle("Codex", isOn: Binding(get: { settings.floatingShowCodex }, set: {
+                            settings.floatingShowCodex = $0
                             FloatingPanelController.shared.sync()
-                        }
-                    ))
-                    .toggleStyle(.switch)
+                        }))
+                        .toggleStyle(.switch)
+                        Toggle("Claude", isOn: Binding(get: { settings.floatingShowClaude }, set: {
+                            settings.floatingShowClaude = $0
+                            FloatingPanelController.shared.sync()
+                        }))
+                        .toggleStyle(.switch)
+                    }
                 }
             }
             .padding(.top, 18)

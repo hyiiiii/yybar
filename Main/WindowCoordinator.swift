@@ -11,6 +11,10 @@ import SwiftUI
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     static let shared = WindowCoordinator()
 
+    /// 主窗口第一次打开(还没记住位置)时的大小，放在主屏中央;屏幕小时不超过可见区域的 85%。
+    /// 2026-10-29 前按内容撑开、再退回 1240 × 780,13 寸屏上一打开就差不多占满整个屏幕。
+    private static let defaultMainSize = NSSize(width: 960, height: 640)
+
     private var appState: AppState?
     private var mainWindow: NSWindow?
     private var onboardingWindow: NSWindow?
@@ -38,12 +42,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             accessory.view = toggle
             accessory.layoutAttribute = .leading
             window.addTitlebarAccessoryViewController(accessory)
-            window.setFrameUsingName("yybar.main")
+            if !window.setFrameUsingName("yybar.main"), let screen = NSScreen.main ?? NSScreen.screens.first {
+                Self.center(window, on: screen)
+            }
             window.setFrameAutosaveName("yybar.main")
             mainWindow = window
         }
         if let mainWindow {
-            Self.ensureOnScreen(mainWindow, preferredSize: NSSize(width: 1240, height: 780))
+            Self.ensureOnScreen(mainWindow)
         }
         NSApp.activate(ignoringOtherApps: true)
         mainWindow?.makeKeyAndOrderFront(nil)
@@ -51,16 +57,21 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     /// 窗口大半不在任何屏幕的可见区域内(如保存的位置在已断开的显示器上)时，放回主屏中央。
-    private static func ensureOnScreen(_ window: NSWindow, preferredSize: NSSize) {
+    private static func ensureOnScreen(_ window: NSWindow) {
         let frame = window.frame
         let visible = NSScreen.screens.contains { screen in
             let overlap = screen.visibleFrame.intersection(frame)
             return overlap.width * overlap.height >= frame.width * frame.height * 0.6
         }
         guard !visible || frame.width < 400, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        center(window, on: screen)
+    }
+
+    /// 按默认大小放在这块屏幕中央。
+    private static func center(_ window: NSWindow, on screen: NSScreen) {
         let area = screen.visibleFrame
-        let size = NSSize(width: min(preferredSize.width, area.width - 60),
-                          height: min(preferredSize.height, area.height - 60))
+        let size = NSSize(width: min(defaultMainSize.width, area.width * 0.85),
+                          height: min(defaultMainSize.height, area.height * 0.85))
         window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
                                width: size.width, height: size.height), display: true)
     }

@@ -162,11 +162,26 @@ function Configure({ state, onBack, onContinue }: { state: StateSnapshot; onBack
             {!state.services.some(localShown) && <span className="secondary">{tr("No accounts detected", "没有检测到账号")}</span>}
           </div>
         </ConfigureRow>
+        {/* 悬浮窗跟着勾选走：勾了哪个服务就在悬浮窗里显示，都不勾就没有悬浮窗 */}
         <ConfigureRow title={tr("Floating window", "桌面悬浮窗")} subtitle={tr("Pin a small always-on-top window to your desktop.", "在桌面常驻一个置顶的小悬浮窗")}>
-          <label className="toggles">
-            <Toggle checked={s.floatingEnabled} onChange={(v) => api.updateSettings({ floatingEnabled: v })} small />
-            {tr("Enabled", "启用")}
-          </label>
+          <div className="toggles">
+            {(
+              [
+                ["codex", "Codex", "floatingShowCodex"],
+                ["claude", "Claude", "floatingShowClaude"],
+                ["grok", "Grok", "floatingShowGrok"],
+                ["agy", "Antigravity", "floatingShowAgy"],
+              ] as const
+            )
+              .filter(([app]) => state.services.some((x) => x.app === app && localShown(x)))
+              .map(([, label, key]) => (
+                <label key={key}>
+                  <Toggle checked={s[key]} onChange={(v) => api.updateSettings({ [key]: v })} small />
+                  {label}
+                </label>
+              ))}
+            {!state.services.some(localShown) && <span className="secondary">{tr("No accounts detected", "没有检测到账号")}</span>}
+          </div>
         </ConfigureRow>
         <ConfigureRow title={tr("Launch at sign-in", "开机自动启动")} subtitle={tr("Start yybar when you sign in to Windows.", "登录 Windows 时自动启动 yybar")}>
           <Toggle checked={state.autostart} onChange={(v) => api.setAutostart(v)} small />

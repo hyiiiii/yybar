@@ -58,7 +58,7 @@ export function SettingsView({ state, usage, active, request, onActive }: {
                 )}
               </div>
             ) : (
-              <MatrixHeader />
+              <MatrixHeader s={s} />
             )}
             {ALL_APPS.map((app) => {
               const service = state.services.find((x) => x.app === app)!;
@@ -149,28 +149,6 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               desc={tr("Show OpenAI / Anthropic / xAI / Google status in the popup and on the Statistics filter buttons.", "在弹出窗口和统计页服务筛选按钮上显示 OpenAI / Anthropic / xAI / Google 官方状态")}
             >
               <Toggle checked={s.showServiceStatus} onChange={(v) => set({ showServiceStatus: v })} />
-            </PrefsRow>
-          </PrefsGroup>
-          <PrefsGroup title={tr("Floating window", "悬浮窗")}>
-            <PrefsRow
-              label={tr("Show floating window", "显示悬浮窗")}
-              desc={tr("A small always-on-top window. Pick its services on the Services page.", "固定在桌面上的小窗口，显示哪些服务在「服务」页勾选")}
-            >
-              <Toggle checked={s.floatingEnabled} onChange={(v) => set({ floatingEnabled: v })} />
-            </PrefsRow>
-            <div className="divider" />
-            <PrefsRow
-              label={tr("Style", "样式")}
-              desc={tr("Compact: one bar per account. Detailed: like the popup, with the plan and each limit's reset time.", "简略：每个账号一条进度条；详细：和弹出窗口一样，带套餐和每个额度的重置时间")}
-            >
-              <Select
-                options={[
-                  { value: "compact", label: tr("Compact", "简略") },
-                  { value: "detailed", label: tr("Detailed", "详细") },
-                ]}
-                value={s.floatingStyle}
-                onChange={(v) => set({ floatingStyle: v })}
-              />
             </PrefsRow>
           </PrefsGroup>
         </Section>
@@ -370,14 +348,17 @@ function PrefsRow({ label, desc, children }: { label: string; desc?: string; chi
 
 // ---------- 账号矩阵 ----------
 
-function MatrixHeader() {
+function MatrixHeader({ s }: { s: Settings }) {
   return (
     <div className="matrix-row matrix-head">
       <span className="col-radio" />
       <span className="col-name">{tr("Account", "账号")}</span>
       <span className="col-enabled">{tr("On", "启用")}</span>
       <span className="col-tray">{tr("Taskbar", "任务栏")}</span>
-      <span className="col-floating">{tr("HUD", "悬浮窗")}</span>
+      <span className="col-floating">
+        {tr("HUD", "悬浮窗")}
+        <FloatingStyleButton s={s} />
+      </span>
       <span className="col-quota">{tr("Quota", "额度")}</span>
       <span className="col-action" />
     </div>
@@ -414,12 +395,7 @@ function ServiceRow({ state, service, buckets, onDelete }: { state: StateSnapsho
         <Checkbox checked={Boolean(s[keys.tray])} disabled={!enabled || !detected} onChange={(v) => api.updateSettings({ [keys.tray]: v })} />
       </span>
       <span className="col-floating">
-        <Checkbox
-          checked={Boolean(s[keys.floating])}
-          disabled={!enabled || !detected || !s.floatingEnabled}
-          title={s.floatingEnabled ? "" : tr("Turn on the floating window on the Display page first.", "先在「显示」页开启悬浮窗")}
-          onChange={(v) => api.updateSettings({ [keys.floating]: v })}
-        />
+        <Checkbox checked={Boolean(s[keys.floating])} disabled={!enabled || !detected} onChange={(v) => api.updateSettings({ [keys.floating]: v })} />
       </span>
       <span className="col-quota">{detected && <QuotaButton>{() => <QuotaCard state={state} service={service} buckets={buckets} />}</QuotaButton>}</span>
       <span className="col-action">
@@ -441,7 +417,6 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
   buckets: UsagePayload["buckets"];
   onDelete: () => void;
 }) {
-  const s = state.settings;
   const switching = state.switching;
   const error = account.refresh.lastError;
   // 有其他 Codex 目录时，切换要先选切进哪个目录
@@ -517,12 +492,7 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
         <Checkbox checked={account.showInTray} disabled={!account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { showInTray: v })} />
       </span>
       <span className="col-floating">
-        <Checkbox
-          checked={account.showInFloating}
-          disabled={!account.enabled || !s.floatingEnabled}
-          title={s.floatingEnabled ? "" : tr("Turn on the floating window on the Display page first.", "先在「显示」页开启悬浮窗")}
-          onChange={(v) => api.updateOtherAccount(account.id, { showInFloating: v })}
-        />
+        <Checkbox checked={account.showInFloating} disabled={!account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { showInFloating: v })} />
       </span>
       <span className="col-quota">
         <QuotaButton>{() => <QuotaCard state={state} service={service} other={account} buckets={buckets} />}</QuotaButton>
@@ -588,8 +558,44 @@ function CodexDirs({ state }: { state: StateSnapshot }) {
   );
 }
 
-/** 「查看额度」按钮 + 浮层（点外面或 Esc 收起）。 */
+/** 「查看额度」按钮 + 浮层。 */
 function QuotaButton({ children }: { children: () => ReactNode }) {
+  return (
+    <PopoverButton icon="gauge" title={tr("View quota", "查看额度")}>
+      {children}
+    </PopoverButton>
+  );
+}
+
+/** 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式（简略 / 详细，默认简略），和「查看额度」一样弹一个浮层（对应 Mac `FloatingStyleButton`）。
+ *  悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉。 */
+function FloatingStyleButton({ s }: { s: Settings }) {
+  const options = [
+    { value: "compact", label: tr("Compact", "简略"), desc: tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比") },
+    { value: "detailed", label: tr("Detailed", "详细"), desc: tr("Like the popup: plan, 5H / WK and reset times", "和弹出窗口一样：套餐、5H / WK 和重置时间") },
+  ] as const;
+  return (
+    <PopoverButton icon="sliders" size={12} title={tr("Floating window style", "悬浮窗样式")} popClass="style-popover">
+      {() => (
+        <div className="style-pop">
+          <div className="style-pop-title">{tr("Floating window style", "悬浮窗样式")}</div>
+          {options.map((o) => (
+            <button key={o.value} className={`style-option ${s.floatingStyle === o.value ? "on" : ""}`} onClick={() => api.updateSettings({ floatingStyle: o.value })}>
+              <span className="style-radio" />
+              <span>
+                <span className="style-label">{o.label}</span>
+                <span className="style-desc">{o.desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </PopoverButton>
+  );
+}
+
+/** 小图标按钮 + 浮层（点外面或 Esc 收起）：「查看额度」和表头「悬浮窗样式」共用。 */
+function PopoverButton({ icon, size = 15, title, popClass = "", children }: { icon: string; size?: number; title: string; popClass?: string; children: () => ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -607,10 +613,10 @@ function QuotaButton({ children }: { children: () => ReactNode }) {
   }, [open]);
   return (
     <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button className={`icon-button ${open ? "accent" : ""}`} title={tr("View quota", "查看额度")} onClick={() => setOpen(!open)}>
-        <Icon name="gauge" size={15} />
+      <button className={`icon-button ${open ? "accent" : ""}`} title={title} onClick={() => setOpen(!open)}>
+        <Icon name={icon} size={size} />
       </button>
-      {open && <div className="quota-popover">{children()}</div>}
+      {open && <div className={`quota-popover ${popClass}`}>{children()}</div>}
     </span>
   );
 }

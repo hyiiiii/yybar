@@ -162,6 +162,8 @@ final class SettingsStore {
     var activityHooksEnabled: Bool { didSet { defaults.set(activityHooksEnabled, forKey: Keys.activityHooksEnabled) } }
 
     // 悬浮窗（占位，M8 接）
+    /// 旧版本的「显示悬浮窗」总开关。2026-10-29 起悬浮窗跟着「悬浮窗」勾选走(有勾的就显示，见 FloatingPanelController.sync),
+    /// 这个只在升级时用一次(`migrateFloatingSwitch`)。
     var floatingEnabled: Bool { didSet { defaults.set(floatingEnabled, forKey: Keys.floatingEnabled) } }
     var floatingShowCodex: Bool { didSet { defaults.set(floatingShowCodex, forKey: Keys.floatingShowCodex) } }
     var floatingShowClaude: Bool { didSet { defaults.set(floatingShowClaude, forKey: Keys.floatingShowClaude) } }
@@ -293,6 +295,21 @@ final class SettingsStore {
         }
     }
 
+    /// 升级到「悬浮窗跟着勾选走」时做一次：以前总开关关着的，把悬浮窗勾选都清掉(以前开关关着时勾选还在，默认还都勾着)，
+    /// 免得一升级悬浮窗就冒出来。返回这次是否清过(其他账号的勾选由 AppState 跟着清)。
+    func migrateFloatingSwitch() -> Bool {
+        guard !defaults.bool(forKey: Keys.floatingFollowsChecks) else { return false }
+        defaults.set(true, forKey: Keys.floatingFollowsChecks)
+        guard !floatingEnabled else { return false }
+        floatingShowCodex = false
+        floatingShowClaude = false
+        floatingShowGrok = false
+        floatingShowGrokBot = false
+        floatingShowGemini = false
+        floatingShowAgy = false
+        return true
+    }
+
     func effectiveFloatingShow(_ app: UsageApp) -> Bool {
         switch app {
         case .codex: return effectiveFloatingShowCodex
@@ -408,6 +425,7 @@ final class SettingsStore {
         static let didCompleteOnboarding = "yybar.settings.didCompleteOnboarding"
         static let floatingDockEdge = "yybar.settings.floatingDockEdge"
         static let floatingStyle = "yybar.settings.floatingStyle"
+        static let floatingFollowsChecks = "yybar.settings.floatingFollowsChecks"
         static let floatingFrameX = "yybar.settings.floatingFrame.x"
         static let floatingFrameY = "yybar.settings.floatingFrame.y"
         static let floatingFrameW = "yybar.settings.floatingFrame.w"

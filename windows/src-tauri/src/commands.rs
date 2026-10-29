@@ -101,9 +101,8 @@ async fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     if before.quota_interval != after.quota_interval || before.usage_interval != after.usage_interval {
         app.state::<Scheduler>().apply_intervals(&app);
     }
-    if before.floating_enabled != after.floating_enabled {
-        windows::sync_floating(&app);
-    }
+    // 悬浮窗跟着勾选走：勾选、服务开关变了都可能要显示 / 关掉（已经是那样时什么也不做）
+    windows::sync_floating(&app);
     if before.text_size != after.text_size {
         windows::apply_text_size(&app);
     }

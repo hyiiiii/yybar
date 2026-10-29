@@ -90,7 +90,11 @@ pub struct Settings {
     pub menu_bar_breathe_when_active: bool,
     pub menu_bar_hold_color_while_waiting: bool,
     // 悬浮窗
+    /// 旧版本的「显示悬浮窗」总开关。2026-10-29 起悬浮窗跟着「悬浮窗」勾选走（有勾的就显示，`Inner::floating_wanted`），
+    /// 这个只在升级时用一次（见 `floating_follows_checks`）。
     pub floating_enabled: bool,
+    /// 已经换成「悬浮窗跟着勾选走」：升级时总开关关着的，悬浮窗勾选清掉一次（AppState::new）
+    pub floating_follows_checks: bool,
     pub floating_show_codex: bool,
     pub floating_show_claude: bool,
     pub floating_show_grok: bool,
@@ -140,6 +144,7 @@ impl Default for Settings {
             menu_bar_breathe_when_active: true,
             menu_bar_hold_color_while_waiting: true,
             floating_enabled: false,
+            floating_follows_checks: false,
             floating_show_codex: false,
             floating_show_claude: false,
             floating_show_grok: false,

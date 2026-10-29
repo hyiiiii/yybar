@@ -1183,12 +1183,21 @@ body,
   transition: opacity 0.2s;
 }
 
-.col-enabled,
-.col-floating {
+.col-enabled {
   width: 56px;
   flex: none;
   display: flex;
   justify-content: center;
+}
+
+/* 悬浮窗列：表头文字右边还有选简略 / 详细的小按钮（2026-10-29 从 56 放宽） */
+.col-floating {
+  width: 76px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
 }
 
 .col-tray {
@@ -1265,6 +1274,70 @@ body,
   border-radius: 10px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
   animation: pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+
+/* 表头「悬浮窗样式」浮层 */
+.quota-popover.style-popover {
+  top: 22px;
+  right: -70px;
+}
+
+.style-pop {
+  width: 262px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  color: var(--text);
+}
+
+.style-pop-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 4px 2px;
+}
+
+.style-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.style-option:hover {
+  background: var(--fill);
+}
+
+.style-radio {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1.2px solid var(--text-tertiary);
+}
+
+.style-option.on .style-radio {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 3.2px, transparent 3.7px);
+}
+
+.style-label {
+  display: block;
+  font-size: 12px;
+}
+
+.style-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-secondary);
 }
 
 @keyframes pop-in {

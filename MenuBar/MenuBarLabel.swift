@@ -441,17 +441,50 @@ enum MenuBarBadgeImage {
         return "\(Int(window.remainingPercent.rounded()))%"
     }
 
+    /// 菜单栏什么都不显示时：yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)。2026-10-29 前画的是 Codex 的标。
     private static func placeholderImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: iconSize, height: height))
+        let cardsHeight = iconSize - 2, cardsWidth = ceil(cardsHeight * 1.25)
+        let image = NSImage(size: NSSize(width: cardsWidth, height: height))
         image.lockFocus()
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: image.size).fill()
-        if let img = MenuBarLogo.rawImage(named: "codex") {
-            img.draw(in: NSRect(x: 0, y: floor((height - iconSize) / 2),
-                                width: iconSize, height: iconSize))
-        }
-        image.unlockFocus()
+        defer { image.unlockFocus() }
         image.isTemplate = true
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return image }
+        // 换成左上角为原点(和 SwiftUI Canvas 一样)，下面的尺寸照抄 PlayingCardsIcon
+        ctx.translateBy(x: 0, y: floor((height + cardsHeight) / 2))
+        ctx.scaleBy(x: 1, y: -1)
+        let w = cardsWidth * 0.56, h = cardsHeight * 0.8, radius = cardsWidth * 0.1
+        let line = max(1, cardsWidth * 0.085)
+        func card(cx: CGFloat, cy: CGFloat, angle: CGFloat) -> CGPath {
+            var t = CGAffineTransform(translationX: cx, y: cy).rotated(by: angle * .pi / 180)
+            return CGPath(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h),
+                          cornerWidth: radius, cornerHeight: radius, transform: &t)
+        }
+        let back = card(cx: cardsWidth * 0.38, cy: cardsHeight * 0.5, angle: -14)
+        let front = card(cx: cardsWidth * 0.62, cy: cardsHeight * 0.52, angle: 10)
+        ctx.setStrokeColor(NSColor.black.cgColor)
+        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.setLineWidth(line)
+        ctx.addPath(back)
+        ctx.strokePath()
+        // 先把前一张牌的位置(连同一圈空隙)擦掉，后一张牌的线就不会穿过来
+        ctx.setBlendMode(.clear)
+        ctx.addPath(front)
+        ctx.fillPath()
+        ctx.setLineWidth(line * 2.6)
+        ctx.addPath(front)
+        ctx.strokePath()
+        ctx.setBlendMode(.normal)
+        ctx.setLineWidth(line)
+        ctx.addPath(front)
+        ctx.strokePath()
+        // 方片
+        let c = CGPoint(x: cardsWidth * 0.62, y: cardsHeight * 0.52), d = cardsWidth * 0.12
+        ctx.move(to: CGPoint(x: c.x, y: c.y - d * 1.3))
+        ctx.addLine(to: CGPoint(x: c.x + d, y: c.y))
+        ctx.addLine(to: CGPoint(x: c.x, y: c.y + d * 1.3))
+        ctx.addLine(to: CGPoint(x: c.x - d, y: c.y))
+        ctx.closePath()
+        ctx.fillPath()
         return image
     }
 

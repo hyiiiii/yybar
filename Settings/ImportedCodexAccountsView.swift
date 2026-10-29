@@ -166,7 +166,6 @@ struct OtherAccountRows: View {
                     FloatingPanelController.shared.sync()
                 }
             ),
-            floatingAvailable: SettingsStore.shared.floatingEnabled,
             quotaCard: AnyView(OtherAccountQuotaCard(account: .codex(account)).environment(appState)),
             onDelete: { deleteTarget = account }
         )
@@ -204,7 +203,6 @@ struct OtherAccountRows: View {
                     FloatingPanelController.shared.sync()
                 }
             ),
-            floatingAvailable: SettingsStore.shared.floatingEnabled,
             quotaCard: AnyView(OtherAccountQuotaCard(account: .extra(account)).environment(appState)),
             onDelete: { extraDeleteTarget = account }
         )

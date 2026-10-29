@@ -33,13 +33,14 @@ final class FloatingPanelController: NSObject {
         self.appState = appState
     }
 
-    /// 根据当前设置同步显示 / 隐藏 / 行刷新
+    /// 根据当前设置同步显示 / 隐藏 / 行刷新：设置 · 服务里有勾了「悬浮窗」的账号(本机账号看服务开关和悬浮窗勾选，
+    /// 其他账号看它那一行的启用和勾选)就显示，一个都没有就关掉(2026-10-29 前另有「显示悬浮窗」总开关)。
     func sync() {
-        let settings = SettingsStore.shared
-        if settings.floatingEnabled {
-            show()
-        } else {
+        guard let appState else { return }
+        if QuotaEntry.list(appState, inMenuBar: false).isEmpty {
             hide()
+        } else {
+            show()
         }
     }
 

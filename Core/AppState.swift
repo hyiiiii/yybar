@@ -155,6 +155,7 @@ final class AppState {
         loadQuotaHistory()
         reloadImportedCodexAccounts()
         reloadExtraAccounts()
+        migrateFloatingSwitch()
         await migrateAccountTokensFromKeychain()
         webAccount.scanUsage = { [weak self] in await self?.usageService.scanNow() }
         webAccount.accountPlans = { [weak self] in self?.webAccountPlans ?? [] }
@@ -183,6 +184,17 @@ final class AppState {
         Task { await loadGoogleQuota(reason: .userInitiated) }
         Task { await loadGeminiAppQuota(reason: .userInitiated) }
         Task { await loadGrokBotQuota(reason: .userInitiated) }
+    }
+
+    /// 悬浮窗改成跟着勾选走(2026-10-29):以前总开关关着的，本机账号和其他账号的悬浮窗勾选一起清掉。
+    private func migrateFloatingSwitch() {
+        guard SettingsStore.shared.migrateFloatingSwitch() else { return }
+        for account in importedCodexAccounts where account.showInFloating == true {
+            updateImportedCodexMetadata(id: account.id) { $0.showInFloating = false }
+        }
+        for account in extraAccounts where account.showInFloating == true {
+            updateExtraAccount(id: account.id) { $0.showInFloating = false }
+        }
     }
 
     /// 旧版本把其他账号的 token 存在钥匙串里，启动时先统一搬到文件(见 AccountTokenFiles)。
