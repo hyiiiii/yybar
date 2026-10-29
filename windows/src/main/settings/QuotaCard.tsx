@@ -20,7 +20,14 @@ export function subtitleOf(email: string | null, plan: string | null, fallback: 
 /** 其他账号的标题：服务名 + 别名（Google 账号写 Gemini · Antigravity）。 */
 export function otherTitle(o: OtherAccountView): string {
   const base = o.provider === "google" ? "Gemini · Antigravity" : displayName[o.app];
-  return o.alias ? `${base} · ${o.alias}` : base;
+  if (o.alias) return `${base} · ${o.alias}`;
+  // 其他 Codex 目录里的账号：带上目录名，和主目录的本机账号区分开
+  return o.home ? `${base} · ${dirName(o.home)}` : base;
+}
+
+/** 路径的最后一段（目录名） */
+export function dirName(path: string): string {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
 function refreshText(s: RefreshState, now: number) {

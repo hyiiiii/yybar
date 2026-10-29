@@ -96,6 +96,10 @@ pub struct Settings {
     pub usage_interval: String,
     /// 也统计 / 读取正在运行的 WSL 发行版里的 CLI（Windows 独有）
     pub scan_wsl: bool,
+    /// 手动添加的其他 Codex 目录（第二个账号用 CODEX_HOME 放在别处时；自动找到的不存这里，见 paths::extra_codex_dirs）
+    pub extra_codex_dirs: Vec<String>,
+    /// 自动找到、但用户移除了的 Codex 目录（不再统计、不再显示它登录的账号）
+    pub ignored_codex_homes: Vec<String>,
     // 统计
     pub reset_time_display: ResetTimeDisplay,
     pub show_service_status: bool,
@@ -135,6 +139,8 @@ impl Default for Settings {
             quota_interval: "m2".into(),
             usage_interval: "m2".into(),
             scan_wsl: false,
+            extra_codex_dirs: Vec::new(),
+            ignored_codex_homes: Vec::new(),
             reset_time_display: ResetTimeDisplay::Relative,
             show_service_status: true,
             text_size: TextSize::Standard,

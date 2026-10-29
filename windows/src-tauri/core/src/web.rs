@@ -274,7 +274,7 @@ async fn send(req: reqwest::RequestBuilder, token: &str) -> Result<Value, WebErr
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| WebError::Transport(e.to_string()))?;
+        .map_err(|e| WebError::Transport(crate::quota::describe_error(&e)))?;
     let status = resp.status().as_u16();
     let body: Value = resp.json().await.unwrap_or(Value::Null);
     if status == 401 {

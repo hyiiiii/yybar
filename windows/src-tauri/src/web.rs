@@ -205,7 +205,16 @@ async fn finish_connect(app: &AppHandle, token: String) {
                 let s = app.state::<AppState>();
                 let mut w = s.web.lock().unwrap();
                 w.phase = Phase::Idle;
-                w.set_message(format!("{}{e}", tr("Couldn't connect: ", "连接失败：")), true);
+                // 浏览器里授权成功、这里却连不上网站：多半是代理只对浏览器生效（浏览器插件、或代理软件没开「系统代理」）
+                let hint = if matches!(e, WebError::Transport(_)) {
+                    tr(
+                        " If the browser could open the site, your proxy may only cover the browser: turn on the proxy app's system proxy (or TUN / global mode) and connect again.",
+                        "。浏览器能打开网站这里却连不上时，多半是代理只对浏览器生效：在代理软件里打开「系统代理」（或 TUN / 全局模式）后再连接",
+                    )
+                } else {
+                    String::new()
+                };
+                w.set_message(format!("{}{e}{hint}", tr("Couldn't connect: ", "连接失败：")), true);
             }
             app_state::publish(app);
         }

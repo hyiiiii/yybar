@@ -106,6 +106,11 @@ pub struct OtherAccount {
     /// 仅 Claude：凭据 / 资料接口的 rate_limit_tier（default_claude_max_5x / _20x），区分 Max 的两档。旧数据没有。
     #[serde(default)]
     pub rate_limit_tier: Option<String>,
+    /// 仅 Codex：本机另一个 Codex 目录（第二个 Codex 用 CODEX_HOME 放在别处，和主目录同时在用）。
+    /// 有它时凭据直接读写这个目录里的 auth.json（folder 为空，yybar 不另存副本、也不删这个目录）；
+    /// 它算本机账号（一直在用），不能切换过去，但可以把别的账号切换进这个目录。
+    #[serde(default)]
+    pub home: Option<String>,
 }
 
 fn yes() -> bool {
@@ -114,7 +119,10 @@ fn yes() -> bool {
 
 impl OtherAccount {
     pub fn dir(&self) -> PathBuf {
-        provider_dir(self.provider).join(&self.folder)
+        match &self.home {
+            Some(home) => PathBuf::from(home),
+            None => provider_dir(self.provider).join(&self.folder),
+        }
     }
 
     /// 凭据文件（Google 是目录本身）。
@@ -358,6 +366,7 @@ mod tests {
             subscription_started_at: None,
             subscription_active_until: None,
             rate_limit_tier: None,
+            home: None,
         }
     }
 

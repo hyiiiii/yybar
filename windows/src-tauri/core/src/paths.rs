@@ -25,6 +25,46 @@ pub fn codex_dir() -> PathBuf {
     env_dir("CODEX_HOME").unwrap_or_else(|| home().join(".codex"))
 }
 
+/// 其他 Codex 目录（第二个账号用 CODEX_HOME 放在别处时，它的会话记录也要统计）。不含 `codex_dir()`，按路径去重：
+/// - 自动找到的：家目录下以 `.codex` 开头、里面有 `sessions` 的目录（`.codex-pro`、`.codex2`…），
+///   和注册表用户 / 系统环境变量里的 `CODEX_HOME`（yybar 启动后才设的也认）；
+/// - 设置里手动添加的（选的是 Codex 目录或它的 `sessions` 都行）。
+///
+/// 返回（目录, 是不是自动找到的）。
+pub fn extra_codex_dirs(manual: &[String], ignored: &[String]) -> Vec<(PathBuf, bool)> {
+    let main = codex_dir();
+    let mut found: Vec<(PathBuf, bool)> = Vec::new();
+    let mut auto: Vec<PathBuf> = std::fs::read_dir(home())
+        .map(|it| {
+            it.flatten()
+                .filter(|e| e.file_name().to_string_lossy().to_lowercase().starts_with(".codex"))
+                .map(|e| e.path())
+                .collect()
+        })
+        .unwrap_or_default();
+    auto.sort();
+    #[cfg(windows)]
+    auto.extend(registry_env("CODEX_HOME"));
+    for dir in auto.into_iter().filter(|d| d.join("sessions").is_dir()) {
+        found.push((dir, true));
+    }
+    for raw in manual.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let p = PathBuf::from(raw);
+        let dir = if p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("sessions")) { p.parent().map(Path::to_path_buf).unwrap_or(p) } else { p };
+        found.push((dir, false));
+    }
+    let key = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().to_lowercase();
+    let mut seen = std::collections::HashSet::from([key(&main)]);
+    // 用户移除过的自动目录不再要（手动添加的不受影响：手动加回来就是又想要了）
+    let ignored: std::collections::HashSet<String> = ignored.iter().map(|p| key(Path::new(p))).collect();
+    found.retain(|(d, auto)| !*auto || !ignored.contains(&key(d)));
+    // 同一个目录既自动找到又手动添加过：留手动的那条（设置里能删）
+    found.sort_by_key(|(_, auto)| *auto);
+    found.retain(|(d, _)| seen.insert(key(d)));
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found
+}
+
 /// Grok CLI 目录：`GROK_HOME`，否则 `~/.grok`。
 pub fn grok_dir() -> PathBuf {
     env_dir("GROK_HOME").unwrap_or_else(|| home().join(".grok"))
@@ -220,6 +260,24 @@ fn scan_cli_dirs() -> Vec<PathBuf> {
     let mut seen = std::collections::HashSet::new();
     dirs.retain(|d| seen.insert(d.to_string_lossy().to_lowercase()));
     dirs
+}
+
+/// 注册表里用户 / 系统环境变量的值（展开其中的 %变量%），不受 yybar 启动时继承的环境影响。
+#[cfg(windows)]
+fn registry_env(name: &str) -> Vec<PathBuf> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+    let read = |root: winreg::HKEY, key: &str| -> Option<String> { RegKey::predef(root).open_subkey(key).ok()?.get_value::<String, _>(name).ok() };
+    [
+        read(HKEY_CURRENT_USER, "Environment"),
+        read(HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|v| expand_env(v.trim()))
+    .filter(|v| !v.is_empty())
+    .map(PathBuf::from)
+    .collect()
 }
 
 /// 注册表里的用户 PATH 和系统 PATH（展开其中的 %变量%）。

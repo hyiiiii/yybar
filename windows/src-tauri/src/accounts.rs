@@ -6,6 +6,9 @@
 //! - 刷新：跟本机账号一起刷新；同一账号两次成功至少隔 60 秒（Google 100 秒），429 退避 10 分钟。
 //! - 切换：先把目标账号的 token 续好，本机原来的账号存成其他账号（沿用目标账号的开关），再改写 CLI 的凭据文件；
 //!   额度先沿用各自最近一次的结果，再立即刷新本机账号。已在运行的 CLI 会话要重启后才用新账号。
+//! - 其他 Codex 目录（第二个 Codex 用 CODEX_HOME 放在别处、和主目录同时在用）：里面登录着的账号自动作为
+//!   「本机 · 目录名」账号列出（`OtherAccount.home`），凭据直接读写那个目录，一直算在用、不能切换过去；
+//!   切换别的 Codex 账号时可以选切进主目录还是这些目录（`switch_to` 的 `home`）。见 `sync_codex_homes`。
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -62,8 +65,10 @@ pub struct OtherAccountView {
     pub renewal: Option<SubscriptionRenewal>,
     /// 今日额度变化里的 key（周窗口加 #wk）；Google 账号两个池子各一个。
     pub history_keys: Vec<String>,
-    /// 能把本机 CLI 切换到这个账号（Google 不行：不能切换本机 agy 的登录）
+    /// 能把本机 CLI 切换到这个账号（Google 不行：不能切换本机 agy 的登录；其他 Codex 目录里的账号本来就在用）
     pub switchable: bool,
+    /// 其他 Codex 目录里登录着的账号：那个目录
+    pub home: Option<String>,
 }
 
 pub fn history_key(id: &str) -> String {
@@ -141,7 +146,8 @@ impl Inner {
                     Provider::Google => vec![history_key(&a.id), history_key(&a.pool_key())],
                     _ => vec![history_key(&a.id)],
                 },
-                switchable: a.provider != Provider::Google,
+                switchable: a.provider != Provider::Google && a.home.is_none(),
+                home: a.home.clone(),
             })
             .collect()
     }
@@ -401,6 +407,7 @@ fn finish_add(app: &AppHandle, provider: Provider, folder: String, id: Identifie
             subscription_started_at: id.subscription_started_at,
             subscription_active_until: id.subscription_active_until,
             rate_limit_tier: id.rate_limit_tier,
+            home: None,
         };
         let saved = accounts::upsert(&mut g.others, account);
         g.save_others();
@@ -434,6 +441,7 @@ fn is_local(app: &AppHandle, provider: Provider, id: &Identified) -> bool {
         subscription_started_at: None,
         subscription_active_until: None,
         rate_limit_tier: None,
+        home: None,
     };
     g.mirrors_local(&probe)
 }
@@ -706,6 +714,16 @@ pub fn remove(app: &AppHandle, id: &str) {
         let mut g = state.inner.lock().unwrap();
         if let Some(a) = accounts::remove(&mut g.others, id) {
             g.forget_other(&a);
+            // 其他 Codex 目录里的账号：这个目录以后不再统计、不再列出（手动添加的从列表里去掉，自动找到的记进忽略）。
+            // 目录本身不动。
+            if let Some(home) = a.home {
+                let before = g.settings.extra_codex_dirs.len();
+                g.settings.extra_codex_dirs.retain(|d| !same_dir(d, &home));
+                if g.settings.extra_codex_dirs.len() == before && !g.settings.ignored_codex_homes.iter().any(|d| same_dir(d, &home)) {
+                    g.settings.ignored_codex_homes.push(home);
+                }
+                g.settings.save();
+            }
         }
         g.save_others();
     }
@@ -713,10 +731,78 @@ pub fn remove(app: &AppHandle, id: &str) {
     crate::windows::sync_floating(app);
 }
 
+// ---------- 其他 Codex 目录 ----------
+
+fn same_dir(a: &str, b: &str) -> bool {
+    let key = |p: &str| std::fs::canonicalize(p).map(|c| c.to_string_lossy().into_owned()).unwrap_or_else(|_| p.to_string()).to_lowercase();
+    key(a) == key(b)
+}
+
+/// 其他 Codex 目录（自动找到的 + 设置里手动添加的，见 paths::extra_codex_dirs）里登录着的账号，作为「本机 · 目录名」列出：
+/// 目录里换了账号就换成新的，目录没了、或用户移除了就去掉。和主目录是同一个账号的不单独列（mirrors_local）。
+/// 以前作为其他账号存过的同一个账号会并进来（沿用别名和开关，yybar 存的副本删掉）。重读凭据时调用。
+pub fn sync_codex_homes(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (manual, ignored) = {
+        let g = state.inner.lock().unwrap();
+        (g.settings.extra_codex_dirs.clone(), g.settings.ignored_codex_homes.clone())
+    };
+    let found: Vec<(String, Identified)> = yybar_core::paths::extra_codex_dirs(&manual, &ignored)
+        .into_iter()
+        .filter_map(|(dir, _)| accounts::identify_codex(&dir).ok().map(|ident| (dir.to_string_lossy().into_owned(), ident)))
+        .collect();
+    let mut g = state.inner.lock().unwrap();
+    let mut changed = false;
+    let stale: Vec<OtherAccount> = g
+        .others
+        .iter()
+        .filter(|a| a.home.as_ref().is_some_and(|h| !found.iter().any(|(fh, ident)| fh == h && ident.id == a.id)))
+        .cloned()
+        .collect();
+    for a in stale {
+        if let Some(removed) = accounts::remove(&mut g.others, &a.id) {
+            g.forget_other(&removed);
+            changed = true;
+        }
+    }
+    for (home, ident) in found {
+        if let Some(a) = g.others.iter_mut().find(|a| a.id == ident.id && a.home.as_deref() == Some(home.as_str())) {
+            if a.email != ident.email || (ident.plan.is_some() && a.plan != ident.plan) {
+                a.email = ident.email;
+                a.plan = ident.plan.or(a.plan.take());
+                changed = true;
+            }
+            continue;
+        }
+        let account = OtherAccount {
+            id: ident.id,
+            provider: Provider::Codex,
+            alias: String::new(),
+            email: ident.email,
+            plan: ident.plan,
+            enabled: true,
+            show_in_tray: false,
+            show_in_floating: false,
+            added_at: now_secs(),
+            folder: String::new(),
+            subscription_started_at: None,
+            subscription_active_until: ident.subscription_active_until,
+            rate_limit_tier: None,
+            home: Some(home),
+        };
+        accounts::upsert(&mut g.others, account);
+        changed = true;
+    }
+    if changed {
+        g.save_others();
+    }
+}
+
 // ---------- 切换本机 CLI 账号 ----------
 
-/// 把本机 CLI（Codex / Claude Code / Grok）切换到这个其他账号。
-pub async fn switch_to(app: &AppHandle, id: &str) {
+/// 把本机 CLI（Codex / Claude Code / Grok）切换到这个其他账号。Codex 的 `home` 给了就切进那个 Codex 目录（其他 Codex 目录），
+/// 否则切进主目录。
+pub async fn switch_to(app: &AppHandle, id: &str, home: Option<String>) {
     let state = app.state::<AppState>();
     let target = {
         let mut g = state.inner.lock().unwrap();
@@ -732,7 +818,7 @@ pub async fn switch_to(app: &AppHandle, id: &str) {
     wait_while_refreshing(app, service, id).await;
     let label = target.email.clone().unwrap_or_else(|| target.display_name());
     let result = match target.provider {
-        Provider::Codex => switch_codex(app, &target).await,
+        Provider::Codex => switch_codex(app, &target, home.as_deref()).await,
         Provider::Claude => switch_claude(app, &target).await,
         Provider::Grok => switch_grok(app, &target).await,
         Provider::Google => Err(AccountError::msg(tr("Google accounts can't switch agy's sign-in on this PC", "Google 账号不支持切换本机 agy 的登录"))),
@@ -776,8 +862,15 @@ async fn wait_while_refreshing(app: &AppHandle, service: UsageApp, id: &str) {
 }
 
 /// 切换完成后的共同收尾：本机原来的账号存成其他账号（沿用目标账号的开关、额度沿用最近一次），
-/// 目标账号从其他账号里拿掉、额度先当作本机账号的额度显示。
-fn after_switch(app: &AppHandle, target: &OtherAccount, old_snapshot: Option<QuotaSnapshot>, saved_old: Option<(String, Identified, Option<String>)>) {
+/// 目标账号从其他账号里拿掉、额度先当作本机账号的额度显示。切进的是其他 Codex 目录（`into_home`）时，
+/// 那个目录里的新账号由 sync_codex_homes 列出来，额度不顶到主目录的账号上。
+fn after_switch(
+    app: &AppHandle,
+    target: &OtherAccount,
+    old_snapshot: Option<QuotaSnapshot>,
+    saved_old: Option<(String, Identified, Option<String>)>,
+    into_home: bool,
+) {
     let state = app.state::<AppState>();
     // 重读凭据：身份变了会清掉本机账号的旧额度，下面再用目标账号的额度顶上
     app_state::reload_credentials(app);
@@ -798,6 +891,7 @@ fn after_switch(app: &AppHandle, target: &OtherAccount, old_snapshot: Option<Quo
             subscription_started_at: ident.subscription_started_at,
             subscription_active_until: ident.subscription_active_until,
             rate_limit_tier: ident.rate_limit_tier,
+            home: None,
         };
         let saved = accounts::upsert(&mut g.others, account);
         if let Some(s) = old_snapshot {
@@ -809,13 +903,17 @@ fn after_switch(app: &AppHandle, target: &OtherAccount, old_snapshot: Option<Quo
         g.forget_other(&a);
     }
     g.save_others();
-    if let Some(seed) = seed {
+    if let Some(seed) = seed.filter(|_| !into_home) {
         g.seed_local_quota(service, seed);
     }
     g.cache.save();
+    drop(g);
+    if into_home {
+        sync_codex_homes(app);
+    }
 }
 
-async fn switch_codex(app: &AppHandle, target: &OtherAccount) -> Result<(), AccountError> {
+async fn switch_codex(app: &AppHandle, target: &OtherAccount, home: Option<&str>) -> Result<(), AccountError> {
     let path = target.credential_path();
     let mut acc = credentials::read_json(&path)
         .and_then(|v| credentials::codex::parse(&v, path.clone()))
@@ -825,14 +923,22 @@ async fn switch_codex(app: &AppHandle, target: &OtherAccount) -> Result<(), Acco
         .await
         .map_err(|e| AccountError::msg(format!("{}（{e}）", tr("This account's sign-in has expired; add it again", "这个账号的登录已失效，请重新添加"))))?;
     let target_root = credentials::read_json(&path).ok_or_else(|| AccountError::msg("auth.json"))?;
-    let local = local_path(app, UsageApp::Codex);
-    let old_snapshot = local_quota(app, UsageApp::Codex);
+    // 切进其他 Codex 目录：写那个目录的 auth.json，原来在那里的账号同样存成其他账号
+    let (local, old_snapshot) = match home {
+        Some(home) => {
+            let state = app.state::<AppState>();
+            let g = state.inner.lock().unwrap();
+            let snapshot = g.others.iter().find(|a| a.home.as_deref() == Some(home)).and_then(|a| g.other_quota(a));
+            (Path::new(home).join("auth.json"), snapshot)
+        }
+        None => (local_path(app, UsageApp::Codex), local_quota(app, UsageApp::Codex)),
+    };
     let old = switch::write_codex(&local, &target_root)?;
     let saved = match old {
         Some(old) => save_old(Provider::Codex, "auth.json", &old, None, |dir| accounts::identify_codex(dir))?,
         None => None,
     };
-    after_switch(app, target, old_snapshot, keep_if_different(target, saved));
+    after_switch(app, target, old_snapshot, keep_if_different(target, saved), home.is_some());
     Ok(())
 }
 
@@ -902,7 +1008,7 @@ async fn switch_claude(app: &AppHandle, target: &OtherAccount) -> Result<(), Acc
     }
     let oauth_account = oauth_account.or_else(|| target.email.as_ref().map(|e| json!({ "emailAddress": e })));
     switch::write_claude(&local_creds, &local_config, Value::Object(oauth), oauth_account)?;
-    after_switch(app, target, old_snapshot, keep_if_different(target, saved));
+    after_switch(app, target, old_snapshot, keep_if_different(target, saved), false);
     Ok(())
 }
 
@@ -916,7 +1022,7 @@ async fn switch_grok(app: &AppHandle, target: &OtherAccount) -> Result<(), Accou
         Some(old) => save_old(Provider::Grok, "auth.json", &old, None, |dir| accounts::identify_grok(dir))?,
         None => None,
     };
-    after_switch(app, target, old_snapshot, keep_if_different(target, saved));
+    after_switch(app, target, old_snapshot, keep_if_different(target, saved), false);
     Ok(())
 }
 

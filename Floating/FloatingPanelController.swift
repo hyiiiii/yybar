@@ -94,6 +94,9 @@ final class FloatingPanelController: NSObject {
         } else if abs(frame.maxX - visible.maxX) < 1 {
             // 贴着右边时保持右边不动(往左长)
             frame.origin.x = visible.maxX - fit.width
+        } else {
+            // 展开时整块留在屏幕里(从右边拉出来的窄条往右长，会伸出屏幕)
+            frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - fit.width))
         }
         frame.size = fit
         guard frame != panel.frame else { return }

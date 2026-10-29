@@ -142,7 +142,10 @@ export const api = {
   updateOtherAccount: (id: string, patch: { alias?: string; enabled?: boolean; showInTray?: boolean; showInFloating?: boolean }) =>
     inTauri ? call("update_other_account", { id, patch }) : Promise.resolve(applyDemoOther(id, patch)),
   removeOtherAccount: (id: string) => call("remove_other_account", { id }),
-  switchAccount: (id: string) => call("switch_account", { id }),
+  /** 切换本机 CLI 到这个账号；Codex 给了 home 就切进那个 Codex 目录（其他 Codex 目录），否则切进主目录 */
+  switchAccount: (id: string, home?: string | null) => call("switch_account", { id, home: home ?? null }),
+  /** 系统的选择文件夹对话框（取消时为 null） */
+  pickFolder: (title: string) => (inTauri ? call<string | null>("pick_folder", { title }) : Promise.resolve(null)),
   // bar：yybar 网站
   webConnect: () => call("web_connect"),
   webCancelConnect: () => call("web_cancel_connect"),

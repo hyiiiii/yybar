@@ -12,7 +12,7 @@ import { Section, SectionHeading, SectionedPage, type ScrollRequest } from "../S
 import { SETTINGS_PAGES, tabTitle, type MainTab } from "../tabs";
 import { ModelPrices } from "./ModelPrices";
 import { AddAccountDialog } from "./AddAccountDialog";
-import { QuotaCard, otherTitle } from "./QuotaCard";
+import { QuotaCard, dirName, otherTitle } from "./QuotaCard";
 
 const INTERVALS: IntervalChoice[] = ["m1", "m2", "m3", "m5", "m10"];
 const intervalLabel = (c: IntervalChoice) => {
@@ -181,6 +181,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
             >
               <Toggle checked={s.scanWsl} onChange={(v) => set({ scanWsl: v })} />
             </PrefsRow>
+            <div className="divider" />
+            <CodexDirs state={state} />
           </PrefsGroup>
           <PrefsGroup title={tr("Status", "状态")}>
             <PrefsRow label={tr("Last refresh", "上次刷新")}>
@@ -298,11 +300,18 @@ export function SettingsView({ state, usage, active, request, onActive }: {
       )}
       {otherConfirm && (
         <ConfirmDialog
-          title={tr("Remove account?", "删除此账号？")}
-          message={tr(
-            `“${otherConfirm.email ?? otherConfirm.name}” will be removed from yybar and its saved credentials deleted. The account itself is not affected.`,
-            `“${otherConfirm.email ?? otherConfirm.name}” 将从 yybar 中移除，并删除保存的凭据，账号本身不受影响。`,
-          )}
+          title={otherConfirm.home ? tr("Stop tracking this Codex folder?", "不再统计这个 Codex 目录？") : tr("Remove account?", "删除此账号？")}
+          message={
+            otherConfirm.home
+              ? tr(
+                  `yybar will stop showing the account in ${otherConfirm.home} and counting its logs. Nothing in the folder is deleted; add it back on the Refresh page.`,
+                  `yybar 不再显示 ${otherConfirm.home} 里登录的账号、也不再统计它的记录。目录里的文件不会删除，可以在「刷新」页加回来。`,
+                )
+              : tr(
+                  `“${otherConfirm.email ?? otherConfirm.name}” will be removed from yybar and its saved credentials deleted. The account itself is not affected.`,
+                  `“${otherConfirm.email ?? otherConfirm.name}” 将从 yybar 中移除，并删除保存的凭据，账号本身不受影响。`,
+                )
+          }
           confirmLabel={tr("Remove", "删除")}
           onConfirm={() => {
             api.removeOtherAccount(otherConfirm.id);
@@ -421,20 +430,53 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
   const s = state.settings;
   const switching = state.switching;
   const error = account.refresh.lastError;
+  // 有其他 Codex 目录时，切换要先选切进哪个目录
+  const homes = account.app === "codex" && account.switchable ? state.others.filter((o) => o.app === "codex" && o.home) : [];
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => menuRef.current && !menuRef.current.contains(e.target as Node) && setMenu(false);
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [menu]);
+  const switchTo = (home: string | null) => {
+    setMenu(false);
+    api.switchAccount(account.id, home);
+  };
   return (
     <div className="matrix-row">
       <span className="col-radio">
-        {account.switchable &&
+        {account.home ? (
+          <span className="in-use-dot" title={tr(`In use by the Codex in ${account.home}`, `${account.home} 里的 Codex 正在用这个账号`)} />
+        ) : (
+          account.switchable &&
           (switching === account.id ? (
             <span className="spinner small" title={tr("Switching…", "正在切换…")} />
           ) : (
-            <button
-              className="switch-radio"
-              disabled={switching != null}
-              title={tr(`Switch the ${displayName[account.app]} CLI on this PC to this account`, `把本机 ${displayName[account.app]} CLI 切换到这个账号`)}
-              onClick={() => api.switchAccount(account.id)}
-            />
-          ))}
+            <span ref={menuRef} className="switch-wrap">
+              <button
+                className="switch-radio"
+                disabled={switching != null}
+                title={tr(`Switch the ${displayName[account.app]} CLI on this PC to this account`, `把本机 ${displayName[account.app]} CLI 切换到这个账号`)}
+                onClick={() => (homes.length ? setMenu(!menu) : switchTo(null))}
+              />
+              {menu && (
+                <span className="switch-menu panel">
+                  <span className="switch-menu-title">{tr("Switch which Codex to this account?", "把哪个 Codex 切换到这个账号？")}</span>
+                  <button onClick={() => switchTo(null)}>
+                    {tr("Main folder", "主目录")} <span className="secondary">.codex</span>
+                  </button>
+                  {homes.map((h) => (
+                    <button key={h.id} title={h.home!} onClick={() => switchTo(h.home)}>
+                      {dirName(h.home!)} <span className="secondary">{h.email ?? ""}</span>
+                    </button>
+                  ))}
+                </span>
+              )}
+            </span>
+          ))
+        )}
       </span>
       <span className="col-name" style={{ opacity: account.enabled ? 1 : 0.5 }}>
         <ServiceTile app={account.app} size={26} logoSize={15} radius={7} />
@@ -449,7 +491,9 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
               </span>
             )}
           </span>
-          <span className="email">{account.email ?? account.name}</span>
+          <span className="email" title={account.home ?? undefined}>
+            {account.email ?? account.name}
+          </span>
         </span>
       </span>
       <span className="col-enabled">
@@ -475,6 +519,58 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
         </button>
       </span>
     </div>
+  );
+}
+
+/** 其他 Codex 目录：另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号（服务页列成「Codex · 目录名」）和会话记录也统计。
+ *  自动找到的（用户目录下的 .codex-*、环境变量 CODEX_HOME）移除后记进忽略，可恢复；手动添加的直接去掉。 */
+function CodexDirs({ state }: { state: StateSnapshot }) {
+  const s = state.settings;
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const add = async () => {
+    const dir = await api.pickFolder(tr("Choose the other Codex folder (the one CODEX_HOME points to)", "选择另一个 Codex 的目录（CODEX_HOME 指向的那个）"));
+    if (!dir || s.extraCodexDirs.some((d) => same(d, dir))) return;
+    api.updateSettings({ extraCodexDirs: [...s.extraCodexDirs, dir], ignoredCodexHomes: s.ignoredCodexHomes.filter((d) => !same(d, dir)) });
+  };
+  const remove = (path: string) =>
+    s.extraCodexDirs.some((d) => same(d, path))
+      ? api.updateSettings({ extraCodexDirs: s.extraCodexDirs.filter((d) => !same(d, path)) })
+      : api.updateSettings({ ignoredCodexHomes: [...s.ignoredCodexHomes, path] });
+  return (
+    <>
+      <PrefsRow
+        label={tr("Other Codex folders", "其他 Codex 目录")}
+        desc={tr(
+          "When another Codex keeps its data elsewhere (CODEX_HOME), its account and logs count too. .codex-* folders in your user folder and the CODEX_HOME variable are found automatically.",
+          "另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号和会话记录也一起统计。用户目录下的 .codex-* 和环境变量 CODEX_HOME 会自动找到",
+        )}
+      >
+        <button className="button" onClick={add}>
+          {tr("Add…", "添加…")}
+        </button>
+      </PrefsRow>
+      {(state.codexDirs.length > 0 || s.ignoredCodexHomes.length > 0) && (
+        <div className="dir-list">
+          {state.codexDirs.map((d) => (
+            <div className="dir-item" key={d.path}>
+              <span className="dir-path" title={d.path}>{d.path}</span>
+              <span className="dir-tag">{d.auto ? tr("Found", "自动找到") : tr("Added", "手动添加")}</span>
+              <button className="icon-button" title={tr("Stop tracking", "不再统计")} onClick={() => remove(d.path)}>
+                <Icon name="minusCircle" size={13} />
+              </button>
+            </div>
+          ))}
+          {s.ignoredCodexHomes.map((path) => (
+            <div className="dir-item dir-ignored" key={path}>
+              <span className="dir-path" title={path}>{path}</span>
+              <button className="link-button" onClick={() => api.updateSettings({ ignoredCodexHomes: s.ignoredCodexHomes.filter((d) => !same(d, path)) })}>
+                {tr("Track again", "恢复统计")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

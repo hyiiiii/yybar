@@ -74,6 +74,8 @@ pub struct Inner {
     pub ui_state: Value,
     pub autostart: bool,
     pub wsl: Vec<HomeRoot>,
+    /// 上次扫描用到的其他 Codex 目录（目录, 是不是自动找到的），设置页列出来
+    pub codex_dirs: Vec<(std::path::PathBuf, bool)>,
     /// 其他账号（设置 · 服务里「添加账号…」加进来的，见 accounts.rs）
     pub others: Vec<OtherAccount>,
     /// 其他账号的额度：键是账号 id；Google 账号的 Antigravity 池是 `id#3p`
@@ -152,6 +154,16 @@ pub struct StateSnapshot {
     pub clis: CliPresence,
     /// bar 页：yybar 网站账号和待上传
     pub web: WebView,
+    /// 统计到的其他 Codex 目录
+    pub codex_dirs: Vec<CodexDirView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexDirView {
+    pub path: String,
+    /// 自动找到的（家目录下的 .codex-*、环境变量 CODEX_HOME），设置里不能删
+    pub auto: bool,
 }
 
 #[derive(Serialize)]
@@ -219,6 +231,7 @@ impl AppState {
                 ui_state: Value::Object(Default::default()),
                 autostart: false,
                 wsl: Vec::new(),
+                codex_dirs: Vec::new(),
                 others,
                 other_quotas,
                 other_refresh,
@@ -262,6 +275,7 @@ impl AppState {
             agy_installed: google::is_installed(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             others: g.other_views(now),
+            codex_dirs: g.codex_dirs.iter().map(|(p, auto)| CodexDirView { path: p.to_string_lossy().into_owned(), auto: *auto }).collect(),
             switching: g.switching.clone(),
             switch_notice: g.switch_notice.clone(),
             clis: CliPresence {
@@ -564,8 +578,14 @@ pub async fn refresh_service(app: &AppHandle, service: UsageApp) {
     publish(app);
 }
 
-/// 重读本机凭据。身份变了（外部切换了账号）就清掉旧额度和磁盘缓存。
+/// 重读本机凭据，再同步其他 Codex 目录里登录着的账号（accounts::sync_codex_homes）。
 fn load_credentials(app: &AppHandle) {
+    load_local_credentials(app);
+    accounts::sync_codex_homes(app);
+}
+
+/// 重读本机凭据。身份变了（外部切换了账号）就清掉旧额度和磁盘缓存。
+fn load_local_credentials(app: &AppHandle) {
     let state = app.state::<AppState>();
     let wsl = state.inner.lock().unwrap().wsl.clone();
     let codex = credentials::codex::load(&wsl);
@@ -895,12 +915,24 @@ pub async fn scan_usage(app: &AppHandle) {
     let Ok(_guard) = state.scan_lock.try_lock() else { return };
     loop {
         let (prev, rebuild) = state.usage.lock().unwrap().begin_scan();
-        let wsl = state.inner.lock().unwrap().wsl.clone();
+        let (wsl, manual, ignored) = {
+            let g = state.inner.lock().unwrap();
+            (g.wsl.clone(), g.settings.extra_codex_dirs.clone(), g.settings.ignored_codex_homes.clone())
+        };
         if rebuild.is_some() {
             state.inner.lock().unwrap().repricing = true;
         }
         publish(app);
-        let output = tauri::async_runtime::spawn_blocking(move || usage_service::run_scan(&prev, &ScanRoots::build(&wsl))).await;
+        let output = tauri::async_runtime::spawn_blocking(move || {
+            let extra = paths::extra_codex_dirs(&manual, &ignored);
+            let dirs: Vec<_> = extra.iter().map(|(d, _)| d.clone()).collect();
+            (usage_service::run_scan(&prev, &ScanRoots::build(&wsl, &dirs)), extra)
+        })
+        .await;
+        let output = output.map(|(output, extra)| {
+            state.inner.lock().unwrap().codex_dirs = extra;
+            output
+        });
         let changed = {
             let mut usage = state.usage.lock().unwrap();
             let before = usage.version;

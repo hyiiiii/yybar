@@ -20,15 +20,20 @@ const KEYWORDS: &[&str] = &["turn_context", "token_count"];
 const USAGE_KEYS: [&str; 4] = ["input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens"];
 
 pub fn scan(previous: &HashMap<String, ScanFileState>, roots: &[PathBuf]) -> ScanResult {
-    let files: Vec<PathBuf> = roots.iter().flat_map(|r| jsonl::files(r, true)).collect();
-    let mut new_state = previous.clone();
-    let mut entries = Vec::new();
-    let mut lines_parsed = 0;
-
     let base_name = |p: &str| -> String {
         let name = Path::new(p).file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
         name.strip_suffix(".zst").map(str::to_string).unwrap_or(name)
     };
+    // 同一个会话文件（文件名里有时间和会话 ID）在几个 Codex 目录里都有时（备份、复制过去的）只算排在前面的那个
+    let mut seen = std::collections::HashSet::new();
+    let files: Vec<PathBuf> = roots
+        .iter()
+        .flat_map(|r| jsonl::files(r, true))
+        .filter(|f| seen.insert(base_name(&f.to_string_lossy())))
+        .collect();
+    let mut new_state = previous.clone();
+    let mut entries = Vec::new();
+    let mut lines_parsed = 0;
 
     for path in &files {
         let k = key(path);
@@ -200,5 +205,23 @@ mod tests {
         // 再扫不重复
         let r2 = scan(&r.new_state, &[sessions]);
         assert!(r2.entries.is_empty());
+    }
+
+    #[test]
+    fn other_codex_dirs_count_once() {
+        let write = |path: &Path, total_in: i64| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut f = std::fs::File::create(path).unwrap();
+            writeln!(f, r#"{{"type":"turn_context","payload":{{"model":"gpt-5.5"}}}}"#).unwrap();
+            writeln!(f, "{}", line(total_in, 0, total_in, 0)).unwrap();
+        };
+        let main = tempfile::tempdir().unwrap();
+        let pro = tempfile::tempdir().unwrap();
+        // 主目录一个会话；另一个目录里一个自己的会话，外加一份主目录会话的复制
+        write(&main.path().join("sessions/2026/10/28/rollout-a.jsonl"), 100);
+        write(&pro.path().join("sessions/2026/10/28/rollout-b.jsonl"), 40);
+        write(&pro.path().join("sessions/2026/10/28/rollout-a.jsonl"), 100);
+        let r = scan(&HashMap::new(), &[main.path().join("sessions"), pro.path().join("sessions")]);
+        assert_eq!(r.entries.iter().map(|e| e.input_tokens).sum::<i64>(), 140);
     }
 }

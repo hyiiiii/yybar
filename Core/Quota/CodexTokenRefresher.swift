@@ -18,6 +18,8 @@ enum CodexTokenRefresher {
     enum WriteBack: Sendable {
         case codexAuthJSON
         case importedAccount(id: String)
+        /// 其他 Codex 目录里登录着的账号：回写那个目录的 auth.json(和那个 Codex 自己续期一样)。
+        case authFile(URL)
     }
 
     /// 若 access_token 即将过期则用 refresh_token 续期并按 `writeBack` 指示原子落盘。
@@ -108,6 +110,8 @@ enum CodexTokenRefresher {
         switch writeBack {
         case .codexAuthJSON:
             try writeBackToAuthJSON(accessToken: newAccess, idToken: newId, refreshToken: newRefresh)
+        case .authFile(let url):
+            try writeBackToAuthJSON(accessToken: newAccess, idToken: newId, refreshToken: newRefresh, url: url)
         case .importedAccount(let id):
             try ImportedCodexStore.saveTokens(
                 ImportedCodexTokens(accessToken: newAccess, refreshToken: newRefresh, idToken: newId),
@@ -120,9 +124,9 @@ enum CodexTokenRefresher {
     nonisolated private static func writeBackToAuthJSON(
         accessToken: String,
         idToken: String?,
-        refreshToken: String
+        refreshToken: String,
+        url: URL = CodexAuth.authFileURL()
     ) throws {
-        let url = CodexAuth.authFileURL()
         var root: [String: Any] = [:]
         if let data = try? Data(contentsOf: url),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {

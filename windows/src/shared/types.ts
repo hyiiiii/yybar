@@ -97,6 +97,10 @@ export interface Settings {
   quotaInterval: IntervalChoice;
   usageInterval: IntervalChoice;
   scanWsl: boolean;
+  /** 手动添加的其他 Codex 目录 */
+  extraCodexDirs: string[];
+  /** 自动找到、但移除了的 Codex 目录 */
+  ignoredCodexHomes: string[];
   resetTimeDisplay: ResetTimeDisplay;
   /** 主窗口字号（缩放主窗口） */
   textSize: TextSize;
@@ -163,6 +167,8 @@ export interface OtherAccountView {
   renewal: SubscriptionRenewal | null;
   historyKeys: string[];
   switchable: boolean;
+  /** 其他 Codex 目录里登录着的账号：那个目录（本机账号，一直在用，不能切换过去） */
+  home: string | null;
 }
 
 export type LoginPhase =
@@ -238,6 +244,8 @@ export interface StateSnapshot {
   /** 本机装了哪些官方 CLI（添加账号时「在浏览器中登录」要用） */
   clis: { codex: boolean; claude: boolean; grok: boolean; agy: boolean };
   web: WebView;
+  /** 统计到的其他 Codex 目录（auto：家目录下的 .codex-*、环境变量 CODEX_HOME 自动找到的） */
+  codexDirs: { path: string; auto: boolean }[];
 }
 
 export interface UsageBucket {

@@ -485,6 +485,83 @@ struct SettingsRootView: View {
 
     // MARK: Refresh
 
+    /// 其他 Codex 目录：另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号(服务页列成「Codex · 目录名」)和会话记录也统计。
+    /// 自动找到的(用户目录下的 .codex-*)移除后记进忽略，可恢复；手动添加的直接去掉。改动后重读账号、重扫日志。
+    @ViewBuilder
+    private func codexDirsRows(settings: SettingsStore) -> some View {
+        let same = { (a: String, b: String) in a.lowercased() == b.lowercased() }
+        let apply = {
+            appState.syncLinkedCodexHomes()
+            Task { await appState.refreshNow() }
+        }
+        PrefsRow(
+            label: "Other Codex folders",
+            chinese: "其他 Codex 目录",
+            desc: "When another Codex keeps its data elsewhere (CODEX_HOME), its account and logs count too. .codex-* folders in your home folder are found automatically.",
+            chineseDesc: "另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号和会话记录也一起统计。用户目录下的 .codex-* 会自动找到"
+        ) {
+            Button(tr("Add…", "添加…")) {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.showsHiddenFiles = true
+                panel.message = tr("Choose the other Codex folder (the one CODEX_HOME points to)", "选择另一个 Codex 的目录(CODEX_HOME 指向的那个)")
+                guard panel.runModal() == .OK, let path = panel.url?.path,
+                      !settings.extraCodexDirs.contains(where: { same($0, path) }) else { return }
+                settings.extraCodexDirs.append(path)
+                settings.ignoredCodexHomes.removeAll { same($0, path) }
+                apply()
+            }
+            .controlSize(.small)
+        }
+        ForEach(appState.codexHomeDirs) { dir in
+            HStack(spacing: 8) {
+                Text(dir.path)
+                    .scaledFont(size: 11, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(dir.path)
+                Spacer(minLength: 8)
+                Text(dir.auto ? tr("Found", "自动找到") : tr("Added", "手动添加"))
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.07)))
+                Button {
+                    if settings.extraCodexDirs.contains(where: { same($0, dir.path) }) {
+                        settings.extraCodexDirs.removeAll { same($0, dir.path) }
+                    } else {
+                        settings.ignoredCodexHomes.append(dir.path)
+                    }
+                    apply()
+                } label: {
+                    Image(systemName: "minus.circle").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("Stop tracking", "不再统计"))
+            }
+        }
+        ForEach(settings.ignoredCodexHomes, id: \.self) { path in
+            HStack(spacing: 8) {
+                Text(path)
+                    .scaledFont(size: 11, design: .monospaced)
+                    .foregroundStyle(.tertiary)
+                    .strikethrough()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Button(tr("Track again", "恢复统计")) {
+                    settings.ignoredCodexHomes.removeAll { same($0, path) }
+                    apply()
+                }
+                .buttonStyle(.link)
+                .scaledFont(size: 11)
+            }
+        }
+    }
+
     private func refreshGroup(settings: SettingsStore) -> some View {
         VStack(alignment: .leading, spacing: 22) {
             PrefsGroup(
@@ -536,6 +613,8 @@ struct SettingsRootView: View {
                     .pickerStyle(.menu)
                     .fixedSize()
                 }
+                Divider()
+                codexDirsRows(settings: settings)
             }
 
             PrefsGroup(title: "Claude Projects", chinese: "Claude 云端项目") {

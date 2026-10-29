@@ -44,11 +44,17 @@ pub struct ScanRoots {
 }
 
 impl ScanRoots {
-    /// 本机目录，加上（可选）正在运行的 WSL 发行版里的同名目录。
-    pub fn build(wsl: &[HomeRoot]) -> ScanRoots {
+    /// 本机目录，加上其他 Codex 目录（第二个账号放在别处的，见 paths::extra_codex_dirs）和（可选）正在运行的
+    /// WSL 发行版里的同名目录。主目录排在最前：同一个会话文件在几个目录里都有时只算第一个（codex::scan）。
+    pub fn build(wsl: &[HomeRoot], extra_codex: &[PathBuf]) -> ScanRoots {
         let codex_dir = paths::codex_dir();
+        let mut codex = vec![codex_dir.join("sessions"), codex_dir.join("archived_sessions")];
+        for dir in extra_codex {
+            codex.push(dir.join("sessions"));
+            codex.push(dir.join("archived_sessions"));
+        }
         let mut roots = ScanRoots {
-            codex: vec![codex_dir.join("sessions"), codex_dir.join("archived_sessions")],
+            codex,
             claude: claude::roots(&paths::claude_dir(), true),
             grok: vec![paths::grok_dir().join("sessions")],
             agy: agy::default_roots(),

@@ -1530,6 +1530,94 @@ body,
   cursor: default;
 }
 
+/* 有其他 Codex 目录时点空心圆：先选把哪个 Codex 切换到这个账号 */
+.switch-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.switch-menu {
+  position: absolute;
+  top: 20px;
+  left: -6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+
+.switch-menu-title {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.switch-menu button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.switch-menu button:hover {
+  background: var(--fill-strong);
+}
+
+.switch-menu .secondary {
+  font-size: 11px;
+}
+
+/* 刷新页「其他 Codex 目录」：找到 / 添加的目录，一行一个 */
+.dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 14px 10px;
+}
+
+.dir-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 11.5px;
+}
+
+.dir-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  color: var(--text-secondary);
+}
+
+.dir-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: var(--fill);
+}
+
+.dir-ignored .dir-path {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
 .row-warning {
   display: inline-flex;
   color: var(--sys-orange);

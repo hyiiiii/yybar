@@ -54,6 +54,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         expand_floating,
         floating_press,
         floating_release,
+        pick_folder,
         finish_onboarding,
         open_url,
         backdrop,
@@ -113,6 +114,16 @@ async fn update_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     if newly_enabled {
         let h = app.clone();
         tauri::async_runtime::spawn(async move { app_state::refresh_quotas(&h, RefreshReason::UserInitiated).await });
+    }
+    if before.extra_codex_dirs != after.extra_codex_dirs || before.ignored_codex_homes != after.ignored_codex_homes {
+        // 其他 Codex 目录变了：重新列出那些目录里的账号、重扫日志
+        let h = app.clone();
+        tauri::async_runtime::spawn(async move {
+            app_state::reload_credentials(&h);
+            app_state::publish(&h);
+            app_state::scan_usage(&h).await;
+            app_state::refresh_quotas(&h, RefreshReason::UserInitiated).await;
+        });
     }
     if before.scan_wsl != after.scan_wsl {
         let h = app.clone();
@@ -213,8 +224,8 @@ async fn remove_other_account(app: AppHandle, id: String) {
 
 /// 把本机 CLI 切换到这个其他账号。
 #[tauri::command]
-async fn switch_account(app: AppHandle, id: String) {
-    accounts::switch_to(&app, &id).await;
+async fn switch_account(app: AppHandle, id: String, home: Option<String>) {
+    accounts::switch_to(&app, &id, home).await;
 }
 
 // ---------- bar：yybar 网站（见 web.rs） ----------
@@ -296,6 +307,12 @@ fn floating_release(app: AppHandle) {
 #[tauri::command]
 fn expand_floating(app: AppHandle) {
     windows::expand_floating(&app);
+}
+
+/// 设置里「添加 Codex 目录…」：系统的选择文件夹对话框，取消时返回 None。
+#[tauri::command]
+async fn pick_folder(title: String) -> Option<String> {
+    rfd::AsyncFileDialog::new().set_title(title).pick_folder().await.map(|f| f.path().to_string_lossy().into_owned())
 }
 
 /// 引导完成：记下来，关掉引导窗口，可直接打开统计。

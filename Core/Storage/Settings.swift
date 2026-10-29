@@ -174,6 +174,10 @@ final class SettingsStore {
     var showServiceStatus: Bool { didSet { defaults.set(showServiceStatus, forKey: Keys.showServiceStatus) } }
     /// 主窗口字号(见 `Font.ui`)。
     var textSize: TextSize { didSet { defaults.set(textSize.rawValue, forKey: Keys.textSize) } }
+    /// 手动添加的其他 Codex 目录(第二个 Codex 用 CODEX_HOME 放在别处时);自动找到的不存这里，见 CodexAuth.extraHomes。
+    var extraCodexDirs: [String] { didSet { defaults.set(extraCodexDirs, forKey: Keys.extraCodexDirs) } }
+    /// 自动找到、但用户移除了的 Codex 目录(不再统计、不再列出它登录的账号)。
+    var ignoredCodexHomes: [String] { didSet { defaults.set(ignoredCodexHomes, forKey: Keys.ignoredCodexHomes) } }
 
     // 通用
     var appLanguage: AppLanguage { didSet { defaults.set(appLanguage.rawValue, forKey: Keys.appLanguage) } }
@@ -230,6 +234,8 @@ final class SettingsStore {
         resetTimeDisplay = ResetTimeDisplay(rawValue: rtdRaw) ?? .relative
         showServiceStatus = defaults.object(forKey: Keys.showServiceStatus) as? Bool ?? true
         textSize = TextSize(rawValue: defaults.string(forKey: Keys.textSize) ?? "") ?? .standard
+        extraCodexDirs = defaults.stringArray(forKey: Keys.extraCodexDirs) ?? []
+        ignoredCodexHomes = defaults.stringArray(forKey: Keys.ignoredCodexHomes) ?? []
         floatingDockEdge = FloatingDockEdge(rawValue: defaults.string(forKey: Keys.floatingDockEdge) ?? "")
         // 通用：launchAtLogin 以系统当前注册状态为准
         let langRaw = defaults.string(forKey: Keys.appLanguage) ?? AppLanguage.system.rawValue
@@ -386,6 +392,8 @@ final class SettingsStore {
         static let resetTimeDisplay = "yybar.settings.resetTimeDisplay"
         static let showServiceStatus = "yybar.settings.showServiceStatus"
         static let textSize = "yybar.settings.textSize"
+        static let extraCodexDirs = "yybar.settings.extraCodexDirs"
+        static let ignoredCodexHomes = "yybar.settings.ignoredCodexHomes"
         static let launchAtLogin = "yybar.settings.launchAtLogin"
         static let appLanguage = "yybar.settings.appLanguage"
         static let didShowKeychainPrompt = "yybar.settings.didShowKeychainPrompt"

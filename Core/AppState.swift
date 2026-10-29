@@ -19,6 +19,13 @@ final class AppState {
     // - `importedCodexQuotas / Sources / Errors / RefreshStates` 按 account.id 索引,
     //   只在该账号 `visibleInPopover` 为 true 时才刷新与展示。
     var importedCodexAccounts: [ImportedCodexAccount] = []
+    /// 其他 Codex 目录(CodexAuth.extraHomes),设置 · 刷新列出来;auto 为自动找到的。
+    struct CodexHomeDir: Identifiable, Equatable {
+        var path: String
+        var auto: Bool
+        var id: String { path }
+    }
+    var codexHomeDirs: [CodexHomeDir] = []
     var importedCodexQuotas: [String: QuotaSnapshot] = [:]
     var importedCodexSources: [String: QuotaSnapshotSource] = [:]
     var importedCodexErrors: [String: String] = [:]
@@ -587,7 +594,8 @@ final class AppState {
     var accountSwitchNotice: AccountSwitchNotice?
 
     /// 把本机 Codex CLI 切换到这个其他账号。原来的本机账号存为其他账号(沿用目标账号的启用 / 菜单栏 / 悬浮窗设置)。
-    func switchCLI(toCodex target: ImportedCodexAccount) async {
+    /// `home` 给了就切进那个其他 Codex 目录(写它的 auth.json),否则切进主目录。
+    func switchCLI(toCodex target: ImportedCodexAccount, home: String? = nil) async {
         await performSwitch(id: target.id, provider: .codex, label: target.email ?? target.id) {
             await self.waitWhileRefreshing { self.codexRefreshState.inFlight || self.importedCodexRefreshStates[target.id]?.inFlight == true }
             // 1. 目标账号的 token,临期先续期，交给 CLI 的是可用的。
@@ -605,8 +613,8 @@ final class AppState {
                 throw CLIAccountSwitch.SwitchError.message("这个账号的登录已失效，请重新添加（\(error.description)）")
             }
 
-            // 2. 本机原来的账号存为其他账号。
-            let url = CodexAuth.authFileURL()
+            // 2. 本机(或那个 Codex 目录)原来的账号存为其他账号。
+            let url = home.map { URL(fileURLWithPath: $0).appendingPathComponent("auth.json") } ?? CodexAuth.authFileURL()
             let currentData = try? Data(contentsOf: url)
             let currentRoot = CLIAccountSwitch.readJSON(at: url)
             var savedOldId: String?
@@ -618,13 +626,26 @@ final class AppState {
                     self.updateImportedCodexMetadata(id: parsed.id) {
                         $0.showInMenuBar = target.showInMenuBar
                         $0.showInFloating = target.showInFloating
+                        // 原来在那个目录里时是「本机 · 目录名」,切走后变成存了副本的其他账号
+                        $0.homePath = nil
                     }
                     savedOldId = parsed.id
                 }
             }
 
             // 3. 写入 CLI 的 auth.json;目标账号成为本机账号，从其他账号里移除。
-            try CLIAccountSwitch.writeCodexAuth(base: currentRoot, tokens: tokens, accountId: target.chatgptAccountId)
+            try CLIAccountSwitch.writeCodexAuth(base: currentRoot, tokens: tokens, accountId: target.chatgptAccountId, to: url)
+            if let home {
+                // 切进其他 Codex 目录：目标账号变成「Codex · 目录名」(不存副本),额度沿用它自己的
+                ImportedCodexStore.deleteTokens(accountId: target.id)
+                self.updateImportedCodexMetadata(id: target.id) { $0.homePath = home }
+                self.syncLinkedCodexHomes()
+                // 两个账号的额度都还记在各自 id 下(原来在目录里的那个 id 没变),只要立即刷新一下目标账号
+                if let linked = self.importedCodexAccounts.first(where: { $0.id == target.id }) {
+                    await self.loadImportedCodexQuota(account: linked, reason: .userInitiated)
+                }
+                return
+            }
             let seed = self.importedCodexQuotas[target.id]
             let oldSnapshot = self.codexQuota
             self.removeImportedCodexAccount(id: target.id)
@@ -1395,8 +1416,19 @@ final class AppState {
         reloadImportedCodexAccounts()
     }
 
-    /// 删除:同步清 Keychain、元数据、运行时状态与缓存。
+    /// 删除:同步清 Keychain、元数据、运行时状态与缓存。其他 Codex 目录里的账号：这个目录以后不再统计、不再列出
+    /// (手动添加的从列表去掉，自动找到的记进忽略),目录本身不动。
     func removeImportedCodexAccount(id: String) {
+        if let home = importedCodexAccounts.first(where: { $0.id == id })?.homePath {
+            let settings = SettingsStore.shared
+            let same = { (a: String) in URL(fileURLWithPath: a).standardizedFileURL.path.lowercased() == URL(fileURLWithPath: home).standardizedFileURL.path.lowercased() }
+            if settings.extraCodexDirs.contains(where: same) {
+                settings.extraCodexDirs.removeAll(where: same)
+            } else if !settings.ignoredCodexHomes.contains(where: same) {
+                settings.ignoredCodexHomes.append(home)
+            }
+            codexHomeDirs.removeAll { same($0.path) }
+        }
         ImportedCodexStore.deleteTokens(accountId: id)
         let list = ImportedCodexStore.loadAll().filter { $0.id != id }
         do { try ImportedCodexStore.saveAll(list) } catch {
@@ -1450,9 +1482,24 @@ final class AppState {
         guard beginImportedCodexRefresh(id: account.id, reason: reason) else { return }
         defer { importedCodexRefreshStates[account.id]?.inFlight = false }
 
-        guard let tokens = ImportedCodexStore.loadTokens(accountId: account.id) else {
-            markImportedCodexFailure(id: account.id, message: "missing saved tokens")
-            return
+        // 其他 Codex 目录里的账号读写那个目录的 auth.json(和那个 Codex 共用),其余读 yybar 存的副本
+        let tokens: ImportedCodexTokens
+        let writeBack: CodexTokenRefresher.WriteBack
+        if let home = account.homePath {
+            let url = URL(fileURLWithPath: home).appendingPathComponent("auth.json")
+            guard let local = try? CodexAuth.load(url: url), let access = local.accessToken, !access.isEmpty else {
+                markImportedCodexFailure(id: account.id, message: "missing auth.json in \(home)")
+                return
+            }
+            tokens = ImportedCodexTokens(accessToken: access, refreshToken: local.refreshToken, idToken: local.idToken)
+            writeBack = .authFile(url)
+        } else {
+            guard let stored = ImportedCodexStore.loadTokens(accountId: account.id) else {
+                markImportedCodexFailure(id: account.id, message: "missing saved tokens")
+                return
+            }
+            tokens = stored
+            writeBack = .importedAccount(id: account.id)
         }
         // id_token 续期后付费周期结束日可能更新，同步到元数据(用于显示续费日)。
         if let until = ImportedCodexPaste.subscriptionActiveUntil(idToken: tokens.idToken), until != account.subscriptionActiveUntil {
@@ -1461,7 +1508,7 @@ final class AppState {
         let refreshed = await CodexTokenRefresher.ensureFreshAccessToken(
             currentAccessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
-            writeBack: .importedAccount(id: account.id)
+            writeBack: writeBack
         )
         let activeToken: String
         switch refreshed {
@@ -1714,6 +1761,47 @@ final class AppState {
             self.codexAccount = nil
             self.codexError = "\(error)"
         }
+        syncLinkedCodexHomes()
+    }
+
+    /// 其他 Codex 目录(CodexAuth.extraHomes)里登录着的账号，作为「Codex · 目录名」本机账号列出(ImportedCodexAccount.homePath):
+    /// 目录里换了账号就换成新的，目录没了或被移除就去掉；以前作为其他账号导入过的同一个账号并进来(沿用别名和开关，删掉存的副本)。
+    /// 和主目录是同一个账号的照旧不单独列(otherCodexAccounts)。重读本机 Codex 登录(loadCodex)后调用。
+    func syncLinkedCodexHomes() {
+        let settings = SettingsStore.shared
+        let homes = CodexAuth.extraHomes(manual: settings.extraCodexDirs, ignored: settings.ignoredCodexHomes)
+        let dirs = homes.map { CodexHomeDir(path: $0.url.path, auto: $0.auto) }
+        if dirs != codexHomeDirs { codexHomeDirs = dirs }
+        var found: [(path: String, parsed: ImportedCodexPaste.Parsed)] = []
+        for home in homes {
+            guard let text = try? String(contentsOf: home.url.appendingPathComponent("auth.json"), encoding: .utf8),
+                  case .success(let parsed) = ImportedCodexPaste.parse(text) else { continue }
+            found.append((home.url.path, parsed))
+        }
+        let before = ImportedCodexStore.loadAll()
+        var list = before.filter { account in
+            guard let home = account.homePath else { return true }
+            return found.contains { $0.path == home && $0.parsed.id == account.id }
+        }
+        for (path, parsed) in found {
+            if let idx = list.firstIndex(where: { $0.id == parsed.id }) {
+                if list[idx].homePath == nil { ImportedCodexStore.deleteTokens(accountId: parsed.id) }
+                list[idx].homePath = path
+                list[idx].email = parsed.email ?? list[idx].email
+                list[idx].planType = parsed.planType ?? list[idx].planType
+                list[idx].subscriptionActiveUntil = parsed.subscriptionActiveUntil ?? list[idx].subscriptionActiveUntil
+            } else {
+                list.append(ImportedCodexAccount(id: parsed.id, alias: "", email: parsed.email, planType: parsed.planType,
+                                                 visibleInPopover: true, addedAt: Date(),
+                                                 subscriptionActiveUntil: parsed.subscriptionActiveUntil, homePath: path))
+            }
+        }
+        guard list != before else { return }
+        do { try ImportedCodexStore.saveAll(list) } catch {
+            print("[imported-codex] sync codex homes failed: \(error)")
+            return
+        }
+        reloadImportedCodexAccounts()
     }
 
     /// 比较 accountId 优先,缺失时回退到 email。仅当能确认"前后是不同账号"

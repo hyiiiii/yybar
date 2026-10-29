@@ -516,8 +516,14 @@ fn snap_and_persist(app: &AppHandle) {
                 slide_floating(app, pos.x, to, y, None);
             }
             None => {
-                // 拖离了屏幕边：就地展开（前端淡入，fit_floating 按内容量尺寸）
-                save_floating(app, (pos.x, pos.y), None);
+                // 拖离了屏幕边：就地展开。先摆成上次展开的尺寸（再由 fit_floating 按内容微调），整块留在屏幕里：
+                // 从左边拉出来的往右长，从右边拉出来的往左长（以前一律保持右边不动，从左边拉出来的会伸出屏幕、也不再收进去）
+                let full = app.state::<WindowState>().floating_expanded_size.lock().unwrap().unwrap_or(size);
+                let x = if docked == Some(DockEdge::Left) { pos.x } else { pos.x + width - full.width as i32 };
+                let x = x.clamp(left, (work_right - full.width as i32).max(left));
+                let y = pos.y.clamp(top, (top + work.size.height as i32 - full.height as i32).max(top));
+                set_frame(&w, x, y, full.width, full.height);
+                save_floating(app, (x, y), None);
                 crate::app_state::publish(app);
             }
         }
@@ -680,7 +686,11 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let x = match (dock, work) {
         (Some(DockEdge::Left), Some(a)) => a.position.x,
         (Some(DockEdge::Right), Some(a)) => a.position.x + a.size.width as i32 - nw as i32,
-        (None, Some(a)) if pos.x <= a.position.x => pos.x,
+        // 展开时整块留在屏幕里（贴着左边就保持左边不动，否则保持右边不动）
+        (None, Some(a)) => {
+            let x = if pos.x <= a.position.x { pos.x } else { right - nw as i32 };
+            x.clamp(a.position.x, (a.position.x + a.size.width as i32 - nw as i32).max(a.position.x))
+        }
         _ => right - nw as i32,
     };
     set_frame(&w, x, pos.y, nw, nh);

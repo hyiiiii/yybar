@@ -13,6 +13,7 @@ pub mod credentials;
 pub mod l10n;
 pub mod models;
 pub mod paths;
+pub mod proxy;
 pub mod quota;
 pub mod storage;
 pub mod usage;

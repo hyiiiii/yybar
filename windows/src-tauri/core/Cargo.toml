@@ -26,6 +26,8 @@ libloading = "0.8"
 [target.'cfg(windows)'.dependencies]
 # 读注册表里的用户 / 系统 PATH（找 CLI 用）
 winreg = "0.52"
+# 系统设置了代理脚本（PAC）时按脚本选代理（proxy.rs）
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Networking_WinHttp"] }
 
 [dev-dependencies]
 tempfile = "3"
