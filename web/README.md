@@ -56,7 +56,7 @@ npm test && npm run typecheck
 
 `GET /api/v1/whoami` → `{ "user": { "login", "name", "avatarUrl" } }`，用来确认令牌有效，App 拿头像显示在左下角。
 
-`GET /api/v1/usage/days` → `{ "days": ["2026-10-20", …], "uploads": [{ "day": "2026-10-20", "app": "claude" }, …] }`：已经上传过的日期，和每一天哪几个服务传过；App 连上后用 `uploads` 补本地的「已上传」标记（旧版 App 只认 `days`）。
+`GET /api/v1/usage/days` → `{ "days": ["2026-10-20", …], "uploads": [{ "day": "2026-10-20", "app": "claude", "total": 123456, "costMicro": 4560000 }, …] }`：已经上传过的日期，和每一天哪几个服务传过、传了多少（`total` 是 token 总数，Gemini 是回答次数；`costMicro` 是按服务端价格算的花费）；App 启动、连上、每次上传前用 `uploads` 补本地的「已上传」标记和量，本机某天的量比 `total` 多就再传（旧版 App 只认 `days`）。
 
 `POST /api/v1/usage`
 
@@ -77,18 +77,19 @@ npm test && npm run typecheck
 
 - 字段与 App 里的 `UsageBucket` 一致；`day` 是用户本地日期，`costUSD` 用十进制字符串。
 - **花费由服务端算**：App 里可以自己改模型价格，所以不用 App 报的 `costUSD`，而是按服务端的价格表 `model_prices`（迁移 `0012_model_prices.sql`，初始值和 App 内置的官方价一致；美元 / 百万 token，token 数 × 单价正好是微美元）和 token 数现算，存进 `daily_usage.cost_micro`；App 报的另存在 `client_cost_micro`，只作对照。查价前把模型名归一化（小写，去掉 `openai/`、`xai/` 前缀、`@` 版本和日期后缀，`src/shared/pricing.ts`），先找完全一样的，再找最长的 `*` 前缀。Grok 那一行是 `grok-*`、`billed = 1`：App 读的是 xAI 账单里的实际扣费，收它但不超过按 Grok 4 公开价（$3 / $15 / 缓存 $0.75）算的数。表里没有的模型、Grok Bot（只有合计 token）、Gemini（只有回答次数）花费是 0。迁移时已经按这张表重算了以前上传的花费（OpenAI 超过 272K 上下文的阶梯价、claude.ai 云端用量的接口金额都按表价算，总共少了约 $28）。以后改价直接改这张表；`GET /api/prices` 返回整张表。`app` 是 `codex / claude / grok / grokBot / gemini / agy` 之一（和 App 的 `UsageApp` 一致）。Gemini 没有 token 和花费，只传 `answers`（那天的回答次数），不换筹码；其他字段缺省按 0。
-- 每个 `day` 是那天的完整汇总，**每一天的每个服务只收第一次**：收下后把 (日期, 服务) 记进 `usage_uploads`（迁移 `0007_usage_uploads.sql`，`0009_usage_apps.sql` 改成按服务记，以前标过的日子当作 Codex / Claude / Grok 都传过了），以后再传同一天同一个服务就跳过、不改也不加，所以重复上传、换台 Mac 上传都不会重复算筹码；App 以后新支持的服务，已经传过的日子还能补上。写用量和打标记在同一个事务里，用量只在这个服务这一天还没标记时写入。返回 `{ "ok": true, "accepted": [这次有新服务收下的日期], "skipped": [所有服务都传过、整天跳过的日期] }`。
+- 每个 `day` 是那天的完整汇总，**每一天的每个服务只记一份，量变多了才换**：收下后把 (日期, 服务) 和这次的量（`total`：token 总数，Gemini 是回答次数）记进 `usage_uploads`（迁移 `0007_usage_uploads.sql`，`0009_usage_apps.sql` 改成按服务记，以前标过的日子当作 Codex / Claude / Grok 都传过了；`0015_upload_totals.sql` 加 `total`，以前的按已存的用量补上）。以后再传同一天同一个服务：量比记下的多（比如 App 新加了一个 Codex 目录，找到了另一个账号那天的会话）就整份换成新的、筹码跟着重算；一样多或更少就跳过、不改也不加。所以重复上传、换台电脑上传都不会叠加筹码（几台电脑各有一部分时取量最多的那份）；App 以后新支持的服务，已经传过的日子还能补上。删旧的、写新的、改标记在同一个事务里，条件都按标记里记的量判断，并发的两次上传不会叠加，量少的不会盖掉量多的。返回 `{ "ok": true, "accepted": [这次有新内容收下或换掉的日期], "skipped": [所有服务都没变、整天跳过的日期] }`。
 - App 只传今天以前（本地日期）、已经过完的天；服务端只收不晚于 UTC 今天的日期（任何时区的「本地昨天」都不晚于 UTC 今天）。
 - 限制：一次最多 120 天、每天 300 条；日期不早于 2023-01-01；单日总花费（App 报的或按价格表算的）超过 $5000 整个请求拒收（422）。
 
 `PUT /api/v1/accounts`：这台设备上各服务账号的订阅，个人主页 @ 后面那一排用（2026-10-28 起）。
 
 ```json
-{ "accounts": [ { "app": "codex", "account": "b3a1bda91f071c46", "plan": "pro" }, { "app": "gemini", "account": "…", "plan": "Google AI Pro" } ] }
+{ "device": "0f8e2a4c-1b3d-4e5f-8a9b-0c1d2e3f4a5b", "accounts": [ { "app": "codex", "account": "b3a1bda91f071c46", "plan": "pro" }, { "app": "gemini", "account": "…", "plan": "Google AI Pro" } ] }
 ```
 
 - 一个账号一条。`account` 是 App 端算的「`yybar:<服务>:<账号（小写邮箱等）>`」SHA-256 前 16 位十六进制，不传邮箱；Mac 和 Windows 算法一样，同一个账号在几台设备上传，网站认得出是同一个。`plan` 原样传 App 读到的套餐名（≤ 40 字，不收控制字符和尖括号）。Gemini App 和 Antigravity 是同一份 Google 订阅，App 都记成 `gemini`。
-- 存在 `user_accounts`（迁移 `0013_user_accounts.sql`）：每个上传令牌（一台设备）一份，每次整份替换。显示时几台设备按（服务, 账号）去重、同一账号取最近一次传的套餐，再按（服务, 套餐）计数；撤销了的令牌、90 天没再传的设备不算（`src/worker/accounts.ts`）。
+- `device` 是这台电脑固定的 UUID（Mac 存在设置 `yybar.settings.webDevice`，Windows 存在 `%APPDATA%\yybar\device-id`，第一次传订阅时生成）。
+- 存在 `user_accounts`（迁移 `0013_user_accounts.sql`，`0014_account_devices.sql` 加 `device`）：每台设备一份，每次整份替换——带 `device` 时换掉这台设备上次传的，不管当时用的哪个上传令牌（重新连接网站会拿到新令牌，以前按令牌替换，旧令牌没撤销的话它传过的旧订阅一直留在主页上），并顺手清掉旧版 App 不带 `device` 传的行；不带 `device`（旧版 App）时按令牌替换。显示时几台设备按（服务, 账号）去重、同一账号取最近一次传的套餐，再按（服务, 套餐）计数；撤销了的令牌、90 天没再传的设备不算（`src/worker/accounts.ts`）。
 - 订阅随用量一起上传：App 每次上传（一键 / 自动，不管有没有新的天）都先把当前的订阅整份 PUT 上来，没传成功不影响用量，下次上传再传。一次最多 50 个账号；返回 `{ "ok": true, "count": n }`。
 
 ## 排行榜
@@ -99,7 +100,7 @@ npm test && npm run typecheck
 
 ## 个人主页
 
-- @用户名后面一排订阅小牌子（`PlanChips`，`src/client/components.tsx`）：服务的标 + 套餐名，同一服务同一套餐几个账号写「×n」，按 Codex → Claude → Grok → Grok Bot → Gemini 排，同一服务里高档在前（Pro Max > Pro > Pro Lite > Plus，Max 20x > Max 5x），免费的排最后。着色和 App 设置里的套餐标签一样：标准档蓝、高档紫（ChatGPT Pro 各档、Claude Max、SuperGrok Heavy、Google AI Ultra）、团队 / 企业青、免费灰。套餐名首字母大写；ChatGPT 的代号换成名字（`prolite` → Pro Lite、`promax` → Pro Max），Claude 的 `max_20x` → Max 20x，Google 的去掉开头的「Google」（`Google AI Pro` → `AI Pro`），悬停看服务全名和账号数。窄屏时整排换到 @用户名下一行。数据见上面 `PUT /api/v1/accounts`，`GET /api/me`、`GET /api/users/<login>` 的 `user.plans`（`[{ app, plan, count }]`）。
+- @用户名后面一排订阅小牌子（`PlanChips`，`src/client/components.tsx`）：服务的标 + 套餐名，同一服务同一套餐几个账号写「×n」，按 Codex → Claude → Grok → Grok Bot → Gemini 排，同一服务里高档在前（Pro Max > Pro > Pro Lite > Plus，Max 20x > Max 5x），免费的排最后。着色和 App 设置里的套餐标签一样：标准档蓝、高档紫（ChatGPT Pro 各档、Claude Max、SuperGrok Heavy、Google AI Ultra）、团队 / 企业青、免费灰。套餐名首字母大写；ChatGPT 的代号换成名字（`prolite` → Pro Lite、`pro` → Pro 20x、`promax` → Pro Max），Claude 的 `max_20x` → Max 20x，Google 的去掉开头的「Google」（`Google AI Pro` → `AI Pro`），悬停看服务全名和账号数。窄屏时整排换到 @用户名下一行。数据见上面 `PUT /api/v1/accounts`，`GET /api/me`、`GET /api/users/<login>` 的 `user.plans`（`[{ app, plan, count }]`）。
 - 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片（「总花费」旁边一个小问号，点开是服务端的模型价格表，按厂商分组，`src/client/Prices.tsx`），下面照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
 - 最上面一排服务筛选：全部 / Codex / Claude / Grok / Grok Bot / Gemini / Antigravity（只列有用量的），按钮上是各家的标（Codex、Claude、Grok、Gemini 和牌面花色同一套，染服务识别色；Grok Bot、Antigravity 用 App 里的标）；下面三块都跟着筛选走。
 - 拆开 / 合并和 App 里一样：Grok + Grok Bot、Gemini + Antigravity 两两一组，默认合并成一个按钮（两个标并排），后面跟一个只有图标的小按钮（分叉 / 汇合箭头），两组各拆各的；每次打开都是合并的，不记。切换时留下的按钮滑到新位置、新出来的放大淡入、小图标转半圈换过去，每日用量里同组的两段渐变成同一个颜色；选着的服务跟着换过去（拆开选前一家，合并选整组）。一组里只用过一家就只显示那一家，不带小按钮。
@@ -134,8 +135,8 @@ npm test && npm run typecheck
 ## 成就
 
 - 达成后不自动发钱：顶栏奖杯右上角出一个红色数字（`GET /api/me` 的 `achievementsReady`，解锁了还没领的个数），去成就页自己点「领取」（卡片金边一圈圈往外亮），两个以上时上面有「全部领取」。奖励第一次登录 $500，其他都是 $100。领了才能把徽章「戴上」挂在名字后面（牌桌、排行榜、个人页），最多同时戴 3 个。目录在 `src/shared/achievements.ts`。
-- 目前 14 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 token、千刀俱乐部（累计花费 $1,000）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
-- 前面 10 个在打开网站（`/api/me`）和成就页时按用量、流水自动检查；大赢家、葫芦、四条、同花顺由牌桌在一手结束时记下。解锁记在 `user_achievements`（`claimed_at` 为空 = 还没领，迁移 `0010_achievement_claims.sql`；以前解锁的当时已经自动发过奖励，都当作领过），领取时奖励记进 `points_ledger`（`reason = 'achievement'`，`ref = ach:<用户>:<成就>`），只在这一行还没领时写、ref 也去重，连点不会重复发。戴着的徽章在 `users.badges`（JSON 数组，迁移 `0005_achievements.sql`）。
+- 目前 20 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 / 百亿 token、千刀 / 万刀俱乐部（累计花费 $1,000 / $10,000）、Claude Pro、Claude Max、GPT Plus、GPT Pro（App 传上来的订阅里有这一档，见下面 `PUT /api/v1/accounts`；Claude Max 5x / 20x、GPT Pro Lite / Pro / Pro Max 都算，免费和团队 / 企业版不算；徽章 Claude 橙、GPT 黑）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
+- 除了牌局的 4 个，都在打开网站（`/api/me`）和成就页时按用量、流水、订阅自动检查；大赢家、葫芦、四条、同花顺由牌桌在一手结束时记下。解锁记在 `user_achievements`（`claimed_at` 为空 = 还没领，迁移 `0010_achievement_claims.sql`；以前解锁的当时已经自动发过奖励，都当作领过），领取时奖励记进 `points_ledger`（`reason = 'achievement'`，`ref = ach:<用户>:<成就>`），只在这一行还没领时写、ref 也去重，连点不会重复发。戴着的徽章在 `users.badges`（JSON 数组，迁移 `0005_achievements.sql`）。
 - 接口：`GET /api/achievements`（成就、进度、每个的 `unlockedAt` / `claimedAt`、正在戴的徽章）、`POST /api/achievements/claim {"id": …}`（不带 id 就把能领的全领了，回 `amount`）、`POST /api/achievements/wear {"id": …, "on": true | false}`。
 
 ## 德州统计

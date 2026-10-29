@@ -15,7 +15,7 @@ function progressOf(a: Row, p: Progress | null): number | null {
   if (!a.target || !p) return null;
   if (a.id.startsWith("streak_")) return p.streak;
   if (a.id.startsWith("tokens_")) return p.tokens;
-  if (a.id === "spend_1k") return p.spend;
+  if (a.id.startsWith("spend_")) return p.spend;
   return null;
 }
 
@@ -68,7 +68,7 @@ export function AchievementsPage() {
   const unlocked = rows.filter((a) => a.unlockedAt).length;
   const ready = rows.filter((a) => a.unlockedAt && !a.claimedAt);
   const fmtProgress = (a: Row, n: number) =>
-    a.id.startsWith("tokens_") ? `${fmtTokens(n)} / ${fmtTokens(a.target!)}` : a.id === "spend_1k" ? `$${fmtInt(n)} / $${fmtInt(a.target!)}` : t(`${n} / ${a.target} 天`, `${n} / ${a.target} days`);
+    a.id.startsWith("tokens_") ? `${fmtTokens(n)} / ${fmtTokens(a.target!)}` : a.id.startsWith("spend_") ? `$${fmtInt(n)} / $${fmtInt(a.target!)}` : t(`${n} / ${a.target} 天`, `${n} / ${a.target} days`);
 
   return (
     <section className="section">

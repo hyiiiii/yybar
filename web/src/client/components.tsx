@@ -330,7 +330,7 @@ export function planTier(app: App, plan: string): "free" | "standard" | "premium
 }
 
 /** ChatGPT 的套餐代号（Codex 登录里的 chatgpt_plan_type）：Pro 分 Lite / 标准 / Max 三档 */
-const CODEX_PLAN_NAMES: Record<string, string> = { prolite: "Pro Lite", promax: "Pro Max", go: "Go", self_serve_business_prolite: "Business Pro Lite" };
+const CODEX_PLAN_NAMES: Record<string, string> = { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max", go: "Go", self_serve_business_prolite: "Business Pro Lite" };
 
 /** 套餐名：首字母大写；ChatGPT 的代号换成名字（prolite → Pro Lite）；Claude Max 带档位（max_20x → Max 20x）；
  *  Google 的去掉前面的「Google」（前面已经有 Gemini 的标） */

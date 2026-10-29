@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, useTicker } from "../../shared/api";
-import { Checkbox, Icon, Segmented, Select, ServiceTile, Toggle } from "../../shared/design";
+import { Checkbox, Icon, PlanTag, Segmented, Select, ServiceTile, Toggle } from "../../shared/design";
 import { relativeShort, timeString } from "../../shared/format";
 import { isChinese, tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
@@ -157,6 +157,20 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               desc={tr("A small always-on-top window. Pick its services on the Services page.", "固定在桌面上的小窗口，显示哪些服务在「服务」页勾选")}
             >
               <Toggle checked={s.floatingEnabled} onChange={(v) => set({ floatingEnabled: v })} />
+            </PrefsRow>
+            <div className="divider" />
+            <PrefsRow
+              label={tr("Style", "样式")}
+              desc={tr("Compact: one bar per account. Detailed: like the popup, with the plan and each limit's reset time.", "简略：每个账号一条进度条；详细：和弹出窗口一样，带套餐和每个额度的重置时间")}
+            >
+              <Select
+                options={[
+                  { value: "compact", label: tr("Compact", "简略") },
+                  { value: "detailed", label: tr("Detailed", "详细") },
+                ]}
+                value={s.floatingStyle}
+                onChange={(v) => set({ floatingStyle: v })}
+              />
             </PrefsRow>
           </PrefsGroup>
         </Section>
@@ -617,23 +631,6 @@ function SwitchNoticeView({ notice }: { notice: SwitchNotice | null }) {
       </span>
       <span>{shown.text}</span>
     </div>
-  );
-}
-
-/** 订阅等级标签：免费灰、标准档蓝、高档紫、团队 / 企业青。 */
-function PlanTag({ plan, app }: { plan: string; app: UsageApp }) {
-  const p = plan.toLowerCase();
-  let tier: "free" | "standard" | "premium" | "team";
-  if (p.includes("free") || p === "guest") tier = "free";
-  else if (["team", "business", "enterprise", "edu"].some((t) => p.includes(t))) tier = "team";
-  else if (app === "codex") tier = p.includes("pro") ? "premium" : "standard";
-  else if (app === "claude") tier = p.includes("max") ? "premium" : "standard";
-  else tier = p.includes("heavy") ? "premium" : "standard";
-  const color = { free: "var(--text-secondary)", standard: "var(--sys-blue)", premium: "var(--sys-purple)", team: "var(--sys-teal)" }[tier];
-  return (
-    <span className="pill-tag" style={{ color, background: tier === "free" ? "var(--fill)" : `color-mix(in srgb, ${color} 13%, transparent)` }}>
-      {plan[0].toUpperCase() + plan.slice(1)}
-    </span>
   );
 }
 

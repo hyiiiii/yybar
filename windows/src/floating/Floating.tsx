@@ -1,14 +1,15 @@
-// 桌面悬浮窗（对应 Mac `FloatingContentView`）：每行 18px tile + 4px 进度条 + 剩余百分比（状态色）。
-// Grok 显示周期额度，其余显示 5H。勾了「悬浮窗」的其他账号排在同服务本机账号后面；同一服务有几行时每行加账号名。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附。
+// 桌面悬浮窗（对应 Mac `FloatingContentView`）。简略（默认）：每行 18px tile + 4px 进度条 + 剩余百分比（状态色），
+// Grok 显示周期额度，其余显示 5H，同一服务有几行时每行加账号名；详细：和弹出窗口的账号块一样（QuotaEntryView：名字、套餐、
+// 5H / WK 各一条带重置倒计时）。勾了「悬浮窗」的其他账号排在同服务本机账号后面。置顶、不抢焦点；按住任意处拖动，拖到屏幕边 20 像素内自动吸附。
 // 拖出屏幕左 / 右边缘时收起成贴边窄条（像微信通话小窗），每行只剩小图标和剩余百分比；单击窄条展开，拖动窄条沿边上下移动（贴边逻辑在 windows.rs）。
 // 按下、拖动、松手的处理和 Mac 版一样（FloatingMouseView）：见 usePress。
 
 import { useLayoutEffect, useRef, type PointerEvent } from "react";
-import { api, useAppState } from "../shared/api";
-import { ProgressBar, ServiceTile, statusColor } from "../shared/design";
+import { api, useAppState, useTicker } from "../shared/api";
+import { ProgressBar, QuotaEntryView, quotaEntries, ServiceTile, statusColor } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
-import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type UsageApp } from "../shared/types";
+import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type StateSnapshot, type UsageApp } from "../shared/types";
 
 /** 悬浮窗（展开的、收起的窄条都一样）上的鼠标：按下、松手报给后台。按着时后台每帧跟一次光标，超过 3 像素才让窗口
  *  跟着鼠标走；松手时按有没有拖动过决定单击展开、吸附、收起或贴回边（windows.rs floating_press）。
@@ -48,8 +49,8 @@ export function Floating() {
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-    // 收起 / 展开时根节点换了，要重新观察尺寸
-  }, [state != null, state?.settings.floatingDock ?? null]);
+    // 收起 / 展开、换样式时根节点换了，要重新观察尺寸
+  }, [state != null, state?.settings.floatingDock ?? null, state?.settings.floatingStyle]);
 
   type Row = { key: string; app: UsageApp; name: string | null; quota: QuotaSnapshot | null };
   const rows: Row[] = [];
@@ -92,6 +93,14 @@ export function Floating() {
     );
   }
 
+  if (state?.settings.floatingStyle === "detailed") {
+    return (
+      <div ref={ref} key="open-detailed" className="hud detailed" {...press} title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}>
+        <DetailedRows state={state} />
+      </div>
+    );
+  }
+
   return (
     <div
       ref={ref}
@@ -117,5 +126,19 @@ export function Floating() {
       })}
       {state && rows.length === 0 && <span className="secondary" style={{ fontSize: 11 }}>{tr("Nothing to show", "没有要显示的账号")}</span>}
     </div>
+  );
+}
+
+/** 详细：和弹出窗口一样宽（320 去掉两边 16），每个账号一块。倒计时每秒走，所以单独一个组件按秒重画。 */
+function DetailedRows({ state }: { state: StateSnapshot }) {
+  const now = useTicker(1000);
+  const entries = quotaEntries(state, "floating");
+  if (entries.length === 0) return <span className="secondary" style={{ fontSize: 11 }}>{tr("Nothing to show", "没有要显示的账号")}</span>;
+  return (
+    <>
+      {entries.map((e) => (
+        <QuotaEntryView key={e.key} entry={e} mode={state.settings.resetTimeDisplay} now={now} />
+      ))}
+    </>
   );
 }

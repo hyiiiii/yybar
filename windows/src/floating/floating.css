@@ -43,6 +43,13 @@ body:has(.hud.dock-left) {
   }
 }
 
+/* 详细：和弹出窗口的账号列表一样（288 宽，块之间 12） */
+.hud.detailed {
+  width: 316px;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
 .hud-row {
   display: flex;
   align-items: center;

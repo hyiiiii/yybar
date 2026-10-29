@@ -1,8 +1,8 @@
-// 个人主页 @ 后面的订阅：每台设备整份替换，多台设备按账号摘要去重，撤销的令牌和 90 天没传的设备不算。
+// 个人主页 @ 后面的订阅：每台设备（设备 id，旧版 App 按令牌）整份替换，多台设备按账号摘要去重，撤销的令牌和 90 天没传的设备不算。
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import { fakeD1, migrate } from "./d1";
-import { AccountsError, parseAccounts, plansOf, saveAccounts } from "../src/worker/accounts";
+import { AccountsError, parseAccounts, parseDevice, plansOf, saveAccounts } from "../src/worker/accounts";
 
 const acct = (app: string, account: string, plan: string) => ({ app, account, plan });
 
@@ -64,5 +64,29 @@ describe("account plans", () => {
     // 90 天以后两台都没再传：一个都不算；89 天时还算
     expect(await plansOf(d1, 1, new Date("2027-01-24T12:00:00Z"))).toEqual([{ app: "codex", plan: "plus", count: 1 }]);
     expect(await plansOf(d1, 1, new Date("2027-02-01T00:00:00Z"))).toEqual([]);
+  });
+
+  it("replaces by device id across reconnects and clears rows from old app versions", async () => {
+    const dev = "0f8e2a4c-1b3d-4e5f-8a9b-0c1d2e3f4a5b";
+    expect(parseDevice({ device: dev })).toBe(dev);
+    expect(parseDevice({})).toBeNull();
+    expect(() => parseDevice({ device: "Mac Studio" })).toThrow(AccountsError);
+
+    // 旧版 App 用令牌 10 传过 Claude Pro；后来重新连接网站拿了令牌 11（10 没撤销），新版带设备 id 传
+    await saveAccounts(d1, 1, 10, parseAccounts({ accounts: [acct("claude", "b1b1b1b1", "pro"), acct("codex", "c1c1c1c1", "plus")] }));
+    await saveAccounts(d1, 1, 11, parseAccounts({ accounts: [acct("codex", "c1c1c1c1", "pro")] }), dev);
+    expect(await plansOf(d1, 1)).toEqual([{ app: "codex", plan: "pro", count: 1 }]);
+
+    // 同一台设备再重新连接（令牌 12）：上次的整份换掉，不留旧令牌的行
+    sqlite.exec("INSERT INTO api_tokens (id, user_id, token_hash, label) VALUES (12, 1, 'h12', 'mac')");
+    await saveAccounts(d1, 1, 12, parseAccounts({ accounts: [acct("codex", "c2c2c2c2", "plus")] }), dev);
+    expect(await plansOf(d1, 1)).toEqual([{ app: "codex", plan: "plus", count: 1 }]);
+
+    // 另一台设备各传各的，不互相覆盖
+    await saveAccounts(d1, 1, 11, parseAccounts({ accounts: [acct("claude", "b2b2b2b2", "max_20x")] }), "11111111-2222-4333-8444-555555555555");
+    expect(await plansOf(d1, 1)).toEqual([
+      { app: "codex", plan: "plus", count: 1 },
+      { app: "claude", plan: "max_20x", count: 1 },
+    ]);
   });
 });

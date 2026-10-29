@@ -105,6 +105,12 @@ enum FloatingDockEdge: String {
     case right
 }
 
+/// 悬浮窗样式：简略 = 每行一个进度条和剩余百分比;详细 = 和菜单栏浮窗一样(名字、套餐、5H / WK 各一条带重置倒计时)。
+enum FloatingStyle: String {
+    case compact
+    case detailed
+}
+
 enum MenuBarWindowChoice: String, CaseIterable, Identifiable {
     case fiveHour
     case weekly
@@ -163,6 +169,7 @@ final class SettingsStore {
     var floatingShowGrokBot: Bool { didSet { defaults.set(floatingShowGrokBot, forKey: Keys.floatingShowGrokBot) } }
     var floatingShowGemini: Bool { didSet { defaults.set(floatingShowGemini, forKey: Keys.floatingShowGemini) } }
     var floatingShowAgy: Bool { didSet { defaults.set(floatingShowAgy, forKey: Keys.floatingShowAgy) } }
+    var floatingStyle: FloatingStyle { didSet { defaults.set(floatingStyle.rawValue, forKey: Keys.floatingStyle) } }
 
     // 刷新
     var claudeCloudUsageEnabled: Bool { didSet { defaults.set(claudeCloudUsageEnabled, forKey: Keys.claudeCloudUsageEnabled) } }
@@ -224,6 +231,7 @@ final class SettingsStore {
         floatingShowGrokBot = defaults.object(forKey: Keys.floatingShowGrokBot) as? Bool ?? GrokBotQuotaClient.isInstalled
         floatingShowGemini = defaults.object(forKey: Keys.floatingShowGemini) as? Bool ?? true
         floatingShowAgy = defaults.object(forKey: Keys.floatingShowAgy) as? Bool ?? true
+        floatingStyle = FloatingStyle(rawValue: defaults.string(forKey: Keys.floatingStyle) ?? "") ?? .compact
         // 刷新
         let qiRaw = defaults.string(forKey: Keys.quotaInterval) ?? QuotaIntervalChoice.m2.rawValue
         quotaInterval = QuotaIntervalChoice(rawValue: qiRaw) ?? .m2
@@ -399,6 +407,7 @@ final class SettingsStore {
         static let didShowKeychainPrompt = "yybar.settings.didShowKeychainPrompt"
         static let didCompleteOnboarding = "yybar.settings.didCompleteOnboarding"
         static let floatingDockEdge = "yybar.settings.floatingDockEdge"
+        static let floatingStyle = "yybar.settings.floatingStyle"
         static let floatingFrameX = "yybar.settings.floatingFrame.x"
         static let floatingFrameY = "yybar.settings.floatingFrame.y"
         static let floatingFrameW = "yybar.settings.floatingFrame.w"

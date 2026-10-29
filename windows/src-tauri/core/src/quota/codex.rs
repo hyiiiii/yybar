@@ -34,10 +34,30 @@ pub fn parse(root: &Value, now: i64) -> QuotaSnapshot {
         })
     };
     let mut snap = QuotaSnapshot::empty(UsageApp::Codex, now);
-    snap.five_hour = window("primary_window");
-    snap.weekly = window("secondary_window");
+    (snap.five_hour, snap.weekly) = slot(window("primary_window"), window("secondary_window"));
     snap.plan_type = root.get("plan_type").and_then(Value::as_str).map(str::to_string);
     snap
+}
+
+/// 按窗口长度放格子，不按接口里的先后：不到一天的是 5H，一天以上的是长窗口（每周，或免费账号的每月，标签按长度写 WK / MO）。
+/// ChatGPT Pro 现在只有周额度、免费账号只有月额度，它们排在 primary_window，以前都被当成了 5H。没给长度时照先后。
+fn slot(primary: Option<QuotaWindow>, secondary: Option<QuotaWindow>) -> (Option<QuotaWindow>, Option<QuotaWindow>) {
+    let mut five_hour = None;
+    let mut long: Option<QuotaWindow> = None;
+    for (index, window) in [primary, secondary].into_iter().enumerate() {
+        let Some(window) = window else { continue };
+        let is_long = window.window_seconds.map_or(index == 1, |s| s >= 86_400);
+        if is_long {
+            // 两个都是长窗口时（周 + 月），格子里放短的那个
+            if long.as_ref().is_some_and(|cur| cur.window_seconds.unwrap_or(0) <= window.window_seconds.unwrap_or(0)) {
+                continue;
+            }
+            long = Some(window);
+        } else if five_hour.is_none() {
+            five_hour = Some(window);
+        }
+    }
+    (five_hour, long)
 }
 
 #[cfg(test)]
@@ -55,5 +75,25 @@ mod tests {
         assert_eq!(s.five_hour.as_ref().unwrap().remaining_percent(), 42.0);
         assert_eq!(s.weekly.as_ref().unwrap().resets_at, Some(1100));
         assert_eq!(s.plan_type.as_deref(), Some("plus"));
+    }
+
+    #[test]
+    fn weekly_only_and_monthly_go_to_the_long_slot() {
+        // ChatGPT Pro：只有周额度，放在 primary_window
+        let pro = json!({"plan_type": "pro", "rate_limit": {"primary_window": {"used_percent": 30, "limit_window_seconds": 604800}}});
+        let s = parse(&pro, 0);
+        assert!(s.five_hour.is_none());
+        assert_eq!(s.weekly.as_ref().unwrap().window_seconds, Some(604800));
+        // 免费账号：只有月额度
+        let free = json!({"plan_type": "free", "rate_limit": {"primary_window": {"used_percent": 10, "limit_window_seconds": 2592000}}});
+        let s = parse(&free, 0);
+        assert!(s.five_hour.is_none());
+        assert_eq!(s.weekly.as_ref().unwrap().window_seconds, Some(2592000));
+        // 5 小时 + 每周照旧
+        let plus = json!({"rate_limit": {"primary_window": {"used_percent": 1, "limit_window_seconds": 18000},
+            "secondary_window": {"used_percent": 2, "limit_window_seconds": 604800}}});
+        let s = parse(&plus, 0);
+        assert_eq!(s.five_hour.as_ref().unwrap().window_seconds, Some(18000));
+        assert_eq!(s.weekly.as_ref().unwrap().window_seconds, Some(604800));
     }
 }

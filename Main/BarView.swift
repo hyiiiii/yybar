@@ -316,7 +316,7 @@ private struct BarUploadCard: View {
                 }
                 GridRow {
                     label(tr("Auto upload", "自动上传"))
-                    Toggle(tr("Upload every day at 12:00", "每天 12:00 上传"),
+                    Toggle(tr("Upload every day at 0:30", "每天 0:30 上传"),
                            isOn: Binding(get: { account.autoUpload }, set: { account.autoUpload = $0 }))
                         .toggleStyle(.switch)
                         .controlSize(.small)

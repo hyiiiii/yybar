@@ -421,16 +421,18 @@ enum MenuBarBadgeImage {
         ]
     }
 
+    /// 没有 5H 的账号(ChatGPT Pro 只有周额度、免费账号只有月额度)选 5H 时显示长窗口，「都显示」时只写有的那个。
     private static func pctText(_ snap: QuotaSnapshot?, window: MenuBarWindowChoice) -> String {
         switch window {
         case .fiveHour:
-            return pctOrPlaceholder(snap?.fiveHour)
+            return pctOrPlaceholder(snap?.fiveHour ?? snap?.weekly)
         case .weekly:
-            return pctOrPlaceholder(snap?.weekly)
+            return pctOrPlaceholder(snap?.weekly ?? snap?.fiveHour)
         case .both:
-            let a = pctOrPlaceholder(snap?.fiveHour)
-            let b = pctOrPlaceholder(snap?.weekly)
-            return "\(a)/\(b)"
+            guard let five = snap?.fiveHour, let week = snap?.weekly else {
+                return pctOrPlaceholder(snap?.fiveHour ?? snap?.weekly)
+            }
+            return "\(pctOrPlaceholder(five))/\(pctOrPlaceholder(week))"
         }
     }
 

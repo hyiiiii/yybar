@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
-import { AccountsError, parseAccounts, plansOf, saveAccounts } from "./accounts";
+import { AccountsError, parseAccounts, parseDevice, plansOf, saveAccounts } from "./accounts";
 import { achievementRoutes, readyCount, syncAchievements } from "./achievements";
 import { parseBadges } from "../shared/achievements";
 import { ITEMS } from "../shared/cosmetics";
@@ -367,7 +367,7 @@ v1.post("/usage", async (c) => {
   }
 });
 
-/** 各服务账号的套餐（个人主页 @ 后面那一排）：这台设备传的整份替换上次的 */
+/** 各服务账号的套餐（个人主页 @ 后面那一排）：这台设备（device）传的整份替换上次的 */
 v1.put("/accounts", async (c) => {
   let body: unknown;
   try {
@@ -377,7 +377,7 @@ v1.put("/accounts", async (c) => {
   }
   try {
     const rows = parseAccounts(body);
-    await saveAccounts(c.env.DB, c.get("user").id, c.get("tokenId"), rows);
+    await saveAccounts(c.env.DB, c.get("user").id, c.get("tokenId"), rows, parseDevice(body));
     return c.json({ ok: true, count: rows.length });
   } catch (e) {
     if (e instanceof AccountsError) return c.json({ error: e.message }, 422);

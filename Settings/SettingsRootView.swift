@@ -480,6 +480,27 @@ struct SettingsRootView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
             }
+            Divider()
+            PrefsRow(
+                label: "Style",
+                chinese: "样式",
+                desc: "Compact: one bar per account. Detailed: like the menu bar popover, with the plan and each limit's reset time.",
+                chineseDesc: "简略：每个账号一条进度条；详细：和菜单栏浮窗一样，带套餐和每个额度的重置时间"
+            ) {
+                Picker("", selection: Binding(
+                    get: { settings.floatingStyle },
+                    set: { newValue in
+                        settings.floatingStyle = newValue
+                        FloatingPanelController.shared.sync()
+                    }
+                )) {
+                    Text(tr("Compact", "简略")).tag(FloatingStyle.compact)
+                    Text(tr("Detailed", "详细")).tag(FloatingStyle.detailed)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
         }
     }
 
@@ -997,8 +1018,8 @@ struct ServiceMatrixRow: View {
     }
 }
 
-/// 订阅等级标签：按档次着色(免费灰、标准档蓝、高档紫、团队 / 企业青)。
-private struct PlanTag: View {
+/// 订阅等级标签：按档次着色(免费灰、标准档蓝、高档紫、团队 / 企业青)。设置、菜单栏浮窗、悬浮窗共用。
+struct PlanTag: View {
     let plan: String
     /// 服务(logoName):codex / claude / grok,同名档次在不同服务里含义不同(ChatGPT Pro 是最高档，Claude Pro 是标准档)。
     let service: String
@@ -1012,8 +1033,16 @@ private struct PlanTag: View {
         switch service {
         case "codex": return p.contains("pro") ? .premium : .standard
         case "claude": return p.contains("max") ? .premium : .standard
-        default: return p.contains("heavy") ? .premium : .standard
+        default: return p.contains("heavy") || p.contains("ultra") ? .premium : .standard
         }
+    }
+
+    /// 套餐名：首字母大写;ChatGPT 的代号换成名字(prolite → Pro Lite、pro → Pro 20x、promax → Pro Max,和网站一致)。
+    static func displayName(_ plan: String, service: String) -> String {
+        let codex = ["prolite": "Pro Lite", "pro": "Pro 20x", "promax": "Pro Max"]
+        if service == "codex", let named = codex[plan.lowercased()] { return named }
+        let spaced = plan.replacingOccurrences(of: "_", with: " ")
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }
 
     var body: some View {
@@ -1024,7 +1053,7 @@ private struct PlanTag: View {
         case .premium: color = .purple
         case .team: color = .teal
         }
-        return Text(plan.prefix(1).uppercased() + plan.dropFirst())
+        return Text(Self.displayName(plan, service: service))
             .scaledFont(size: 10, weight: tier == .free ? .regular : .medium)
             .foregroundStyle(color)
             .padding(.horizontal, 5)

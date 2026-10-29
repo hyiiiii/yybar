@@ -3,8 +3,10 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { resetAltCompact, resetCompact, nowSecs, relativeShort } from "./format";
 import { tr } from "./l10n";
-import { colorLogo, displayName, monoLogo } from "./services";
-import type { Indicator, QuotaWindow, ResetTimeDisplay, ServiceStatus, UsageApp } from "./types";
+import { shortLabel, windowsFor } from "./quota";
+import { accentVar, colorLogo, displayName, monoLogo } from "./services";
+import { ALL_APPS, floatingShows, localShown, trayShows } from "./types";
+import type { Indicator, QuotaSnapshot, QuotaWindow, RefreshState, ResetTimeDisplay, ServiceStatus, StateSnapshot, UsageApp } from "./types";
 
 // ---------- 状态色 ----------
 
@@ -97,6 +99,31 @@ export function ServiceLogo({ app, size = 14, title }: { app: UsageApp; size?: n
 }
 
 // ---------- 进度条 ----------
+
+/** 套餐名：首字母大写；ChatGPT 的代号换成名字（prolite → Pro Lite、pro → Pro 20x、promax → Pro Max，和网站一致） */
+export function planName(plan: string, app: UsageApp): string {
+  const codex: Record<string, string> = { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max" };
+  const named = app === "codex" ? codex[plan.toLowerCase()] : undefined;
+  return named ?? plan.replace(/_+/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
+/** 订阅等级标签（设置、弹出窗口、悬浮窗共用）：免费灰、标准档蓝、高档紫、团队 / 企业青。
+ *  同名档次在不同服务里不一样：ChatGPT Pro 是最高档，Claude Pro 是标准档、Max 才是高档。 */
+export function PlanTag({ plan, app }: { plan: string; app: UsageApp }) {
+  const p = plan.toLowerCase();
+  let tier: "free" | "standard" | "premium" | "team";
+  if (p.includes("free") || p === "guest") tier = "free";
+  else if (["team", "business", "enterprise", "edu"].some((t) => p.includes(t))) tier = "team";
+  else if (app === "codex") tier = p.includes("pro") ? "premium" : "standard";
+  else if (app === "claude") tier = p.includes("max") ? "premium" : "standard";
+  else tier = p.includes("heavy") || p.includes("ultra") ? "premium" : "standard";
+  const color = { free: "var(--text-secondary)", standard: "var(--sys-blue)", premium: "var(--sys-purple)", team: "var(--sys-teal)" }[tier];
+  return (
+    <span className="pill-tag" style={{ color, background: tier === "free" ? "var(--fill)" : `color-mix(in srgb, ${color} 13%, transparent)` }}>
+      {planName(plan, app)}
+    </span>
+  );
+}
 
 export function ProgressBar({ value, color, height = 5 }: { value: number; color: string; height?: number }) {
   const v = Math.max(0, Math.min(1, value));
@@ -444,6 +471,58 @@ export function Collapsible({ open, children }: { open: boolean; children: React
   return (
     <div className={`collapsible ${open ? "open" : ""}`} aria-hidden={!open}>
       <div className="collapsible-inner">{children}</div>
+    </div>
+  );
+}
+
+// ---------- 账号额度块 ----------
+
+/** 一个账号的额度块（对应 Mac `QuotaEntry`）：弹出窗口和「详细」样式的悬浮窗共用。 */
+export type QuotaEntry = { key: string; app: UsageApp; title: string; plan: string | null; quota: QuotaSnapshot | null; refresh: RefreshState; status: ServiceStatus | null };
+
+/** 要显示的账号：每个服务本机账号在前、其他账号（标题带账号名）在后，按服务顺序。place 为托盘（弹出窗口）或悬浮窗的勾选。 */
+export function quotaEntries(state: StateSnapshot, place: "tray" | "floating"): QuotaEntry[] {
+  const settings = state.settings;
+  const shows = place === "tray" ? trayShows : floatingShows;
+  const entries: QuotaEntry[] = [];
+  for (const app of ALL_APPS) {
+    const s = state.services.find((x) => x.app === app);
+    if (!s) continue;
+    if (shows(settings, app) && localShown(s)) {
+      entries.push({ key: app, app, title: displayName[app], plan: s.plan, quota: s.quota, refresh: s.refresh, status: s.status });
+    }
+    for (const o of state.others) {
+      if (o.app !== app || !o.enabled || !(place === "tray" ? o.showInTray : o.showInFloating)) continue;
+      entries.push({ key: o.id, app, title: `${displayName[app]} · ${o.name}`, plan: o.plan, quota: o.quota, refresh: o.refresh, status: s.status });
+    }
+  }
+  return entries;
+}
+
+/** 图标、名称、套餐、官方状态点，下面 5H / WK 的剩余条和重置倒计时（Antigravity 按池写成「Gemini 5H」）；
+ *  刷新失败时名称旁一个小警告（悬停看原因）。 */
+export function QuotaEntryView({ entry, mode, now }: { entry: QuotaEntry; mode: ResetTimeDisplay; now: number }) {
+  const windows = windowsFor(entry.app, entry.quota);
+  const pools = entry.quota?.pools;
+  return (
+    <div className="quota-entry">
+      <ServiceTile app={entry.app} size={22} logoSize={13} />
+      <div className="quota-entry-body">
+        <div className="quota-entry-head">
+          <span className="quota-entry-title">{entry.title}</span>
+          {entry.plan && <PlanTag plan={entry.plan} app={entry.app} />}
+          {entry.refresh.lastError && (
+            <span className="quota-entry-warning" title={entry.refresh.lastError}>
+              <Icon name="warning" size={11} />
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          <StatusDot status={entry.status} size={6} />
+        </div>
+        {windows.map((w) => (
+          <LimitBarRow key={w.id} label={shortLabel(w, pools)} window={w.window} tint={accentVar[entry.app]} labelWidth={pools ? 92 : 30} mode={mode} now={now} />
+        ))}
+      </div>
     </div>
   );
 }

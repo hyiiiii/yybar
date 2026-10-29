@@ -72,6 +72,8 @@ export type MenuBarWindow = "fiveHour" | "weekly" | "both";
 export type ResetTimeDisplay = "relative" | "absolute";
 export type TextSize = "small" | "standard" | "large" | "extraLarge";
 export type DockEdge = "left" | "right";
+/** 悬浮窗样式：简略（每行一个进度条）/ 详细（和弹出窗口一样） */
+export type FloatingStyle = "compact" | "detailed";
 export type AppLanguage = "system" | "zh" | "en";
 export type IntervalChoice = "m1" | "m2" | "m3" | "m5" | "m10";
 
@@ -106,10 +108,11 @@ export interface Settings {
   textSize: TextSize;
   /** 悬浮窗收起时贴着的屏幕边；null 为展开 */
   floatingDock: DockEdge | null;
+  floatingStyle: FloatingStyle;
   showServiceStatus: boolean;
   appLanguage: AppLanguage;
   didCompleteOnboarding: boolean;
-  /** 每天 12:00 自动上传用量到 yybar 网站 */
+  /** 每天 0:30 自动上传用量到 yybar 网站 */
   webAutoUpload: boolean;
 }
 

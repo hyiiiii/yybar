@@ -25,6 +25,14 @@ export interface PlanSummary {
 
 export class AccountsError extends Error {}
 
+/** App 传的设备 id（这台电脑固定的一个 UUID）；旧版 App 不带，为 null */
+export function parseDevice(body: unknown): string | null {
+  const device = (body as { device?: unknown } | null)?.device;
+  if (device == null) return null;
+  if (typeof device !== "string" || !/^[0-9a-f-]{8,64}$/.test(device)) throw new AccountsError("device 不合法");
+  return device;
+}
+
 /** 校验 App 传的 { accounts: [{ app, account, plan }] }；同一 (服务, 账号) 只留第一条 */
 export function parseAccounts(body: unknown): AccountRow[] {
   const list = (body as { accounts?: unknown } | null)?.accounts;
@@ -47,12 +55,20 @@ export function parseAccounts(body: unknown): AccountRow[] {
   return rows;
 }
 
-/** 这台设备（上传令牌）的账号整份替换成这次传的 */
-export async function saveAccounts(db: D1Database, userId: number, tokenId: number, rows: AccountRow[]) {
+/**
+ * 这台设备的账号整份替换成这次传的。带设备 id 时换掉这台设备上次传的（不管当时用的哪个令牌，重新连接网站会换令牌），
+ * 顺手清掉旧版 App 不带设备 id 传的行；不带时（旧版 App）按令牌替换。
+ */
+export async function saveAccounts(db: D1Database, userId: number, tokenId: number, rows: AccountRow[], device: string | null = null) {
+  const clear = device
+    ? db.prepare("DELETE FROM user_accounts WHERE user_id = ? AND (device = ? OR device = '' OR token_id = ?)").bind(userId, device, tokenId)
+    : db.prepare("DELETE FROM user_accounts WHERE token_id = ?").bind(tokenId);
   await db.batch([
-    db.prepare("DELETE FROM user_accounts WHERE token_id = ?").bind(tokenId),
+    clear,
     ...rows.map((r) =>
-      db.prepare("INSERT INTO user_accounts (token_id, user_id, app, account, plan) VALUES (?, ?, ?, ?, ?)").bind(tokenId, userId, r.app, r.account, r.plan),
+      db
+        .prepare("INSERT INTO user_accounts (token_id, user_id, device, app, account, plan) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(tokenId, userId, device ?? "", r.app, r.account, r.plan),
     ),
   ]);
 }

@@ -1371,7 +1371,13 @@ struct StatsView: View {
         if let pools = snapshot?.pools {
             return pools.flatMap { [("\($0.label) 5H", $0.fiveHour), ("\($0.label) WK", $0.weekly)] }
         }
-        return [("5H", snapshot?.fiveHour), ("WK", snapshot?.weekly)]
+        // 标签按窗口长度写(免费 ChatGPT 账号的长窗口是每月，写 MO);没有 5H 的只列长窗口
+        let five = QuotaCardView.Window(id: "5h", label: "", window: snapshot?.fiveHour)
+        let long = QuotaCardView.Window(id: "wk", label: "", window: snapshot?.weekly)
+        let lanes = [(MenuBarPopoverView.shortLabel(five, pools: nil), snapshot?.fiveHour),
+                     (MenuBarPopoverView.shortLabel(long, pools: nil), snapshot?.weekly)]
+        let present = lanes.filter { $0.1 != nil }
+        return present.isEmpty ? lanes : present
     }
 
     private func quotaNote(for app: UsageApp) -> String? {

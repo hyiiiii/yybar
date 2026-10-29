@@ -101,7 +101,7 @@ export interface MeResponse extends Partial<Omit<Profile, "user">> {
   daily?: { claimed: boolean; amount: number };
   /** 解锁了还没领的成就有几个（顶栏奖杯旁边提醒） */
   achievementsReady?: number;
-  /** 上传记录：最近收到的 10 天（每天每个服务只收第一次） */
+  /** 上传记录：最近收到的 10 天（每天每个服务记一份，量变多了才换） */
   uploads?: { day: string; uploaded_at: string; tokens: number; cost_micro: number }[];
 }
 

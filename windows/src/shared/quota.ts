@@ -80,10 +80,13 @@ export function quotaLanes(app: UsageApp, s: QuotaSnapshot | null | undefined): 
       { label: `${p.label} WK`, window: p.weekly ?? null },
     ]);
   }
-  return [
-    { label: "5H", window: s?.fiveHour ?? null },
-    { label: "WK", window: s?.weekly ?? null },
+  // 标签按窗口长度写（免费 ChatGPT 账号的长窗口是每月，写 MO）；没有 5H 的只列长窗口
+  const lanes = [
+    { label: shortLabel({ id: "5h", label: "", window: s?.fiveHour ?? null }, null), window: s?.fiveHour ?? null },
+    { label: shortLabel({ id: "wk", label: "", window: s?.weekly ?? null }, null), window: s?.weekly ?? null },
   ];
+  const present = lanes.filter((l) => l.window);
+  return present.length ? present : lanes;
 }
 
 /** 悬浮窗那一行的数：Grok 取周期，其余 5H（没有时 WK）。 */

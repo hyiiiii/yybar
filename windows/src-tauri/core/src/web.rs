@@ -5,15 +5,18 @@
 //! `yybar://connect?token=…&state=…` → 核对 state 后保存令牌，再拉头像和已上传的日期。
 //! 令牌和头像信息存在 `%APPDATA%\yybar\web-account.json`（只有当前 Windows 用户能读）。
 //!
-//! 上传（每一天的每个服务只算一次，网站和本机两边都记）：
+//! 上传（每一天的每个服务只算一份，网站和本机两边都记）：
 //! - 只传今天以前、已经过完的天（本地日期），按 天 × 服务 × 模型 汇总；Windows 上是 Codex / Claude / Grok / Antigravity。
-//! - 网站对每个（日期, 服务）只收第一次；本机也按（日期, 服务）打标签（`web-uploads-<login>.json`），每次只传没标签的。
+//! - 网站对每个（日期, 服务）记一份和它的量（token 总数）：再传同一天，量更多才整份换掉，否则跳过。本机也按（日期, 服务）
+//!   打标签（`web-uploads-<login>.json`）、记下网站上的量：没标签的传；有标签的，本机这一天的量比记下的多（比如新加了一个
+//!   Codex 目录，找到了另一个账号以前的会话）也传。启动、连上、每次上传前用 `GET /api/v1/usage/days` 补齐标签和量。
 //! - 一次最多 100 天，多了分批。
 //!
 //! 订阅（网站个人主页 @ 后面那一排）：各服务账号的套餐，一个账号一条 `{ app, account, plan }`，`account` 是账号的摘要，
-//! 不传邮箱；`PUT /api/v1/accounts`，网站按设备整份替换。
+//! 不传邮箱；`PUT /api/v1/accounts`，带上这台电脑固定的设备 id（`%APPDATA%\yybar\device-id`），
+//! 网站把这台设备上次传的整份替换（重新连接换了令牌也一样）。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use chrono::NaiveDate;
@@ -82,6 +85,18 @@ pub struct Ledger {
     pub manual_upload_day: Option<String>,
     #[serde(default)]
     pub auto_upload_day: Option<String>,
+    /// 「日期|服务」→ 网站上这一天这个服务的量和花费。本机的量比它多就再传一次；旧文件、旧网站没有，那些天照旧只传一次。
+    #[serde(default)]
+    pub sent: BTreeMap<String, Sent>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    /// token 总数，和网站 usage_uploads.total 一样算
+    pub total: i64,
+    /// 花费（微美元），只用来估这次能多换多少筹码
+    pub cost_micro: i64,
 }
 
 impl Ledger {
@@ -91,6 +106,11 @@ impl Ledger {
 
     pub fn insert(&mut self, day: &str, app: &str) {
         self.uploaded.insert(format!("{day}|{app}"));
+    }
+
+    pub fn record(&mut self, day: &str, app: &str, sent: Sent) {
+        self.insert(day, app);
+        self.sent.insert(format!("{day}|{app}"), sent);
     }
 
     /// 传过东西的天数（去重）。
@@ -118,7 +138,7 @@ pub fn save_ledger(login: &str, ledger: &Ledger) {
 
 // ---------- 待上传 ----------
 
-/// 还没打标签、今天以前的（日期, 服务）。
+/// 今天以前、要传的（日期, 服务）：还没打标签的，和本机的量比网站上记的多的。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pending {
@@ -132,20 +152,33 @@ pub struct Pending {
 pub fn pending(buckets: &[UsageBucket], ledger: &Ledger, today: NaiveDate) -> Pending {
     let mut out = Pending::default();
     let mut days = BTreeSet::new();
-    for b in buckets {
-        if b.day >= today || !UPLOAD_APPS.contains(&b.app) {
-            continue;
+    for (pair, mine) in local_totals(buckets, today) {
+        let Some((day, app)) = pair.split_once('|') else { continue };
+        let mut cost = mine.cost_micro;
+        if ledger.contains(day, app) {
+            // 传过了：本机的量更多才再传，筹码按多出来的花费估
+            match ledger.sent.get(&pair) {
+                Some(before) if mine.total > before.total => cost = (cost - before.cost_micro).max(0),
+                _ => continue,
+            }
         }
-        let day = b.day.format("%Y-%m-%d").to_string();
-        if ledger.contains(&day, b.app.key()) {
-            continue;
-        }
-        out.pairs.insert(format!("{day}|{}", b.app.key()));
-        out.cost_usd += b.cost_usd.max(0.0);
-        days.insert(day);
+        out.cost_usd += cost as f64 / 1e6;
+        days.insert(day.to_string());
+        out.pairs.insert(pair);
     }
     out.days = days.into_iter().collect();
     out.chips = chips(out.cost_usd);
+    out
+}
+
+/// 本机每个（日期, 服务）的量（token 总数，和网站一样算）和花费（微美元）。
+pub fn local_totals(buckets: &[UsageBucket], today: NaiveDate) -> BTreeMap<String, Sent> {
+    let mut out: BTreeMap<String, Sent> = BTreeMap::new();
+    for b in buckets.iter().filter(|b| b.day < today && UPLOAD_APPS.contains(&b.app)) {
+        let e = out.entry(format!("{}|{}", b.day.format("%Y-%m-%d"), b.app.key())).or_default();
+        e.total += b.input_tokens.max(0) + b.output_tokens.max(0) + b.cache_read_tokens.max(0) + b.cache_creation_tokens.max(0);
+        e.cost_micro += (b.cost_usd.max(0.0) * 1e6).round() as i64;
+    }
     out
 }
 
@@ -294,17 +327,28 @@ pub async fn whoami(token: &str) -> Result<Profile, WebError> {
     Ok(Profile { login: s("login").ok_or_else(|| WebError::Server("whoami".into()))?, name: s("name"), avatar_url: s("avatarUrl") })
 }
 
+/// 网站上已经传过的一个（日期, 服务）；`sent` 是网站记的量和花费（旧版网站没有）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Uploaded {
+    pub day: String,
+    pub app: String,
+    pub sent: Option<Sent>,
+}
+
 /// 网站上已经传过的（日期, 服务）。旧版网站只有 days，当作 Codex / Claude / Grok 都传过了。
-pub async fn uploaded_pairs(token: &str) -> Result<Vec<(String, String)>, WebError> {
+pub async fn uploaded_pairs(token: &str) -> Result<Vec<Uploaded>, WebError> {
     let v = send(client().get(format!("{SITE}/api/v1/usage/days")), token).await?;
     Ok(parse_uploaded(&v))
 }
 
-pub fn parse_uploaded(v: &Value) -> Vec<(String, String)> {
+pub fn parse_uploaded(v: &Value) -> Vec<Uploaded> {
     if let Some(list) = v.get("uploads").and_then(Value::as_array) {
         return list
             .iter()
-            .filter_map(|u| Some((u.get("day")?.as_str()?.to_string(), u.get("app")?.as_str()?.to_string())))
+            .filter_map(|u| {
+                let sent = u.get("total").and_then(Value::as_i64).map(|total| Sent { total, cost_micro: u.get("costMicro").and_then(Value::as_i64).unwrap_or(0) });
+                Some(Uploaded { day: u.get("day")?.as_str()?.to_string(), app: u.get("app")?.as_str()?.to_string(), sent })
+            })
             .collect();
     }
     v.get("days")
@@ -312,7 +356,7 @@ pub fn parse_uploaded(v: &Value) -> Vec<(String, String)> {
         .map(|days| {
             days.iter()
                 .filter_map(Value::as_str)
-                .flat_map(|d| LEGACY_APPS.iter().map(move |a| (d.to_string(), a.to_string())))
+                .flat_map(|d| LEGACY_APPS.iter().map(move |a| Uploaded { day: d.to_string(), app: a.to_string(), sent: None }))
                 .collect()
         })
         .unwrap_or_default()
@@ -350,9 +394,20 @@ pub fn claude_plan(subscription_type: Option<&str>, rate_limit_tier: Option<&str
     tier.or_else(|| subscription_type.map(str::to_string))
 }
 
+/// 这台电脑固定的设备 id（第一次传订阅时生成）：网站按它替换这台设备上次传的订阅。
+fn device_id() -> String {
+    let file = paths::data_dir().join("device-id");
+    if let Some(id) = std::fs::read_to_string(&file).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        return id;
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let _ = paths::write_atomic(&file, id.as_bytes());
+    id
+}
+
 /// 把这台电脑上各账号的订阅交给网站（整份替换这台电脑上次传的）。
 pub async fn put_accounts(token: &str, accounts: &[AccountPlan]) -> Result<(), WebError> {
-    let body = serde_json::json!({ "accounts": accounts });
+    let body = serde_json::json!({ "device": device_id(), "accounts": accounts });
     send(client().put(format!("{SITE}/api/v1/accounts")).json(&body), token).await?;
     Ok(())
 }
@@ -409,12 +464,40 @@ mod tests {
     }
 
     #[test]
+    fn pending_reuploads_a_day_that_grew() {
+        let today = NaiveDate::parse_from_str("2026-10-26", "%Y-%m-%d").unwrap();
+        let mut buckets = vec![bucket(UsageApp::Codex, "2026-10-24", "gpt-5", 1.5)];
+        let mut ledger = Ledger::default();
+        for (pair, sent) in local_totals(&buckets, today) {
+            let (day, app) = pair.split_once('|').unwrap();
+            ledger.record(day, app, sent);
+        }
+        assert!(pending(&buckets, &ledger, today).days.is_empty());
+        // 新加的 Codex 目录里有这一天另一个账号的会话：量变多了，再传，筹码按多出来的估
+        buckets.push(bucket(UsageApp::Codex, "2026-10-24", "gpt-5-pro", 3.0));
+        let p = pending(&buckets, &ledger, today);
+        assert_eq!(p.days, vec!["2026-10-24"]);
+        assert_eq!(p.chips, 3);
+        assert_eq!(build_days(&buckets, &p)[0].entries.len(), 2);
+        // 旧标签（没记量）照旧不再传
+        let mut legacy = Ledger::default();
+        legacy.insert("2026-10-24", "codex");
+        assert!(pending(&buckets, &legacy, today).days.is_empty());
+    }
+
+    #[test]
     fn parses_callback_and_uploads() {
         assert_eq!(parse_callback("yybar://connect?token=yyb_a%2Bb&state=s1"), Some(("yyb_a+b".into(), "s1".into())));
         assert_eq!(parse_callback("yybar://connect/?state=s2&token=t"), Some(("t".into(), "s2".into())));
         assert_eq!(parse_callback("yybar://other?token=t"), None);
-        let v = serde_json::json!({"days": ["2026-10-20"], "uploads": [{"day": "2026-10-20", "app": "agy"}]});
-        assert_eq!(parse_uploaded(&v), vec![("2026-10-20".to_string(), "agy".to_string())]);
+        let v = serde_json::json!({"days": ["2026-10-20"], "uploads": [{"day": "2026-10-20", "app": "agy"}, {"day": "2026-10-21", "app": "codex", "total": 42, "costMicro": 7}]});
+        assert_eq!(
+            parse_uploaded(&v),
+            vec![
+                Uploaded { day: "2026-10-20".into(), app: "agy".into(), sent: None },
+                Uploaded { day: "2026-10-21".into(), app: "codex".into(), sent: Some(Sent { total: 42, cost_micro: 7 }) },
+            ]
+        );
         let legacy = serde_json::json!({"days": ["2026-10-20"]});
         assert_eq!(parse_uploaded(&legacy).len(), 3);
         assert!(random_state().len() >= 32);

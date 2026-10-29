@@ -12,17 +12,19 @@ import Security
 // yybar://connect?token=…&state=… → AppDelegate 交给 handle(url:),核对 state 后保存令牌，再拉头像和已上传的日期。
 // 令牌和头像信息存成本用户私有文件(AccountTokenFiles,kind yybarweb),不进钥匙串。
 //
-// 上传(每一天的每个服务只算一次，网站和本机两边都记):
+// 上传(每一天的每个服务只算一份，网站和本机两边都记):
 // - 只传今天以前、已经过完的天(本地日期)，按 天 × 服务 × 模型 汇总。
-// - 网站对每个（日期, 服务）只收第一次，之后再传就跳过(usage_uploads)。本机也给传过的打标签
-//   (web-uploads-<login>.json),标签按（日期, 服务）打，每次只传没标签的;连上时用 GET /api/v1/usage/days 补齐标签。
+// - 网站对每个（日期, 服务）记一份和它的量(token 总数，Gemini 是回答次数):再传同一天，量更多才整份换掉，否则跳过(usage_uploads)。
+//   本机也给传过的打标签(web-uploads-<login>.json),按（日期, 服务）打、记下网站上的量：没标签的传;有标签的，本机这一天的量
+//   比记下的多(比如新加了一个 Codex 目录，找到了另一个账号以前的会话)也传。启动、连上、每次上传前用 GET /api/v1/usage/days 补齐标签和量。
 // - 传的服务：Codex / Claude / Grok / Grok Bot / Antigravity 按用量桶传;Gemini 没有 token 和花费，按每天每个模型的回答次数传。
-// - 自动上传：每天中午 12:00 先扫一遍本地统计再传没标签的天(前一天早就过完、日志也落盘了);那时没开 App 或在睡眠，
+// - 自动上传：每天 0:30 先扫一遍本地统计再传没标签的天(前一天刚过完);那时没开 App 或在睡眠，
 //   之后第一次扫描完补传，一天只自动传一次。
 // - 一键上传：每天只能成功点一次，点完当天变灰;没传成功(断网等)可以再点。
 //
 // 订阅(网站个人主页 @ 后面那一排):各服务账号的套餐，一个账号一条 { app, account, plan },account 是账号的摘要，
-// 不传邮箱。随用量一起上传：每次上传(一键 / 自动)都 PUT /api/v1/accounts,网站按设备整份替换。
+// 不传邮箱。随用量一起上传：每次上传(一键 / 自动)都 PUT /api/v1/accounts,带上这台 Mac 固定的设备 id,
+// 网站把这台设备上次传的整份替换(重新连接换了令牌也一样)。
 
 @MainActor
 @Observable
@@ -44,8 +46,9 @@ final class YYBarWebAccount {
     static let uploadApps: [UsageApp] = [.codex, .claude, .grok, .grokBot, .agy]
     /// 旧版本的标签只记日期，那时只传这三家。
     static let legacyApps: Set<UsageApp> = [.codex, .claude, .grok]
-    /// 自动上传每天几点传(本地时间)。
-    static let autoUploadHour = 12
+    /// 自动上传每天几点传(本地时间 0:30:前一天刚过完)。
+    static let autoUploadHour = 0
+    static let autoUploadMinute = 30
 
     private(set) var profile: Profile?
     private(set) var phase: Phase = .idle
@@ -75,6 +78,15 @@ final class YYBarWebAccount {
     /// 当前各账号的订阅(AppState.webAccountPlans);AppState 启动时设好，上传时取。
     var accountPlans: (@MainActor () -> [AccountPlan])?
     private static let autoUploadKey = "yybar.settings.webAutoUpload"
+    private static let deviceKey = "yybar.settings.webDevice"
+
+    /// 这台 Mac 固定的设备 id(第一次传订阅时生成):网站按它替换这台设备上次传的订阅。
+    private static var deviceID: String {
+        if let id = UserDefaults.standard.string(forKey: deviceKey) { return id }
+        let id = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(id, forKey: deviceKey)
+        return id
+    }
 
     // MARK: 本机标签
 
@@ -86,8 +98,18 @@ final class YYBarWebAccount {
         var uploaded: Set<String>? = []
         var lastUploadAt: Date?
         var manualUploadDay: String?
-        /// 哪天已经自动传过了(每天 12:00 一次)。旧文件没有这一项。
+        /// 哪天已经自动传过了(每天 0:30 一次)。旧文件没有这一项。
         var autoUploadDay: String?
+        /// 「日期|服务」→ 网站上这一天这个服务的量和花费。本机的量比它多就再传一次。
+        /// 旧文件、旧网站没有这一项，那些天照旧只传一次。
+        var sent: [String: Sent]? = [:]
+
+        struct Sent: Codable, Equatable {
+            /// token 总数(Gemini 是回答次数)，和网站 usage_uploads.total 一样算
+            var total: Int
+            /// 花费(微美元)，只用来估这次能多换多少筹码
+            var costMicro: Int
+        }
 
         func contains(day: String, app: UsageApp) -> Bool {
             (uploaded ?? []).contains("\(day)|\(app.rawValue)") || (YYBarWebAccount.legacyApps.contains(app) && uploadedDays.contains(day))
@@ -95,6 +117,11 @@ final class YYBarWebAccount {
 
         mutating func insert(day: String, app: String) {
             uploaded = (uploaded ?? []).union(["\(day)|\(app)"])
+        }
+
+        mutating func record(day: String, app: String, _ value: Sent) {
+            insert(day: day, app: app)
+            sent = (sent ?? [:]).merging(["\(day)|\(app)": value]) { $1 }
         }
 
         /// 传过东西的天数(去重)。
@@ -118,6 +145,8 @@ final class YYBarWebAccount {
         profile = stored.profile
         ledger = Self.loadLedger(login: stored.profile.login)
         scheduleNoon()
+        // 对一下网站上各天的量：bar 页「待上传」能算上本机量变多了的天
+        Task { await syncUploadedDays() }
     }
 
     private struct StoredAccount: Codable {
@@ -195,12 +224,18 @@ final class YYBarWebAccount {
         setMessage(nil)
     }
 
-    /// 网站上已经传过的（日期, 服务）补进本机标签(换了台 Mac、重装过都不会再传一遍)。
+    /// 网站上已经传过的（日期, 服务）和它们的量补进本机标签(换了台 Mac、重装过都不会再传一遍;别的电脑传的量更多，这里就不再传)。
     private func syncUploadedDays() async {
         guard let token, let login = profile?.login else { return }
         guard let remote: UploadedDays = try? await get("api/v1/usage/days", token: token) else { return }
         if let uploads = remote.uploads {
-            for u in uploads { ledger.insert(day: u.day, app: u.app) }
+            for u in uploads {
+                if let total = u.total {
+                    ledger.record(day: u.day, app: u.app, .init(total: total, costMicro: u.costMicro ?? 0))
+                } else {
+                    ledger.insert(day: u.day, app: u.app)
+                }
+            }
         } else {
             ledger.uploadedDays.formUnion(remote.days)
         }
@@ -219,26 +254,39 @@ final class YYBarWebAccount {
         var chips: Int { YYBarWebAccount.chips(costUSD) }
     }
 
-    /// 还没打标签、今天以前的（日期, 服务）。
+    /// 今天以前、要传的（日期, 服务）：还没打标签的，和本机的量比网站上记的多的。
     func pending(_ source: Source, now: Date = Date()) -> Pending {
         let cutoff = UsageDay.startOfDay(for: now)
         var out = Pending()
-        var days = Set<String>()
-        for b in source.buckets where Self.uploadApps.contains(b.app) && b.day < cutoff {
-            let key = Self.dayKey(b.day)
-            guard !ledger.contains(day: key, app: b.app) else { continue }
-            days.insert(key)
-            out.pairs.insert("\(key)|\(b.app.rawValue)")
-            out.costUSD += b.costUSD
+        let local = Self.localTotals(source, before: cutoff)
+        for (pair, mine) in local {
+            let parts = pair.split(separator: "|").map(String.init)
+            guard parts.count == 2, let app = UsageApp(rawValue: parts[1]) else { continue }
+            var extraCost = mine.cost
+            if ledger.contains(day: parts[0], app: app) {
+                // 传过了：本机的量更多才再传，筹码按多出来的花费估
+                guard let before = ledger.sent?[pair], mine.total > before.total else { continue }
+                extraCost = max(0, mine.cost - Decimal(before.costMicro) / 1_000_000)
+            }
+            out.pairs.insert(pair)
+            out.costUSD += extraCost
+            out.answers += app == .gemini ? mine.total : 0
+        }
+        out.days = Set(out.pairs.compactMap { $0.split(separator: "|").first.map(String.init) }).sorted()
+        return out
+    }
+
+    /// 本机每个（日期, 服务）的量(token 总数，Gemini 是回答次数，和网站一样算)和花费。
+    private static func localTotals(_ source: Source, before cutoff: Date) -> [String: (total: Int, cost: Decimal)] {
+        var out: [String: (total: Int, cost: Decimal)] = [:]
+        for b in source.buckets where uploadApps.contains(b.app) && b.day < cutoff {
+            let key = "\(dayKey(b.day))|\(b.app.rawValue)"
+            out[key, default: (0, 0)].total += b.inputTokens + b.outputTokens + b.cacheReadTokens + b.cacheCreationTokens
+            out[key, default: (0, 0)].cost += b.costUSD
         }
         for c in source.answers where c.count > 0 && c.day < cutoff {
-            let key = Self.dayKey(c.day)
-            guard !ledger.contains(day: key, app: .gemini) else { continue }
-            days.insert(key)
-            out.pairs.insert("\(key)|\(UsageApp.gemini.rawValue)")
-            out.answers += c.count
+            out["\(dayKey(c.day))|\(UsageApp.gemini.rawValue)", default: (0, 0)].total += c.count
         }
-        out.days = days.sorted()
         return out
     }
 
@@ -266,16 +314,16 @@ final class YYBarWebAccount {
         Task { await upload(source, manual: true) }
     }
 
-    /// 本地统计扫描完调用：开着自动上传、过了今天 12:00 还没自动传过，就传。
+    /// 本地统计扫描完调用：开着自动上传、过了今天 0:30 还没自动传过，就传。
     func usageDidUpdate(_ source: Source) {
         lastSource = source
         triggerAutoUpload()
     }
 
-    /// 今天的自动上传到点了还没做：过了 12:00，今天还没自动传过。
+    /// 今天的自动上传到点了还没做：过了 0:30，今天还没自动传过。
     private func autoUploadDue(_ now: Date = Date()) -> Bool {
         guard autoUpload, isConnected,
-              let noon = Calendar.current.date(bySettingHour: Self.autoUploadHour, minute: 0, second: 0, of: now) else { return false }
+              let noon = Calendar.current.date(bySettingHour: Self.autoUploadHour, minute: Self.autoUploadMinute, second: 0, of: now) else { return false }
         return now >= noon && ledger.autoUploadDay != Self.dayKey(now)
     }
 
@@ -286,7 +334,7 @@ final class YYBarWebAccount {
         Task { await upload(source, manual: false) }
     }
 
-    /// 每天 12:00 叫一次本地统计扫描，扫完 usageDidUpdate 就会传。用连续时钟：Mac 睡眠跨过 12:00，醒来马上补。
+    /// 每天 0:30 叫一次本地统计扫描，扫完 usageDidUpdate 就会传。用连续时钟：Mac 睡眠跨过 0:30，醒来马上补。
     private func scheduleNoon() {
         noonTask?.cancel()
         noonTask = nil
@@ -294,7 +342,7 @@ final class YYBarWebAccount {
         noonTask = Task { [weak self] in
             while !Task.isCancelled {
                 let now = Date()
-                guard var next = Calendar.current.date(bySettingHour: Self.autoUploadHour, minute: 0, second: 0, of: now) else { return }
+                guard var next = Calendar.current.date(bySettingHour: Self.autoUploadHour, minute: Self.autoUploadMinute, second: 0, of: now) else { return }
                 if next <= now, let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: next) { next = tomorrow }
                 do {
                     try await Task.sleep(until: .now + .seconds(next.timeIntervalSince(now)), clock: .continuous)
@@ -311,6 +359,8 @@ final class YYBarWebAccount {
         defer { phase = .idle }
         // 订阅随用量一起传，不管有没有新的天
         await uploadAccountPlans(token: token)
+        // 先对一下网站上各天的量(别的电脑传过更多的就不用再传)
+        await syncUploadedDays()
         let todo = pending(source)
         guard !todo.days.isEmpty else {
             if manual { setMessage(tr("Nothing new to upload — every finished day is already in.", "没有新的天要传：今天以前的都传过了。")) }
@@ -320,7 +370,7 @@ final class YYBarWebAccount {
             }
             return
         }
-        // 按天整理成网站要的格式：每天只放还没传过的服务，一次最多传 100 天
+        // 按天整理成网站要的格式：每天只放要传的服务(没传过的、本机量更多的)，一次最多传 100 天
         var byDay: [String: [Entry]] = [:]
         for b in source.buckets where Self.uploadApps.contains(b.app) {
             let key = Self.dayKey(b.day)
@@ -339,6 +389,7 @@ final class YYBarWebAccount {
                 inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
                 costUSD: "0", answers: c.count))
         }
+        let local = Self.localTotals(source, before: UsageDay.startOfDay(for: Date()))
         var accepted = 0, skipped = 0
         do {
             for chunk in stride(from: 0, to: todo.days.count, by: 100).map({ Array(todo.days[$0..<min($0 + 100, todo.days.count)]) }) {
@@ -346,9 +397,13 @@ final class YYBarWebAccount {
                 let result: UploadResult = try await post("api/v1/usage", token: token, body: body)
                 accepted += result.accepted.count
                 skipped += result.skipped.count
-                // 这一批传的（日期, 服务）不管是新收下的还是网站上早就有的，都打上标签，以后不再传
+                // 这一批传的（日期, 服务）不管是新收下的还是网站上早就有的，都打上标签、记下这次的量，量不再变多就不再传
                 for day in chunk {
-                    for entry in byDay[day] ?? [] { ledger.insert(day: day, app: entry.app) }
+                    for entry in byDay[day] ?? [] {
+                        guard let mine = local["\(day)|\(entry.app)"] else { ledger.insert(day: day, app: entry.app); continue }
+                        let micro = NSDecimalNumber(decimal: mine.cost * 1_000_000).int64Value
+                        ledger.record(day: day, app: entry.app, .init(total: mine.total, costMicro: Int(micro)))
+                    }
                 }
                 ledger.lastUploadAt = Date()
                 Self.saveLedger(ledger, login: login)
@@ -397,7 +452,7 @@ final class YYBarWebAccount {
     /// 没传成功不影响用量上传，下次上传再传。
     private func uploadAccountPlans(token: String) async {
         guard let plans = accountPlans?() else { return }
-        let _: AccountsResult? = try? await put("api/v1/accounts", token: token, body: AccountsBody(accounts: plans))
+        let _: AccountsResult? = try? await put("api/v1/accounts", token: token, body: AccountsBody(device: Self.deviceID, accounts: plans))
     }
 
     // MARK: 网络
@@ -407,7 +462,8 @@ final class YYBarWebAccount {
         var user: User
     }
     private struct UploadedDays: Decodable {
-        struct Pair: Decodable { var day: String; var app: String }
+        /// total / costMicro:网站记的这一天这个服务的量和花费(旧版网站没有)
+        struct Pair: Decodable { var day: String; var app: String; var total: Int?; var costMicro: Int? }
         var days: [String]
         /// 新版网站按（日期, 服务）记;旧版只有 days
         var uploads: [Pair]?
@@ -426,7 +482,7 @@ final class YYBarWebAccount {
     private struct UploadDay: Encodable { var day: String; var entries: [Entry] }
     private struct UploadBody: Encodable { var days: [UploadDay] }
     private struct UploadResult: Decodable { var accepted: [String]; var skipped: [String] }
-    private struct AccountsBody: Encodable { var accounts: [AccountPlan] }
+    private struct AccountsBody: Encodable { var device: String; var accounts: [AccountPlan] }
     private struct AccountsResult: Decodable { var ok: Bool }
     private struct ErrorBody: Decodable { var error: String }
 

@@ -1,7 +1,7 @@
 // 主窗口 · bar（对应 Mac `BarView`）：和统计、设置都不同的独立页，不放标题和说明文字。
 // 上面是一间像素风的木头小酒馆，直接画在页面上（不另起背景卡片）：屋顶立着 yybar 跑马灯招牌，门口站着 Claude 风格的
 // 像素小家伙招手；点酒馆任意处用浏览器打开 yybar 网站的个人主页（/me）。
-// 下面是上传卡片：连接 GitHub、待上传 / 已上传、自动上传（每天 12:00）、一键上传（每天一次），逻辑在后台 web.rs。
+// 下面是上传卡片：连接 GitHub、待上传 / 已上传、自动上传（每天 0:30）、一键上传（每天一次），逻辑在后台 web.rs。
 // 像素画照 Mac 版逐格搬过来（4px 一格，酒馆 104 × 70 格）。
 
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -311,7 +311,7 @@ function UploadCard({ web, autoUpload }: { web: WebView; autoUpload: boolean }) 
         <span className="bar-label">{tr("Auto upload", "自动上传")}</span>
         <span className="bar-value">
           <Toggle small checked={web.connected && autoUpload} disabled={!web.connected} onChange={(v) => api.updateSettings({ webAutoUpload: v })} />
-          <span className={web.connected ? "" : "secondary"}>{tr("Upload every day at 12:00", "每天 12:00 上传")}</span>
+          <span className={web.connected ? "" : "secondary"}>{tr("Upload every day at 0:30", "每天 0:30 上传")}</span>
         </span>
       </div>
       <div className="bar-actions">

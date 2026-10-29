@@ -652,7 +652,7 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let scale = w.scale_factor().unwrap_or(1.0);
     let (Ok(size), Ok(pos)) = (w.outer_size(), w.outer_position()) else { return };
     let nw = (width.clamp(24.0, 640.0) * scale).round() as u32;
-    let nh = (height.clamp(28.0, 600.0) * scale).round() as u32;
+    let nh = (height.clamp(28.0, 900.0) * scale).round() as u32;
     if size.width == nw && size.height == nh {
         return;
     }

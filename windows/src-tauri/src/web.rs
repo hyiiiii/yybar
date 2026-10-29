@@ -4,7 +4,7 @@
 //!   Windows 把这个链接交给 yybar（安装时注册了 `yybar:` 协议；已经在运行时由单实例插件转给正在运行的那个）。
 //!   state 对得上才收令牌；不是从这里发起的链接拒绝；已经连着、也没在等授权时多余的回调直接忽略。
 //! - 一键上传：每天只能成功点一次，点过当天变灰；没传成功（断网等）可以再点。自动上传不占这一次。
-//! - 自动上传（默认关）：每天中午 12:00 先扫一遍本地统计再传没标签的天；12:00 时电脑在睡眠或没开 yybar，
+//! - 自动上传（默认关）：每天 0:30 先扫一遍本地统计再传没标签的天；0:30 时电脑在睡眠或没开 yybar，
 //!   之后第一次扫描完补传。一天只自动传一次，没传成功下次扫描完再试。
 //! - 网站不再认令牌（401）时自动断开，提示重新连接；其他失败保留标签和设置，下次再传。
 //! - 订阅（网站个人主页 @ 后面那一排）：随用量一起上传，每次上传（一键 / 自动，不管有没有新的天）都把当前的订阅
@@ -25,7 +25,8 @@ use yybar_core::{now_secs, tr};
 use crate::app_state::{self, AppState};
 
 /// 自动上传每天几点传（本地时间）。
-const AUTO_UPLOAD_HOUR: u32 = 12;
+const AUTO_UPLOAD_HOUR: u32 = 0;
+const AUTO_UPLOAD_MINUTE: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +108,10 @@ pub fn bootstrap(app: &AppHandle) {
         let mut w = state.web.lock().unwrap();
         if let Some((token, profile)) = site::load_account() {
             w.ledger = site::load_ledger(&profile.login);
+            // 对一下网站上各天的量：bar 页「待上传」能算上本机量变多了的天
+            let h = app.clone();
+            let (t, login) = (token.clone(), profile.login.clone());
+            tauri::async_runtime::spawn(async move { sync_uploaded(&h, &t, &login).await });
             w.token = Some(token);
             w.profile = Some(profile);
         }
@@ -221,14 +226,17 @@ async fn finish_connect(app: &AppHandle, token: String) {
     }
 }
 
-/// 网站上已经传过的（日期, 服务）补进本机标签（换了台电脑、重装过都不会再传一遍）。
+/// 网站上已经传过的（日期, 服务）和它们的量补进本机标签（换了台电脑、重装过都不会再传一遍；别的电脑传的量更多，这里就不再传）。
 async fn sync_uploaded(app: &AppHandle, token: &str, login: &str) {
     let Ok(pairs) = site::uploaded_pairs(token).await else { return };
     {
         let s = app.state::<AppState>();
         let mut w = s.web.lock().unwrap();
-        for (day, a) in pairs {
-            w.ledger.insert(&day, &a);
+        for u in pairs {
+            match u.sent {
+                Some(sent) => w.ledger.record(&u.day, &u.app, sent),
+                None => w.ledger.insert(&u.day, &u.app),
+            }
         }
         site::save_ledger(login, &w.ledger);
     }
@@ -265,7 +273,7 @@ pub async fn upload_now(app: &AppHandle) {
     }
 }
 
-/// 本地统计扫描完调用：开着自动上传、过了今天 12:00 还没自动传过，就传。
+/// 本地统计扫描完调用：开着自动上传、过了今天 0:30 还没自动传过，就传。
 pub fn usage_did_update(app: &AppHandle) {
     trigger_auto_upload(app);
 }
@@ -277,7 +285,7 @@ fn auto_due(app: &AppHandle) -> bool {
     }
     let w = s.web.lock().unwrap();
     let now = Local::now();
-    w.connected() && w.phase == Phase::Idle && now.hour() >= AUTO_UPLOAD_HOUR && w.ledger.auto_upload_day.as_deref() != Some(day_key(now.date_naive()).as_str())
+    w.connected() && w.phase == Phase::Idle && (now.hour(), now.minute()) >= (AUTO_UPLOAD_HOUR, AUTO_UPLOAD_MINUTE) && w.ledger.auto_upload_day.as_deref() != Some(day_key(now.date_naive()).as_str())
 }
 
 fn trigger_auto_upload(app: &AppHandle) {
@@ -303,6 +311,8 @@ async fn upload(app: &AppHandle, manual: bool) {
     // 订阅随用量一起传，不管有没有新的天；没传成功不影响用量
     let plans = s.inner.lock().unwrap().web_account_plans();
     let _ = site::put_accounts(&token, &plans).await;
+    // 先对一下网站上各天的量（别的电脑传过更多的就不用再传）
+    sync_uploaded(app, &token, &login).await;
     let buckets = s.usage.lock().unwrap().buckets();
     let todo = {
         let mut w = s.web.lock().unwrap();
@@ -322,6 +332,7 @@ async fn upload(app: &AppHandle, manual: bool) {
         todo
     };
     let days = site::build_days(&buckets, &todo);
+    let local = site::local_totals(&buckets, today);
     let mut accepted = 0;
     let mut skipped = 0;
     for chunk in site::chunks(&days) {
@@ -329,11 +340,14 @@ async fn upload(app: &AppHandle, manual: bool) {
             Ok((a, sk)) => {
                 accepted += a;
                 skipped += sk;
-                // 这一批传的（日期, 服务）不管是新收下的还是网站上早就有的，都打上标签，以后不再传
+                // 这一批传的（日期, 服务）不管是新收下的还是网站上早就有的，都打上标签、记下这次的量，量不再变多就不再传
                 let mut w = s.web.lock().unwrap();
                 for d in chunk {
                     for e in &d.entries {
-                        w.ledger.insert(&d.day, &e.app);
+                        match local.get(&format!("{}|{}", d.day, e.app)) {
+                            Some(&sent) => w.ledger.record(&d.day, &e.app, sent),
+                            None => w.ledger.insert(&d.day, &e.app),
+                        }
                     }
                 }
                 w.ledger.last_upload_at = Some(now_secs());
@@ -387,8 +401,8 @@ async fn upload(app: &AppHandle, manual: bool) {
     app_state::publish(app);
 }
 
-/// 开着自动上传时，每天 12:00 扫一遍本地统计（扫完 usage_did_update 就会传）。按墙上时间每分钟看一次，
-/// 电脑睡眠跨过 12:00 时醒来马上补上。
+/// 开着自动上传时，每天 0:30 扫一遍本地统计（扫完 usage_did_update 就会传）。按墙上时间每分钟看一次，
+/// 电脑睡眠跨过 0:30 时醒来马上补上。
 pub fn schedule_noon(app: &AppHandle) {
     let s = app.state::<AppState>();
     let on = s.settings().web_auto_upload;
@@ -417,9 +431,9 @@ pub fn schedule_noon(app: &AppHandle) {
     }));
 }
 
-/// 下一个本地 12:00。
+/// 下一个本地 0:30。
 fn next_noon(now: chrono::DateTime<Local>) -> chrono::DateTime<Local> {
-    let at = |d: NaiveDate| d.and_hms_opt(AUTO_UPLOAD_HOUR, 0, 0).and_then(|t| Local.from_local_datetime(&t).earliest());
+    let at = |d: NaiveDate| d.and_hms_opt(AUTO_UPLOAD_HOUR, AUTO_UPLOAD_MINUTE, 0).and_then(|t| Local.from_local_datetime(&t).earliest());
     match at(now.date_naive()) {
         Some(noon) if noon > now => noon,
         _ => at(now.date_naive() + chrono::Duration::days(1)).unwrap_or(now + chrono::Duration::hours(24)),

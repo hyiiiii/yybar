@@ -5,12 +5,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, useAppState, useTicker, useUsage } from "../shared/api";
-import { Icon, LimitBarRow, RefreshButton, ServiceTile, StatusDot } from "../shared/design";
+import { Icon, QuotaEntryView, quotaEntries, RefreshButton } from "../shared/design";
 import { compactToken, cost, relativeShort } from "../shared/format";
 import { tr } from "../shared/l10n";
-import { shortLabel, windowsFor } from "../shared/quota";
-import { accentVar, displayName } from "../shared/services";
-import { ALL_APPS, localShown, trayShows, type QuotaSnapshot, type RefreshState, type ServiceStatus, type UsageApp } from "../shared/types";
+import { localShown } from "../shared/types";
 import { allTokens, dayBounds, totalsBetween } from "../shared/usage";
 
 export function Popover() {
@@ -47,20 +45,8 @@ export function Popover() {
   if (!state) return <div ref={rootRef} className={`popover ${translucent ? "translucent" : ""}`} style={{ height: 120 }} />;
 
   const settings = state.settings;
-  /** 托盘上的一个账号：本机账号，或者勾了「任务栏」的其他账号（标题带账号名）。 */
-  type Entry = { key: string; app: UsageApp; title: string; plan: string | null; quota: QuotaSnapshot | null; refresh: RefreshState; status: ServiceStatus | null };
-  const entries: Entry[] = [];
-  for (const app of ALL_APPS) {
-    const s = state.services.find((x) => x.app === app);
-    if (!s) continue;
-    if (trayShows(settings, app) && localShown(s)) {
-      entries.push({ key: app, app, title: displayName[app], plan: s.plan, quota: s.quota, refresh: s.refresh, status: s.status });
-    }
-    for (const o of state.others) {
-      if (o.app !== app || !o.enabled || !o.showInTray) continue;
-      entries.push({ key: o.id, app, title: `${displayName[app]} · ${o.name}`, plan: o.plan, quota: o.quota, refresh: o.refresh, status: s.status });
-    }
-  }
+  /** 托盘上的账号：本机账号，和勾了「任务栏」的其他账号 */
+  const entries = quotaEntries(state, "tray");
 
   const { today, tomorrow } = dayBounds();
   const totals = totalsBetween(usage?.buckets ?? [], today, tomorrow);
@@ -98,39 +84,9 @@ export function Popover() {
         </div>
       ) : (
         <div className="pop-entries">
-          {entries.map((s) => {
-            const windows = windowsFor(s.app, s.quota);
-            const pools = s.quota?.pools;
-            return (
-              <div className="pop-entry" key={s.key}>
-                <ServiceTile app={s.app} size={22} logoSize={13} />
-                <div className="pop-entry-body">
-                  <div className="pop-entry-head">
-                    <span className="pop-entry-title">{s.title}</span>
-                    {s.plan && <span className="pop-plan">{s.plan}</span>}
-                    {s.refresh.lastError && (
-                      <span className="pop-warning" title={s.refresh.lastError}>
-                        <Icon name="warning" size={11} />
-                      </span>
-                    )}
-                    <span style={{ flex: 1 }} />
-                    <StatusDot status={s.status} size={6} />
-                  </div>
-                  {windows.map((w) => (
-                    <LimitBarRow
-                      key={w.id}
-                      label={shortLabel(w, pools)}
-                      window={w.window}
-                      tint={accentVar[s.app]}
-                      labelWidth={pools ? 92 : 30}
-                      mode={settings.resetTimeDisplay}
-                      now={now}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          {entries.map((e) => (
+            <QuotaEntryView key={e.key} entry={e} mode={settings.resetTimeDisplay} now={now} />
+          ))}
         </div>
       )}
       <div className="divider" />

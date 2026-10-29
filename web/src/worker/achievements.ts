@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { ACHIEVEMENTS, findAchievement, longestStreak, MAX_BADGES, parseBadges, type AchievementId } from "../shared/achievements";
+import { plansOf } from "./accounts";
 import { requireSession, sessionUser } from "./auth";
 import type { AppEnv } from "./types";
 import { addDays, isoDay } from "./util";
@@ -46,7 +47,7 @@ const TOKENS = "input_tokens + output_tokens + cache_read_tokens + cache_creatio
  */
 export async function syncAchievements(db: D1Database, userId: number) {
   const today = isoDay(new Date());
-  const [unlocked, days, totals, flags, recent] = await Promise.all([
+  const [unlocked, days, totals, flags, recent, plans] = await Promise.all([
     db.prepare("SELECT id FROM user_achievements WHERE user_id = ?").bind(userId).all<{ id: string }>(),
     db.prepare(`SELECT DISTINCT day FROM daily_usage WHERE user_id = ? AND ${TOKENS} > 0 ORDER BY day`).bind(userId).all<{ day: string }>(),
     db
@@ -65,7 +66,11 @@ export async function syncAchievements(db: D1Database, userId: number) {
       .prepare(`SELECT day, user_id, SUM(${TOKENS}) AS tokens FROM daily_usage WHERE day >= ? GROUP BY day, user_id`)
       .bind(addDays(today, -1))
       .all<{ day: string; user_id: number; tokens: number }>(),
+    plansOf(db, userId),
   ]);
+  // 订阅：App 传上来的当前订阅里有没有（免费、团队的不算）
+  const has = (app: string, test: (plan: string) => boolean) => plans.some((p) => p.app === app && test(p.plan.toLowerCase()));
+  const paid = (p: string) => !/free|guest|team|business|enterprise|edu/.test(p);
   const have = new Set(unlocked.results.map((r) => r.id));
   const streak = longestStreak(days.results.map((r) => r.day));
   const tokens = totals?.tokens ?? 0;
@@ -86,7 +91,13 @@ export async function syncAchievements(db: D1Database, userId: number) {
     top_today: [...top.values()].some((x) => x.user === userId),
     tokens_100m: tokens >= 100_000_000,
     tokens_1b: tokens >= 1_000_000_000,
+    tokens_10b: tokens >= 10_000_000_000,
     spend_1k: spend >= 1_000,
+    spend_10k: spend >= 10_000,
+    claude_pro: has("claude", (p) => paid(p) && p.includes("pro")),
+    claude_max: has("claude", (p) => paid(p) && p.includes("max")),
+    gpt_plus: has("codex", (p) => paid(p) && p.includes("plus")),
+    gpt_pro: has("codex", (p) => paid(p) && p.includes("pro")),
   };
   for (const id of Object.keys(reached) as AchievementId[]) {
     if (reached[id] && !have.has(id)) await unlockAchievement(db, userId, id);

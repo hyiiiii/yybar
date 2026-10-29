@@ -93,6 +93,7 @@ export function demoState(): StateSnapshot {
       floatingPosition: null,
       // 地址带 ?dock=left / ?dock=right 看收起的窄条
       floatingDock: (["left", "right"] as const).find((d) => new URLSearchParams(location.search).get("dock") === d) ?? null,
+      floatingStyle: new URLSearchParams(location.search).get("style") === "detailed" ? "detailed" : "compact",
       quotaInterval: "m2",
       usageInterval: "m2",
       scanWsl: false,
