@@ -36,7 +36,7 @@ const TOP: [TokenRow["topApp"], string][] = [
   ["grok", "grok-4"], ["codex", "gpt-5-codex"], ["codex", "gpt-5"], ["grok", "grok-4"],
 ];
 
-const DEMO_BADGES: (string | null)[] = [null, "streak_30", "big_pot", null, "first_login", null, "spend_1k", null];
+const DEMO_BADGES: (string | null)[] = [null, "streak_30", "big_pot", "gpt_pro", "first_login", "claude_max", "spend_1k", null];
 
 /** 不同模型单价不一样，按花费排和按 token 排名次会不同 */
 const PRICE_FACTOR = [1, 0.7, 1.35, 1.6, 0.5, 0.8, 0.9, 0.4];

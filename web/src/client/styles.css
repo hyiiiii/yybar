@@ -625,9 +625,12 @@ main { min-height: 60vh; }
 /* 订阅成就：Claude 橙、ChatGPT 黑白 */
 .badge-claude { background: linear-gradient(180deg, #e8916f, #c4623f); }
 .badge-gpt { background: linear-gradient(180deg, #2b2b2e, #0d0d0e); color: #fff; }
-.badge-logo { display: inline-flex; align-items: center; gap: 2px; }
-.badge-big.badge-logo { gap: 3px; }
-.badge-logo .svc-logo { color: inherit; vertical-align: 0; }
+/* 带服务标的徽章：标绝对定位在左边留出的位置里、上下居中，徽章里参与排版的还是只有文字，
+   高度、基线和其他徽章完全一样（标放进 flex 里时徽章按标的底边对齐，比旁边的高出一截） */
+.badge-logo { position: relative; padding-left: 15px; }
+.badge-logo .svc-logo { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); color: inherit; }
+.badge-big.badge-logo { padding-left: 21px; }
+.badge-big.badge-logo .svc-logo { left: 6px; }
 .plate-name .badge { margin-left: 3px; }
 /* 成就页 */
 .ach-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
