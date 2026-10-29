@@ -401,13 +401,18 @@ export function StatLine({ stats }: { stats: { hands: number; winRate: number | 
   );
 }
 
+/** 订阅成就的徽章前面带服务的标（白色）：Claude 的、ChatGPT 的（和 Codex 同一个 OpenAI 标） */
+const BADGE_LOGO: Partial<Record<string, App>> = { claude: "claude", gpt: "codex" };
+
 /** 成就徽章：小小一枚，戴在名字后面；悬停显示是哪个成就 */
 export function Badge({ id, big }: { id?: string | null; big?: boolean }) {
   const lang = useLang();
   const a = id ? findAchievement(id) : undefined;
   if (!a) return null;
+  const logo = BADGE_LOGO[a.badge.tier];
   return (
-    <span className={`badge badge-${a.badge.tier}${big ? " badge-big" : ""}`} title={pick(a.name, lang)} aria-label={pick(a.name, lang)}>
+    <span className={`badge badge-${a.badge.tier}${logo ? " badge-logo" : ""}${big ? " badge-big" : ""}`} title={pick(a.name, lang)} aria-label={pick(a.name, lang)}>
+      {logo && <ServiceLogo app={logo} size={big ? 12 : 9} />}
       {a.badge.label}
     </span>
   );

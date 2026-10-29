@@ -220,7 +220,7 @@ export function demoApi(path: string, method: string, _json?: unknown): unknown 
     return url.searchParams.get("by") === "wealth" ? { rows: wealthBoard(url.searchParams.get("sort") ?? "balance") } : { rows: tokenBoard(url.searchParams.get("range") ?? "7d", url.searchParams.get("sort") ?? "tokens") };
   }
   if (url.pathname === "/api/achievements") {
-    if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null, claimedAt: null })), progress: null, badge: null };
+    if (!loggedIn) return { achievements: ACHIEVEMENTS.map((a) => ({ ...a, unlockedAt: null, claimedAt: null })), progress: null, badges: [] };
     return {
       achievements: ACHIEVEMENTS.map((a) => {
         const at = demoUnlocked[a.id] ? `${demoUnlocked[a.id]}T08:00:00Z` : null;

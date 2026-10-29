@@ -34,8 +34,9 @@ ab_glyph = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.6"
-# 悬浮窗按着时看左键是否还按着（在窗口外松手前端收不到时，后台自己收尾）；悬浮窗一次改完位置和尺寸
-windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+# 悬浮窗按着时看左键是否还按着（在窗口外松手前端收不到时，后台自己收尾）；悬浮窗一次改完位置和尺寸；
+# 拖动 / 滑动按屏幕刷新走（DwmFlush）、每帧直接查光标（GetCursorPos）
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 codegen-units = 1

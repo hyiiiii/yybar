@@ -10,7 +10,7 @@ use crate::quota::client;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ClaudeProfile {
     pub email: Option<String>,
-    /// max / pro / team / enterprise
+    /// max / pro / team / enterprise；订阅过期（以前是 Pro、现在免费）时为 free
     pub plan: Option<String>,
     /// 订阅开始日；订阅状态不是 active（已取消等）时没有。
     pub subscription_started_at: Option<i64>,
@@ -42,14 +42,13 @@ pub fn parse(root: &Value) -> ClaudeProfile {
     let org = root.get("organization").unwrap_or(&empty);
     let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).filter(|x| !x.is_empty()).map(str::to_string);
     let email = s(account, "email_address").or_else(|| s(account, "email"));
-    let plan = match s(org, "organization_type") {
-        // claude_max / claude_pro / claude_team / claude_enterprise → max / pro / team / enterprise
-        Some(t) => Some(t.strip_prefix("claude_").unwrap_or(&t).to_string()),
-        None if account.get("has_claude_max").and_then(Value::as_bool) == Some(true) => Some("max".into()),
-        None if account.get("has_claude_pro").and_then(Value::as_bool) == Some(true) => Some("pro".into()),
-        None => None,
-    };
     let active = s(org, "subscription_status").map_or(true, |st| st == "active");
+    let plan = plan_of(
+        s(org, "organization_type").as_deref(),
+        account.get("has_claude_max").and_then(Value::as_bool),
+        account.get("has_claude_pro").and_then(Value::as_bool),
+        s(org, "subscription_status").as_deref(),
+    );
     let mut oauth = Map::new();
     for (to, from, src) in [
         ("accountUuid", "uuid", account),
@@ -81,6 +80,27 @@ pub fn parse(root: &Value) -> ClaudeProfile {
     }
 }
 
+/// 订阅等级（和 Mac `ClaudeProfileClient.plan` 一样）。凭据里的 subscriptionType 是登录那一刻的，订阅过期后还写着 pro，
+/// 这里按资料接口的现状算：团队 / 企业看组织类型；个人看 has_claude_max / has_claude_pro，两个都明确是 false、
+/// 或订阅状态已经不是 active / trialing / past_due 时算 free；都没有时照组织类型（claude_pro → pro）。
+pub fn plan_of(org_type: Option<&str>, has_max: Option<bool>, has_pro: Option<bool>, status: Option<&str>) -> Option<String> {
+    let stripped = org_type.map(|t| t.strip_prefix("claude_").unwrap_or(t).to_string());
+    if stripped.as_deref().is_some_and(|t| t.contains("team") || t.contains("enterprise")) {
+        return stripped;
+    }
+    if has_max == Some(true) {
+        return Some("max".into());
+    }
+    if has_pro == Some(true) {
+        return Some("pro".into());
+    }
+    let lapsed = status.is_some_and(|st| !["active", "trialing", "past_due"].contains(&st));
+    if (has_max == Some(false) && has_pro == Some(false)) || lapsed {
+        return Some("free".into());
+    }
+    stripped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +123,14 @@ mod tests {
         assert_eq!(cancelled.plan.as_deref(), Some("pro"));
         assert!(cancelled.subscription_started_at.is_none());
         assert!(cancelled.oauth_account.is_none());
+
+        // 以前是 Pro、现在免费：凭据里还写着 pro，资料接口两个标记都是 false
+        let lapsed = parse(&json!({"account": {"has_claude_pro": false, "has_claude_max": false},
+                                    "organization": {"organization_type": "claude_pro", "subscription_status": "canceled"}}));
+        assert_eq!(lapsed.plan.as_deref(), Some("free"));
+        assert_eq!(plan_of(Some("claude_pro"), None, None, Some("canceled")).as_deref(), Some("free"));
+        assert_eq!(plan_of(Some("claude_team"), Some(false), Some(false), None).as_deref(), Some("team"));
+        assert_eq!(plan_of(Some("claude_pro"), None, None, Some("past_due")).as_deref(), Some("pro"));
+        assert_eq!(plan_of(None, None, None, None), None);
     }
 }

@@ -315,19 +315,26 @@ enum ClaudeProfileClient {
         let account = root["account"] as? [String: Any]
         let organization = root["organization"] as? [String: Any]
         let email = (account?["email_address"] ?? account?["email"]) as? String
-        var plan: String?
-        if let type = organization?["organization_type"] as? String {
-            // claude_max / claude_pro / claude_team / claude_enterprise → max / pro / team / enterprise
-            plan = type.hasPrefix("claude_") ? String(type.dropFirst("claude_".count)) : type
-        } else if account?["has_claude_max"] as? Bool == true {
-            plan = "max"
-        } else if account?["has_claude_pro"] as? Bool == true {
-            plan = "pro"
-        }
+        let plan = plan(organizationType: organization?["organization_type"] as? String,
+                        hasMax: account?["has_claude_max"] as? Bool, hasPro: account?["has_claude_pro"] as? Bool,
+                        status: organization?["subscription_status"] as? String)
         let active = (organization?["subscription_status"] as? String).map { $0 == "active" } ?? true
         return Profile(email: email, plan: plan,
                        subscriptionStartedAt: active ? SubscriptionRenewal.parseDate(organization?["subscription_created_at"]) : nil,
                        rateLimitTier: organization?["rate_limit_tier"] as? String)
+    }
+
+    /// 订阅等级。凭据里的 subscriptionType 是登录那一刻的，订阅过期后还写着 pro,这里按资料接口的现状算：
+    /// 团队 / 企业看组织类型；个人看 has_claude_max / has_claude_pro,两个都明确是 false、或订阅状态已经不是
+    /// active / trialing / past_due 时算 free;都没有时照组织类型(claude_pro → pro)。和 Windows `profile::plan_of` 一样。
+    nonisolated static func plan(organizationType: String?, hasMax: Bool?, hasPro: Bool?, status: String?) -> String? {
+        let stripped = organizationType.map { $0.hasPrefix("claude_") ? String($0.dropFirst("claude_".count)) : $0 }
+        if let stripped, stripped.contains("team") || stripped.contains("enterprise") { return stripped }
+        if hasMax == true { return "max" }
+        if hasPro == true { return "pro" }
+        let lapsed = status.map { !["active", "trialing", "past_due"].contains($0) } ?? false
+        if (hasMax == false && hasPro == false) || lapsed { return "free" }
+        return stripped
     }
 
     /// 切换本机 CLI 账号时，为没有保存 `oauthAccount` 的账号(粘贴 / 浏览器添加)补齐

@@ -625,6 +625,9 @@ main { min-height: 60vh; }
 /* 订阅成就：Claude 橙、ChatGPT 黑白 */
 .badge-claude { background: linear-gradient(180deg, #e8916f, #c4623f); }
 .badge-gpt { background: linear-gradient(180deg, #2b2b2e, #0d0d0e); color: #fff; }
+.badge-logo { display: inline-flex; align-items: center; gap: 2px; }
+.badge-big.badge-logo { gap: 3px; }
+.badge-logo .svc-logo { color: inherit; vertical-align: 0; }
 .plate-name .badge { margin-left: 3px; }
 /* 成就页 */
 .ach-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }

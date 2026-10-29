@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
-use yybar_core::accounts::{self as other_accounts, login::LoginSession, OtherAccount, Provider};
+use yybar_core::accounts::{self as other_accounts, login::LoginSession, profile, OtherAccount, Provider};
 use yybar_core::credentials::{self, ClaudeAccount, CodexAccount, GrokAccount, SubscriptionRenewal};
 use yybar_core::paths::{self, HomeRoot};
 use yybar_core::quota::status::{self as service_status, ServiceStatus};
@@ -64,6 +64,9 @@ pub struct Inner {
     pub refresh: HashMap<UsageApp, RefreshState>,
     pub grok_plan: Option<String>,
     grok_plan_at: Option<i64>,
+    /// 本机 Claude 账号的资料接口结果（每 6 小时一次）：凭据里的 subscriptionType 是登录那一刻的，
+    /// 订阅过期后还写着 pro，显示、上传订阅都以这里为准（只在内存里，不写回 CLI 的凭据）
+    claude_profile: Option<LocalClaudeProfile>,
     pub google_email: Option<String>,
     pub google_plan: Option<String>,
     pub status: HashMap<UsageApp, ServiceStatus>,
@@ -222,6 +225,7 @@ impl AppState {
                 refresh,
                 grok_plan: None,
                 grok_plan_at: None,
+                claude_profile: None,
                 google_email: None,
                 google_plan: None,
                 status: HashMap::new(),
@@ -294,7 +298,35 @@ impl AppState {
     }
 }
 
+/// 本机 Claude 账号上次从资料接口读到的订阅（`email` 是当时的账号，换了账号就不再用）。
+#[derive(Debug, Clone)]
+struct LocalClaudeProfile {
+    email: Option<String>,
+    plan: Option<String>,
+    started_at: Option<i64>,
+    rate_limit_tier: Option<String>,
+    at: i64,
+}
+
+/// 本机 Claude 账号的订阅等级 / 订阅开始日多久从资料接口更新一次（和其他账号一样）。
+const CLAUDE_PROFILE_INTERVAL: i64 = 6 * 3600;
+
 impl Inner {
+    /// 把资料接口读到的订阅盖到本机 Claude 账号上（同一个账号才盖）：等级、订阅开始日（订阅不是 active 时没有，就不显示续费日）、档位。
+    fn with_claude_profile(&self, mut account: ClaudeAccount) -> ClaudeAccount {
+        let same = |p: &LocalClaudeProfile| p.email.as_deref().map(str::to_lowercase) == account.email.as_deref().map(str::to_lowercase);
+        if let Some(p) = self.claude_profile.as_ref().filter(|p| same(p)) {
+            account.subscription_type = p.plan.clone().or(account.subscription_type);
+            account.subscription_created_at = p.started_at;
+            account.rate_limit_tier = p.rate_limit_tier.clone().or(account.rate_limit_tier);
+        }
+        account
+    }
+
+    fn claude_profile_due(&self, account: &ClaudeAccount, now: i64) -> bool {
+        self.claude_profile.as_ref().map_or(true, |p| now - p.at > CLAUDE_PROFILE_INTERVAL || p.email != account.email)
+    }
+
     /// 本机账号的身份（用于「删除本机账号」：CLI 换成别的账号后身份不同，自动重新出现）。
     pub fn identity(&self, app: UsageApp) -> Option<String> {
         match app {
@@ -622,6 +654,7 @@ fn load_local_credentials(app: &AppHandle) {
         g.cache.claude_email = claude_email;
         cache_dirty = true;
     }
+    let claude = claude.map(|a| g.with_claude_profile(a));
     g.claude = claude;
 
     let grok_id = grok.as_ref().map(|a| a.identity.clone());
@@ -730,12 +763,31 @@ async fn load_claude_quota(app: &AppHandle, reason: RefreshReason) {
     };
     publish(app);
     let mut account = account;
+    let profile_due = state.inner.lock().unwrap().claude_profile_due(&account, now_secs());
+    let mut fresh_profile = None;
     let result = match claude_refresh::ensure_fresh(&mut account).await {
-        Ok(token) => quota::claude::fetch(&token).await,
+        Ok(token) => {
+            let result = quota::claude::fetch(&token).await;
+            // 每 6 小时顺带从资料接口更新一次订阅（凭据里的是登录那一刻的）；额度没拿到也更新（免费账号的额度接口可能不给）
+            if profile_due {
+                fresh_profile = profile::fetch(&token).await;
+            }
+            result
+        }
         Err(e) => Err(e),
     };
     let mut g = state.inner.lock().unwrap();
+    if let Some(p) = fresh_profile {
+        g.claude_profile = Some(LocalClaudeProfile {
+            email: account.email.clone(),
+            plan: p.plan,
+            started_at: p.subscription_started_at,
+            rate_limit_tier: p.rate_limit_tier,
+            at: now_secs(),
+        });
+    }
     if g.claude.as_ref().map(|a| &a.path) == Some(&account.path) {
+        let account = g.with_claude_profile(account);
         g.claude = Some(account);
     }
     match result {

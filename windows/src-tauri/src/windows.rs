@@ -35,9 +35,8 @@ const DOCK_DISTANCE: f64 = 24.0;
 const REDOCK_DISTANCE: f64 = 60.0;
 /// 收起的窄条宽度（逻辑像素，和 floating.css 的 .hud.collapsed 一致）
 const TAB_WIDTH: f64 = 30.0;
-/// 滑入 / 滑出屏幕边的动画：帧数 × 每帧间隔 ≈ 220 毫秒
-const SLIDE_FRAMES: u32 = 14;
-const SLIDE_FRAME_MS: u64 = 16;
+/// 滑入 / 滑出屏幕边的动画时长（毫秒，和 Mac slideDuration 一样；按时间算，屏幕刷新率不同也一样长）
+const SLIDE_MS: f64 = 220.0;
 
 /// 按下后移动超过这么多（逻辑像素）才算拖动（和 Mac FloatingMouseView 一样）
 const DRAG_THRESHOLD: f64 = 3.0;
@@ -55,6 +54,63 @@ fn set_frame(w: &WebviewWindow, x: i32, y: i32, width: u32, height: u32) {
     }
     let _ = w.set_size(PhysicalSize::new(width, height));
     let _ = w.set_position(PhysicalPosition::new(x, y));
+}
+
+/// 等到屏幕下一次刷新（DWM 合成完一帧）：拖动、滑动每帧挪一次窗口，跟屏幕刷新率走，和系统拖别的窗口一样顺。
+/// 2026-10-29 前用 tokio 睡 16 毫秒：Windows 默认定时器精度 15.6 毫秒，实际要睡 31 毫秒左右，窗口每秒只动 30 来次，
+/// 拖着看就卡，滑入 / 滑出也比说好的 220 毫秒慢一倍。
+fn wait_frame() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Dwm::DwmFlush;
+        if unsafe { DwmFlush() } >= 0 {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(8));
+    }
+    #[cfg(not(windows))]
+    std::thread::sleep(Duration::from_millis(16));
+}
+
+/// 光标位置（物理像素）。Windows 上直接 GetCursorPos，拖动线程每帧查，不绕主线程。
+fn cursor_now(app: &AppHandle) -> Option<PhysicalPosition<f64>> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut p = POINT { x: 0, y: 0 };
+        if unsafe { GetCursorPos(&mut p) } != 0 {
+            return Some(PhysicalPosition::new(p.x as f64, p.y as f64));
+        }
+    }
+    app.cursor_position().ok()
+}
+
+/// 在拖动 / 滑动线程里挪悬浮窗（物理像素，只改位置）。Windows 上直接对窗口 SetWindowPos，不绕主线程排队。
+struct Mover {
+    window: WebviewWindow,
+    #[cfg(windows)]
+    hwnd: isize,
+}
+
+impl Mover {
+    fn new(window: WebviewWindow) -> Mover {
+        Mover {
+            #[cfg(windows)]
+            hwnd: window.hwnd().map_or(0, |h| h.0 as isize),
+            window,
+        }
+    }
+
+    fn move_to(&self, x: i32, y: i32) {
+        #[cfg(windows)]
+        if self.hwnd != 0 {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER};
+            unsafe { SetWindowPos(self.hwnd as _, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) };
+            return;
+        }
+        let _ = self.window.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 /// 左键还按着。只在 Windows 上查得到；其他平台（开发时）一律当按着，松手只靠前端报。
@@ -102,6 +158,26 @@ struct FloatingPress {
     cursor: PhysicalPosition<f64>,
     origin: PhysicalPosition<i32>,
     dragging: bool,
+    /// 上一帧挪到的位置（光标没动就不再挪）
+    last: Option<(i32, i32)>,
+}
+
+impl FloatingPress {
+    /// 光标到了这里时窗口该在哪（物理像素）：移动超过 threshold 才算拖动；和上一帧一样时为 None。
+    fn follow(&mut self, cursor: PhysicalPosition<f64>, threshold: f64) -> Option<(i32, i32)> {
+        let (dx, dy) = (cursor.x - self.cursor.x, cursor.y - self.cursor.y);
+        if !self.dragging {
+            if dx.hypot(dy) < threshold {
+                return None;
+            }
+            self.dragging = true;
+        }
+        let target = (self.origin.x + dx.round() as i32, self.origin.y + dy.round() as i32);
+        (self.last != Some(target)).then(|| {
+            self.last = Some(target);
+            target
+        })
+    }
 }
 
 /// 在后台任务里新建窗口（见文件头：避免 WebView2 在同步命令 / 事件回调里卡死）。同一个窗口正在建时忽略。
@@ -354,7 +430,7 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
 /// 前端在悬浮窗（展开的或收起的窄条）上按下左键：记下鼠标和窗口位置（物理像素），之后按着的时候每帧跟一次鼠标，
 /// 移动超过 3 像素才算拖动、窗口跟着鼠标走（可以推出屏幕边）——对应 Mac `FloatingMouseView`。
 /// 不再交给系统拖、松手后再看位置：那样分不清单击和拖动，动画中再按一下还会被当成拖动、又收回去。
-/// 跟鼠标靠后台每帧查一次光标，不靠网页的 mousemove（窗口跟着光标动时可能收不到）。
+/// 跟鼠标靠一个后台线程每次屏幕刷新查一次光标、直接挪窗口（`wait_frame` / `Mover`），不靠网页的 mousemove（窗口跟着光标动时可能收不到）。
 /// 松手：前端报上来（floating_release），或后台看到左键已经松开（在窗口外松手等），先到的算。
 /// 滑入 / 滑出动画进行中按下的不理（对应 Mac 的 `animating`）。
 pub fn floating_press(app: &AppHandle) {
@@ -367,43 +443,33 @@ pub fn floating_press(app: &AppHandle) {
             return;
         }
         let Some(w) = app.get_webview_window(FLOATING) else { return };
-        let (Ok(cursor), Ok(origin)) = (app.cursor_position(), w.outer_position()) else { return };
-        *press = Some(FloatingPress { id, cursor, origin, dragging: false });
+        let (Some(cursor), Ok(origin)) = (cursor_now(app), w.outer_position()) else { return };
+        *press = Some(FloatingPress { id, cursor, origin, dragging: false, last: None });
     }
     let h = app.clone();
-    tauri::async_runtime::spawn(async move {
+    std::thread::spawn(move || {
+        let Some(w) = h.get_webview_window(FLOATING) else { return };
+        let threshold = DRAG_THRESHOLD * w.scale_factor().unwrap_or(1.0);
+        let mover = Mover::new(w);
         loop {
-            tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
-            let pressing = h.state::<WindowState>().floating_press.lock().unwrap().as_ref().is_some_and(|p| p.id == id);
-            if !pressing {
+            wait_frame();
+            if !left_button_down() {
+                let h2 = h.clone();
+                let _ = h.run_on_main_thread(move || finish_press(&h2, Some(id)));
                 break;
             }
-            let h2 = h.clone();
-            let _ = h.run_on_main_thread(move || {
-                if left_button_down() {
-                    let ws = h2.state::<WindowState>();
-                    let mut press = ws.floating_press.lock().unwrap();
-                    if let Some(press) = press.as_mut().filter(|p| p.id == id) {
-                        follow_cursor(&h2, press);
-                    }
-                } else {
-                    finish_press(&h2, Some(id));
-                }
-            });
+            let target = {
+                let ws = h.state::<WindowState>();
+                let mut slot = ws.floating_press.lock().unwrap();
+                let Some(press) = slot.as_mut().filter(|p| p.id == id) else { break };
+                cursor_now(&h).and_then(|c| press.follow(c, threshold))
+            };
+            // 挪窗口时不拿着锁（SetWindowPos 要等主线程处理完）
+            if let Some((x, y)) = target {
+                mover.move_to(x, y);
+            }
         }
     });
-}
-
-fn follow_cursor(app: &AppHandle, press: &mut FloatingPress) {
-    let (Some(w), Ok(cursor)) = (app.get_webview_window(FLOATING), app.cursor_position()) else { return };
-    let (dx, dy) = (cursor.x - press.cursor.x, cursor.y - press.cursor.y);
-    if !press.dragging {
-        if dx.hypot(dy) < DRAG_THRESHOLD * w.scale_factor().unwrap_or(1.0) {
-            return;
-        }
-        press.dragging = true;
-    }
-    let _ = w.set_position(PhysicalPosition::new(press.origin.x + dx.round() as i32, press.origin.y + dy.round() as i32));
 }
 
 /// 前端报松手。
@@ -434,23 +500,24 @@ fn finish_press(app: &AppHandle, only: Option<u64>) {
     }
 }
 
-/// 悬浮窗滑动到 to_x（保持 y），每帧在主线程挪一次窗口；动完在主线程执行 then。
+/// 悬浮窗滑动到 to_x（保持 y）：后台线程每次屏幕刷新挪一次窗口，按时间算位置（220 毫秒）；动完在主线程执行 then。
 fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<Box<dyn FnOnce(&AppHandle) + Send>>) {
     let ws = app.state::<WindowState>();
     ws.floating_sliding.store(true, Ordering::SeqCst);
     let h = app.clone();
-    tauri::async_runtime::spawn(async move {
-        for i in 1..=SLIDE_FRAMES {
-            let t = i as f64 / SLIDE_FRAMES as f64;
-            let eased = t * t * (3.0 - 2.0 * t);
-            let x = from_x + ((to_x - from_x) as f64 * eased).round() as i32;
-            let h2 = h.clone();
-            let _ = h.run_on_main_thread(move || {
-                if let Some(w) = h2.get_webview_window(FLOATING) {
-                    let _ = w.set_position(PhysicalPosition::new(x, y));
+    std::thread::spawn(move || {
+        if let Some(w) = h.get_webview_window(FLOATING) {
+            let mover = Mover::new(w);
+            let start = Instant::now();
+            loop {
+                wait_frame();
+                let t = (start.elapsed().as_secs_f64() * 1000.0 / SLIDE_MS).min(1.0);
+                let eased = t * t * (3.0 - 2.0 * t);
+                mover.move_to(from_x + ((to_x - from_x) as f64 * eased).round() as i32, y);
+                if t >= 1.0 {
+                    break;
                 }
-            });
-            tokio::time::sleep(Duration::from_millis(SLIDE_FRAME_MS)).await;
+            }
         }
         h.state::<WindowState>().floating_sliding.store(false, Ordering::SeqCst);
         let pending = h.state::<WindowState>().floating_pending_fit.lock().unwrap().take();

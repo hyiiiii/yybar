@@ -37,6 +37,9 @@ final class AppState {
     var extraErrors: [String: String] = [:]
     var extraRefreshStates: [String: QuotaRefreshState] = [:]
     @ObservationIgnored private var extraPlanFetchedAt: [String: Date] = [:]
+    /// 本机 Claude 账号的资料接口结果(每 6 小时一次):凭据里的 subscriptionType 是登录那一刻的，订阅过期后还写着 pro,
+    /// 显示、上传订阅都以这里为准(只在内存里，不写回 CLI 的凭据)。email 是当时的账号，换了账号就不再用。
+    @ObservationIgnored private var localClaudeProfile: (email: String?, profile: ClaudeProfileClient.Profile, at: Date)?
 
     /// 主窗口当前 tab,允许 ⌘1 / ⌘, 等命令从外部驱动切换
     var mainTab: MainTab = .stats
@@ -1852,12 +1855,22 @@ final class AppState {
             if claudeIdentityChanged(previous: claudeAccount, next: next) {
                 resetClaudeQuotaState()
             }
-            self.claudeAccount = next
+            self.claudeAccount = applyingLocalClaudeProfile(next)
             self.claudeError = nil
         } catch {
             self.claudeAccount = nil
             self.claudeError = "\(error)"
         }
+    }
+
+    /// 把资料接口读到的订阅盖到本机 Claude 账号上(同一个账号才盖):等级、订阅开始日(订阅不是 active 时没有，就不显示续费日)、档位。
+    private func applyingLocalClaudeProfile(_ account: ClaudeAccount) -> ClaudeAccount {
+        guard let local = localClaudeProfile, local.email?.lowercased() == account.email?.lowercased() else { return account }
+        var account = account
+        account.subscriptionType = local.profile.plan ?? account.subscriptionType
+        account.subscriptionCreatedAt = local.profile.subscriptionStartedAt
+        account.rateLimitTier = local.profile.rateLimitTier ?? account.rateLimitTier
+        return account
     }
 
     private func claudeIdentityChanged(previous: ClaudeAccount?, next: ClaudeAccount) -> Bool {
@@ -2365,6 +2378,12 @@ final class AppState {
             return
         }
         let result = await ClaudeQuotaClient.fetch(accessToken: activeToken)
+        // 每 6 小时顺带从资料接口更新一次订阅(凭据里的是登录那一刻的);额度没拿到也更新(免费账号的额度接口可能不给)
+        let profileDue = localClaudeProfile.map { $0.email != account.email || Date().timeIntervalSince($0.at) > 6 * 3600 } ?? true
+        if profileDue, let profile = await ClaudeProfileClient.fetch(accessToken: activeToken) {
+            localClaudeProfile = (account.email, profile, Date())
+            if let current = claudeAccount { claudeAccount = applyingLocalClaudeProfile(current) }
+        }
         switch result {
         case .success(let snapshot):
             storeClaude(snapshot: snapshot, source: .api)

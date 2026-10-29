@@ -135,7 +135,7 @@ npm test && npm run typecheck
 ## 成就
 
 - 达成后不自动发钱：顶栏奖杯右上角出一个红色数字（`GET /api/me` 的 `achievementsReady`，解锁了还没领的个数），去成就页自己点「领取」（卡片金边一圈圈往外亮），两个以上时上面有「全部领取」。奖励第一次登录 $500，其他都是 $100。领了才能把徽章「戴上」挂在名字后面（牌桌、排行榜、个人页），最多同时戴 3 个。目录在 `src/shared/achievements.ts`。
-- 目前 20 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 / 百亿 token、千刀 / 万刀俱乐部（累计花费 $1,000 / $10,000）、Claude Pro、Claude Max、GPT Plus、GPT Pro（App 传上来的订阅里有这一档，见下面 `PUT /api/v1/accounts`；Claude Max 5x / 20x、GPT Pro Lite / Pro / Pro Max 都算，免费和团队 / 企业版不算；徽章 Claude 橙、GPT 黑）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
+- 目前 20 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 / 百亿 token、千刀 / 万刀俱乐部（累计花费 $1,000 / $10,000）、Claude Pro、Claude Max、GPT Plus、GPT Pro（App 传上来的订阅里有这一档，见下面 `PUT /api/v1/accounts`；Claude Max 5x / 20x、GPT Pro Lite / Pro / Pro Max 都算，免费和团队 / 企业版不算；徽章 Claude 橙、GPT 黑，前面带白色的 Claude / OpenAI 标，`Badge` 里的 `BADGE_LOGO`）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
 - 除了牌局的 4 个，都在打开网站（`/api/me`）和成就页时按用量、流水、订阅自动检查；大赢家、葫芦、四条、同花顺由牌桌在一手结束时记下。解锁记在 `user_achievements`（`claimed_at` 为空 = 还没领，迁移 `0010_achievement_claims.sql`；以前解锁的当时已经自动发过奖励，都当作领过），领取时奖励记进 `points_ledger`（`reason = 'achievement'`，`ref = ach:<用户>:<成就>`），只在这一行还没领时写、ref 也去重，连点不会重复发。戴着的徽章在 `users.badges`（JSON 数组，迁移 `0005_achievements.sql`）。
 - 接口：`GET /api/achievements`（成就、进度、每个的 `unlockedAt` / `claimedAt`、正在戴的徽章）、`POST /api/achievements/claim {"id": …}`（不带 id 就把能领的全领了，回 `amount`）、`POST /api/achievements/wear {"id": …, "on": true | false}`。
 
