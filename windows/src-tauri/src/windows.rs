@@ -700,7 +700,9 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         }
         _ => right - nw as i32,
     };
-    set_frame(&w, x, pos.y, nw, nh);
+    // 上下也留在屏幕里（换成详细样式、账号多了变高时往下长，碰到任务栏就整块往上挪）
+    let y = work.map_or(pos.y, |a| pos.y.clamp(a.position.y, (a.position.y + a.size.height as i32 - nh as i32).max(a.position.y)));
+    set_frame(&w, x, y, nw, nh);
 }
 
 // ---------- 材质 ----------

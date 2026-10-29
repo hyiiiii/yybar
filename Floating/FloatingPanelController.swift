@@ -90,7 +90,6 @@ final class FloatingPanelController: NSObject {
         if let edge = SettingsStore.shared.floatingDockEdge {
             // 收起时贴住那条边
             frame.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
-            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
         } else if abs(frame.maxX - visible.maxX) < 1 {
             // 贴着右边时保持右边不动(往左长)
             frame.origin.x = visible.maxX - fit.width
@@ -98,6 +97,8 @@ final class FloatingPanelController: NSObject {
             // 展开时整块留在屏幕里(从右边拉出来的窄条往右长，会伸出屏幕)
             frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - fit.width))
         }
+        // 上下也留在屏幕里(换成详细样式、账号多了变高时往下长，碰到 Dock 就整块往上挪)
+        frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
         frame.size = fit
         guard frame != panel.frame else { return }
         panel.setFrame(frame, display: true)
