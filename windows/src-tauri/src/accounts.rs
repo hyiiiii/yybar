@@ -278,7 +278,7 @@ pub async fn refresh_one(app: &AppHandle, id: &str, reason: RefreshReason) {
             Err(e) => {
                 let st = g.other_refresh.entry(account.id.clone()).or_default();
                 st.in_flight = false;
-                st.last_error = Some(error_message(&e, app_kind));
+                st.last_error = Some(error_message(&e, app_kind, account.home.is_some()));
                 if e.is_rate_limited() {
                     st.backoff_until = Some(now_secs() + RATE_LIMIT_BACKOFF);
                 }
@@ -289,12 +289,18 @@ pub async fn refresh_one(app: &AppHandle, id: &str, reason: RefreshReason) {
 }
 
 /// 其他账号登录失效时提示重新添加（不是在终端里登录本机 CLI）。
-fn error_message(e: &QuotaError, app: UsageApp) -> String {
-    match e {
-        QuotaError::MissingToken | QuotaError::TokenRevoked | QuotaError::TokenRefreshFailed(_) => {
+/// 刷新失败给用户看的话。登录失效时：添加的账号请重新添加；其他 Codex 目录里的账号要在那个 Codex 里重新登录。
+fn error_message(e: &QuotaError, app: UsageApp, in_codex_home: bool) -> String {
+    let expired = || {
+        if in_codex_home {
+            tr("The sign-in in this Codex folder has expired; sign in again in that Codex.", "这个 Codex 目录里的登录已失效，请在那个 Codex 里重新登录")
+        } else {
             tr("This account's sign-in has expired; add it again.", "这个账号的登录已失效，请重新添加")
         }
-        e if e.is_auth_failure() => tr("This account's sign-in has expired; add it again.", "这个账号的登录已失效，请重新添加"),
+    };
+    match e {
+        QuotaError::MissingToken | QuotaError::TokenRevoked | QuotaError::TokenRefreshFailed(_) => expired(),
+        e if e.is_auth_failure() => expired(),
         e => e.message(app),
     }
 }

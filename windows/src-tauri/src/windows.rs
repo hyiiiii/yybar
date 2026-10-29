@@ -92,6 +92,8 @@ pub struct WindowState {
     floating_expanded_size: Mutex<Option<PhysicalSize<u32>>>,
     /// 滑动中前端报上来的尺寸：滑完再用（滑动时改尺寸、位置会和动画打架）
     floating_pending_fit: Mutex<Option<(f64, f64)>>,
+    /// 还不知道展开尺寸时（收着重启过）从左边拉出窄条就地展开：下一次量尺寸往右长（保持左边不动）
+    floating_grow_right: AtomicBool,
 }
 
 /// 按下悬浮窗时的鼠标和窗口位置（物理像素），和这一下有没有拖动过。
@@ -518,7 +520,11 @@ fn snap_and_persist(app: &AppHandle) {
             None => {
                 // 拖离了屏幕边：就地展开。先摆成上次展开的尺寸（再由 fit_floating 按内容微调），整块留在屏幕里：
                 // 从左边拉出来的往右长，从右边拉出来的往左长（以前一律保持右边不动，从左边拉出来的会伸出屏幕、也不再收进去）
-                let full = app.state::<WindowState>().floating_expanded_size.lock().unwrap().unwrap_or(size);
+                let known = *app.state::<WindowState>().floating_expanded_size.lock().unwrap();
+                if known.is_none() && docked == Some(DockEdge::Left) {
+                    app.state::<WindowState>().floating_grow_right.store(true, Ordering::SeqCst);
+                }
+                let full = known.unwrap_or(size);
                 let x = if docked == Some(DockEdge::Left) { pos.x } else { pos.x + width - full.width as i32 };
                 let x = x.clamp(left, (work_right - full.width as i32).max(left));
                 let y = pos.y.clamp(top, (top + work.size.height as i32 - full.height as i32).max(top));
@@ -688,7 +694,8 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         (Some(DockEdge::Right), Some(a)) => a.position.x + a.size.width as i32 - nw as i32,
         // 展开时整块留在屏幕里（贴着左边就保持左边不动，否则保持右边不动）
         (None, Some(a)) => {
-            let x = if pos.x <= a.position.x { pos.x } else { right - nw as i32 };
+            let grow_right = ws.floating_grow_right.swap(false, Ordering::SeqCst);
+            let x = if pos.x <= a.position.x || grow_right { pos.x } else { right - nw as i32 };
             x.clamp(a.position.x, (a.position.x + a.size.width as i32 - nw as i32).max(a.position.x))
         }
         _ => right - nw as i32,
