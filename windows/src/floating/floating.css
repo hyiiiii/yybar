@@ -43,6 +43,33 @@ body:has(.hud.dock-left) {
   }
 }
 
+/* 窄条拖离屏幕边就地展开：和点开一样从窄条那里滑出来（Floating.tsx unfold）。窗口贴着窄条那一边长，
+   展开的内容先挪到只露窄条那么宽（30）、再滑回来；从右边拉出来的内容靠右放，窗口还是窄条宽时露出来的也正好是窄条那一条 */
+body:has(.hud.unfold-right) {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hud.unfold-right {
+  animation: unfold-right 0.22s ease-in-out;
+}
+
+.hud.unfold-left {
+  animation: unfold-left 0.22s ease-in-out;
+}
+
+@keyframes unfold-right {
+  from {
+    transform: translateX(calc(100% - 30px));
+  }
+}
+
+@keyframes unfold-left {
+  from {
+    transform: translateX(calc(-100% + 30px));
+  }
+}
+
 /* 详细：和弹出窗口的账号列表一样（288 宽，块之间 12） */
 .hud.detailed {
   width: 316px;

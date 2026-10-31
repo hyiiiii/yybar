@@ -269,4 +269,9 @@ final class FloatingMouseView: NSView {
         FloatingPanelController.shared.mouseReleased(moved: dragging)
         dragging = false
     }
+
+    /// 右键：统计 / 设置 / bar、切换简略 / 详细。
+    override func rightMouseDown(with event: NSEvent) {
+        NSMenu.popUpContextMenu(FloatingPanelController.shared.contextMenu(), with: event, for: self)
+    }
 }

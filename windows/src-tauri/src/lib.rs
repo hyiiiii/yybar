@@ -52,6 +52,7 @@ pub fn run() {
             windows::create_popover(&handle)?;
             tray::update(&handle);
             windows::sync_floating(&handle);
+            windows::start_floating_watchdog(&handle);
             if !handle.state::<AppState>().settings().did_complete_onboarding {
                 windows::open_onboarding(&handle);
             }

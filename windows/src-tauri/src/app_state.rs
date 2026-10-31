@@ -324,16 +324,29 @@ struct LocalClaudeProfile {
     at: i64,
 }
 
+/// 本机 Claude 账号每次读资料接口的结果写进 `%APPDATA%\yybar\claude-plan-check.json`（不含邮箱、id、令牌）：
+/// 订阅过期了还显示 Pro 时，让用户把这个文件发来看资料接口到底说了什么。
+fn write_claude_plan_check(checked: &Result<profile::ClaudeProfile, String>) {
+    let body = match checked {
+        Ok(p) => serde_json::json!({ "checkedAt": now_secs(), "ok": true, "plan": p.plan, "profile": p.check }),
+        Err(e) => serde_json::json!({ "checkedAt": now_secs(), "ok": false, "error": e }),
+    };
+    if let Ok(data) = serde_json::to_vec_pretty(&body) {
+        let _ = paths::write_atomic(&paths::data_dir().join("claude-plan-check.json"), &data);
+    }
+}
+
 /// 本机 Claude 账号的订阅等级 / 订阅开始日多久从资料接口更新一次（和其他账号一样）。
 const CLAUDE_PROFILE_INTERVAL: i64 = 6 * 3600;
 
 impl Inner {
-    /// 悬浮窗要不要显示（对应 Mac `FloatingPanelController.sync`）：有勾了「悬浮窗」的账号就显示——本机账号看服务开关、
-    /// 悬浮窗勾选和是否登录着，其他账号看它那一行的启用和勾选；一个都没有就关掉。
+    /// 悬浮窗要不要显示（对应 Mac `FloatingPanelController.sync`）：有勾了「悬浮窗」的账号就显示——本机账号看服务开关和
+    /// 悬浮窗勾选（没被删掉），其他账号看它那一行的启用和勾选；一个都没有就关掉。不看本机 CLI 这会儿是否读得到登录：
+    /// CLI 改写凭据文件那一下读不到，悬浮窗不该跟着关一下。
     pub fn floating_wanted(&self) -> bool {
         UsageApp::ALL
             .iter()
-            .any(|&app| (self.settings.floating_shows(app) && self.local_shown(app)) || !self.shown_others(app, false).is_empty())
+            .any(|&app| (self.settings.floating_shows(app) && !self.is_removed(app)) || !self.shown_others(app, false).is_empty())
     }
 
     /// 把资料接口读到的订阅盖到本机 Claude 账号上（同一个账号才盖）：等级、订阅开始日（订阅不是 active 时没有，就不显示续费日）、档位。
@@ -796,7 +809,9 @@ async fn load_claude_quota(app: &AppHandle, reason: RefreshReason) {
             let result = quota::claude::fetch(&token).await;
             // 每 6 小时顺带从资料接口更新一次订阅（凭据里的是登录那一刻的）；额度没拿到也更新（免费账号的额度接口可能不给）
             if profile_due {
-                fresh_profile = profile::fetch(&token).await;
+                let checked = profile::fetch_checked(&token).await;
+                write_claude_plan_check(&checked);
+                fresh_profile = checked.ok();
             }
             result
         }

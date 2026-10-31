@@ -54,6 +54,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         expand_floating,
         floating_press,
         floating_release,
+        floating_menu,
+        floating_alive,
         pick_folder,
         finish_onboarding,
         open_url,
@@ -300,6 +302,18 @@ fn floating_press(app: AppHandle) {
 #[tauri::command]
 fn floating_release(app: AppHandle) {
     windows::floating_release(&app);
+}
+
+/// 悬浮窗网页报平安（看门狗 2 分钟收不到就重建窗口）。
+#[tauri::command]
+fn floating_alive(app: AppHandle) {
+    windows::floating_alive(&app);
+}
+
+/// 右键悬浮窗：统计 / 设置 / bar、切换简略 / 详细（对应 Mac FloatingPanelController.contextMenu）。
+#[tauri::command]
+fn floating_menu(app: AppHandle) {
+    windows::show_floating_menu(&app);
 }
 
 /// 点悬浮窗收起后的窄条：展开。

@@ -230,6 +230,13 @@ pub async fn refresh_one(app: &AppHandle, id: &str, reason: RefreshReason) {
     {
         let mut g = state.inner.lock().unwrap();
         let app_kind = account.provider.app();
+        let (result, profile_only_error) = match result {
+            Ok(mut fetched) => {
+                let error = fetched.error.take();
+                (Ok(fetched), error)
+            }
+            Err(e) => (Err(e), None),
+        };
         match result {
             Ok(fetched) => {
                 let source = if account.provider == Provider::Google { QuotaSource::AgyCli } else { QuotaSource::Api };
@@ -270,10 +277,18 @@ pub async fn refresh_one(app: &AppHandle, id: &str, reason: RefreshReason) {
                 }
                 let st = g.other_refresh.entry(account.id.clone()).or_default();
                 st.in_flight = false;
-                st.last_error = None;
-                st.backoff_until = None;
-                st.last_success_at = Some(now_secs());
-                st.source = Some(source);
+                if let Some(e) = profile_only_error {
+                    // 订阅更新了，额度还是没拿到：照常显示刷新失败
+                    st.last_error = Some(error_message(&e, app_kind, account.home.is_some()));
+                    if e.is_rate_limited() {
+                        st.backoff_until = Some(now_secs() + RATE_LIMIT_BACKOFF);
+                    }
+                } else {
+                    st.last_error = None;
+                    st.backoff_until = None;
+                    st.last_success_at = Some(now_secs());
+                    st.source = Some(source);
+                }
             }
             Err(e) => {
                 let st = g.other_refresh.entry(account.id.clone()).or_default();
@@ -317,6 +332,8 @@ struct Fetched {
     rate_limit_tier: Option<String>,
     renewal_checked: bool,
     active_until: Option<i64>,
+    /// 额度没拿到、但资料接口读到了（Claude）：订阅照样更新，再按这个错误显示刷新失败
+    error: Option<QuotaError>,
 }
 
 async fn fetch(a: &OtherAccount, profile_due: bool) -> Result<Fetched, QuotaError> {
@@ -350,8 +367,8 @@ async fn fetch(a: &OtherAccount, profile_due: bool) -> Result<Fetched, QuotaErro
                 token = claude_refresh::ensure_fresh(&mut acc).await?;
                 result = quota::claude::fetch(&token).await;
             }
-            let snapshot = result?;
-            let mut out = Fetched { main: Some(snapshot), ..Default::default() };
+            let mut out = Fetched::default();
+            // 订阅过期（以前 Pro、现在免费）的账号额度接口可能不给，资料接口照样读，不然套餐一直停在 Pro
             if profile_due {
                 if let Some(p) = profile::fetch(&token).await {
                     out.profile_checked = true;
@@ -360,6 +377,11 @@ async fn fetch(a: &OtherAccount, profile_due: bool) -> Result<Fetched, QuotaErro
                     out.started_at = p.subscription_started_at;
                     out.rate_limit_tier = p.rate_limit_tier;
                 }
+            }
+            match result {
+                Ok(snapshot) => out.main = Some(snapshot),
+                Err(e) if out.profile_checked => out.error = Some(e),
+                Err(e) => return Err(e),
             }
             Ok(out)
         }

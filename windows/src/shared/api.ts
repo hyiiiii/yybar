@@ -168,4 +168,6 @@ export const api = {
   /** 悬浮窗上按下 / 松手：按着时后台跟着鼠标移动窗口，松手时判断吸附 / 收起 / 展开（对应 Mac FloatingMouseView）。 */
   floatingPress: () => call("floating_press"),
   floatingRelease: () => call("floating_release"),
+  floatingMenu: () => call("floating_menu"),
+  floatingAlive: () => call("floating_alive"),
 };

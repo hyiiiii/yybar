@@ -1241,8 +1241,8 @@ final class AppState {
             try await renew()
             result = await ClaudeQuotaClient.fetch(accessToken: tokens.accessToken)
         }
-        let snapshot = try result.get()
-        // 每 6 小时顺带更新一次订阅等级和订阅开始日(续费日)。
+        // 每 6 小时顺带更新一次订阅等级和订阅开始日(续费日)。额度没拿到也更新：订阅过期(以前 Pro、现在免费)的账号
+        // 额度接口可能不给，不然套餐一直停在 Pro。
         if extraPlanFetchedAt[id].map({ Date().timeIntervalSince($0) > 6 * 3600 }) ?? true,
            let profile = await ClaudeProfileClient.fetch(accessToken: tokens.accessToken) {
             extraPlanFetchedAt[id] = Date()
@@ -1256,7 +1256,7 @@ final class AppState {
                 }
             }
         }
-        return snapshot
+        return try result.get()
     }
 
     private func fetchExtraGrokQuota(account extra: ExtraAccount) async throws -> QuotaSnapshot {
@@ -1875,6 +1875,22 @@ final class AppState {
         }
     }
 
+    /// 本机 Claude 账号每次读资料接口的结果写进 Application Support/yybar/claude-plan-check.json(不含邮箱、id、令牌):
+    /// 订阅过期了还显示 Pro 时，让用户把这个文件发来看资料接口到底说了什么。
+    private static func writeClaudePlanCheck(_ checked: Result<ClaudeProfileClient.Profile, ClaudeProfileClient.CheckError>) {
+        let at = ISO8601DateFormatter().string(from: Date())
+        let body: String
+        switch checked {
+        case .success(let p):
+            body = "{\"checkedAt\": \"\(at)\", \"ok\": true, \"plan\": \"\(p.plan ?? "")\", \"profile\": \(p.check)}\n"
+        case .failure(let e):
+            body = "{\"checkedAt\": \"\(at)\", \"ok\": false, \"error\": \"\(e.message.replacingOccurrences(of: "\"", with: "'"))\"}\n"
+        }
+        let dir = ActivityHooks.supportDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? Data(body.utf8).write(to: dir.appendingPathComponent("claude-plan-check.json"), options: .atomic)
+    }
+
     /// 把资料接口读到的订阅盖到本机 Claude 账号上(同一个账号才盖):等级、订阅开始日(订阅不是 active 时没有，就不显示续费日)、档位。
     private func applyingLocalClaudeProfile(_ account: ClaudeAccount) -> ClaudeAccount {
         guard let local = localClaudeProfile, local.email?.lowercased() == account.email?.lowercased() else { return account }
@@ -2392,9 +2408,13 @@ final class AppState {
         let result = await ClaudeQuotaClient.fetch(accessToken: activeToken)
         // 每 6 小时顺带从资料接口更新一次订阅(凭据里的是登录那一刻的);额度没拿到也更新(免费账号的额度接口可能不给)
         let profileDue = localClaudeProfile.map { $0.email != account.email || Date().timeIntervalSince($0.at) > 6 * 3600 } ?? true
-        if profileDue, let profile = await ClaudeProfileClient.fetch(accessToken: activeToken) {
-            localClaudeProfile = (account.email, profile, Date())
-            if let current = claudeAccount { claudeAccount = applyingLocalClaudeProfile(current) }
+        if profileDue {
+            let checked = await ClaudeProfileClient.fetchChecked(accessToken: activeToken)
+            Self.writeClaudePlanCheck(checked)
+            if case .success(let profile) = checked {
+                localClaudeProfile = (account.email, profile, Date())
+                if let current = claudeAccount { claudeAccount = applyingLocalClaudeProfile(current) }
+            }
         }
         switch result {
         case .success(let snapshot):

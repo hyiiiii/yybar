@@ -17,9 +17,16 @@ pub struct ClaudeProfile {
     /// 拼好的 `.claude.json` oauthAccount（没有邮箱时为 None）。
     pub oauth_account: Option<Value>,
     pub rate_limit_tier: Option<String>,
+    /// 资料接口里和订阅有关的原样字段（不含邮箱、id）：本机账号读完写进 `claude-plan-check.json`，排查「订阅过期了还显示 Pro」用
+    pub check: Value,
 }
 
 pub async fn fetch(access_token: &str) -> Option<ClaudeProfile> {
+    fetch_checked(access_token).await.ok()
+}
+
+/// 同 `fetch`，失败时给出原因（HTTP 状态码或网络错误）。
+pub async fn fetch_checked(access_token: &str) -> Result<ClaudeProfile, String> {
     let resp = client()
         .get("https://api.anthropic.com/api/oauth/profile")
         .bearer_auth(access_token)
@@ -28,12 +35,13 @@ pub async fn fetch(access_token: &str) -> Option<ClaudeProfile> {
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}", status.as_u16()));
     }
-    let root: Value = resp.json().await.ok()?;
-    Some(parse(&root))
+    let root: Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(parse(&root))
 }
 
 pub fn parse(root: &Value) -> ClaudeProfile {
@@ -77,16 +85,27 @@ pub fn parse(root: &Value) -> ClaudeProfile {
         plan,
         subscription_started_at: if active { parse_iso(org.get("subscription_created_at")) } else { None },
         rate_limit_tier: s(org, "rate_limit_tier"),
+        check: serde_json::json!({
+            "organizationType": org.get("organization_type"),
+            "hasClaudePro": account.get("has_claude_pro"),
+            "hasClaudeMax": account.get("has_claude_max"),
+            "subscriptionStatus": org.get("subscription_status"),
+            "billingType": org.get("billing_type"),
+            "rateLimitTier": org.get("rate_limit_tier"),
+        }),
     }
 }
 
 /// 订阅等级（和 Mac `ClaudeProfileClient.plan` 一样）。凭据里的 subscriptionType 是登录那一刻的，订阅过期后还写着 pro，
-/// 这里按资料接口的现状算：团队 / 企业看组织类型；个人看 has_claude_max / has_claude_pro，两个都明确是 false、
-/// 或订阅状态已经不是 active / trialing / past_due 时算 free；都没有时照组织类型（claude_pro → pro）。
+/// 这里按资料接口的现状算：团队 / 企业看组织类型；订阅状态已经不是 active / trialing / past_due（取消了、过期了）时算 free，
+/// 不管 has_claude_pro 还写着什么；再看 has_claude_max / has_claude_pro，两个都明确是 false 也算 free；都没有时照组织类型（claude_pro → pro）。
 pub fn plan_of(org_type: Option<&str>, has_max: Option<bool>, has_pro: Option<bool>, status: Option<&str>) -> Option<String> {
     let stripped = org_type.map(|t| t.strip_prefix("claude_").unwrap_or(t).to_string());
     if stripped.as_deref().is_some_and(|t| t.contains("team") || t.contains("enterprise")) {
         return stripped;
+    }
+    if status.is_some_and(|st| !["active", "trialing", "past_due"].contains(&st)) {
+        return Some("free".into());
     }
     if has_max == Some(true) {
         return Some("max".into());
@@ -94,8 +113,7 @@ pub fn plan_of(org_type: Option<&str>, has_max: Option<bool>, has_pro: Option<bo
     if has_pro == Some(true) {
         return Some("pro".into());
     }
-    let lapsed = status.is_some_and(|st| !["active", "trialing", "past_due"].contains(&st));
-    if (has_max == Some(false) && has_pro == Some(false)) || lapsed {
+    if has_max == Some(false) && has_pro == Some(false) {
         return Some("free".into());
     }
     stripped
@@ -119,8 +137,10 @@ mod tests {
         assert_eq!(p.oauth_account.as_ref().unwrap()["organizationType"], "claude_max");
         assert_eq!(p.rate_limit_tier.as_deref(), Some("default_claude_max_20x"));
 
+        // 订阅取消了：has_claude_pro 还写着 true 也算免费
         let cancelled = parse(&json!({"account": {"has_claude_pro": true}, "organization": {"subscription_status": "canceled", "subscription_created_at": "2026-09-05T08:00:00Z"}}));
-        assert_eq!(cancelled.plan.as_deref(), Some("pro"));
+        assert_eq!(cancelled.plan.as_deref(), Some("free"));
+        assert_eq!(cancelled.check["subscriptionStatus"], "canceled");
         assert!(cancelled.subscription_started_at.is_none());
         assert!(cancelled.oauth_account.is_none());
 

@@ -28,6 +28,8 @@ final class FloatingPanelController: NSObject {
     private var animating = false
     /// 刚点了展开：等 SwiftUI 换成展开的内容、量到它的尺寸后，从这条边滑出来
     private var pendingSlideOut: FloatingDockEdge?
+    /// 刚把窄条拖离屏幕边、就地展开：窄条原来贴的那条边。量到展开的尺寸后窗口贴着窄条那一边长，内容从窄条那里滑出来
+    private var pendingUnfold: FloatingDockEdge?
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -88,6 +90,20 @@ final class FloatingPanelController: NSObject {
             animate(to: target)
             return
         }
+        if let edge = pendingUnfold {
+            // 就地展开：窗口贴着窄条那一边长(从右边拉出来的往左长、从左边拉出来的往右长)，整块留在屏幕里，
+            // 内容先挪到只露窄条那么宽、再滑回来——窗口边就是遮挡，看着和点开时从屏幕边滑出来一样
+            guard fit.width > Self.tabWidth + 10 else { return }
+            pendingUnfold = nil
+            frame.origin.x = edge == .right ? panel.frame.maxX - fit.width : panel.frame.minX
+            frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - fit.width))
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
+            frame.size = fit
+            panel.setFrame(frame, display: true)
+            persistFrame()
+            unfoldContent(from: edge, width: fit.width)
+            return
+        }
         if let edge = SettingsStore.shared.floatingDockEdge {
             // 收起时贴住那条边
             frame.origin.x = edge == .left ? visible.minX : visible.maxX - fit.width
@@ -120,6 +136,31 @@ final class FloatingPanelController: NSObject {
                 completion?()
             }
         }
+    }
+
+    /// 就地展开的动画：内容图层从窄条那一边滑回原位(窗口已经是展开的尺寸，窗口边挡住还没滑进来的部分)。
+    /// 动画期间不画窗口阴影：阴影按整个窗口的内容算，会先露出一个空的框。
+    private func unfoldContent(from edge: FloatingDockEdge, width: CGFloat) {
+        guard let panel, let layer = hostingView?.layer else { return }
+        let offset = width - Self.tabWidth
+        let slide = CABasicAnimation(keyPath: "transform.translation.x")
+        slide.fromValue = edge == .right ? offset : -offset
+        slide.toValue = 0
+        slide.duration = Self.slideDuration
+        slide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        animating = true
+        panel.hasShadow = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            Task { @MainActor in
+                guard let self, let panel = self.panel else { return }
+                self.animating = false
+                panel.hasShadow = true
+                panel.invalidateShadow()
+            }
+        }
+        layer.add(slide, forKey: "unfold")
+        CATransaction.commit()
     }
 
     /// 收起：整块滑进屏幕边，只剩贴边的一条，再换成窄条(只显示各行的剩余百分比)。
@@ -164,14 +205,11 @@ final class FloatingPanelController: NSObject {
         let edge: FloatingDockEdge? = frame.midX - visible.minX < Self.redockDistance ? .left
             : visible.maxX - frame.midX < Self.redockDistance ? .right : nil
         guard let edge else {
-            // 拖离了屏幕边：在松手的地方展开(淡入)
-            panel.alphaValue = 0
+            // 拖离了屏幕边：就地展开，和点开一样从窄条那里滑出来(applyFitOnce 的 pendingUnfold)。
+            // 2026-10-31 前是在松手的地方淡入，一下子变大。
+            pendingUnfold = settings.floatingDockEdge
             settings.floatingDockEdge = nil
             resizeToFitContent()
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                panel.animator().alphaValue = 1
-            }
             return
         }
         // 放回屏幕边：滑回去贴好
@@ -216,6 +254,41 @@ final class FloatingPanelController: NSObject {
 
     private func hide() {
         panel?.orderOut(nil)
+    }
+
+    // MARK: 右键菜单
+
+    /// 右键悬浮窗(展开的、收起的窄条都一样):统计 / 设置 / bar,和悬浮窗样式(简略 / 详细，勾着当前的)。
+    func contextMenu() -> NSMenu {
+        let menu = NSMenu()
+        for (title, action) in [(tr("Statistics", "统计"), #selector(openStats)),
+                                (tr("Settings", "设置"), #selector(openSettings)),
+                                ("bar", #selector(openBar))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        for style in [FloatingStyle.compact, .detailed] {
+            let item = NSMenuItem(title: style == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"),
+                                  action: #selector(chooseStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style.rawValue
+            item.state = SettingsStore.shared.floatingStyle == style ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func openStats() { WindowCoordinator.shared.showMain(.overview) }
+    @objc private func openSettings() { WindowCoordinator.shared.showMain(.settings) }
+    @objc private func openBar() { WindowCoordinator.shared.showMain(.bar) }
+
+    @objc private func chooseStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let style = FloatingStyle(rawValue: raw),
+              style != SettingsStore.shared.floatingStyle else { return }
+        SettingsStore.shared.floatingStyle = style
+        sync()
     }
 
     private func buildPanel(appState: AppState) {
