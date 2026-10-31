@@ -258,11 +258,11 @@ final class FloatingMouseView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let window else { return }
         let p = NSEvent.mouseLocation
         if !dragging, hypot(p.x - startMouse.x, p.y - startMouse.y) < 3 { return }
         dragging = true
-        window.setFrameOrigin(NSPoint(x: startOrigin.x + p.x - startMouse.x, y: startOrigin.y + p.y - startMouse.y))
+        // 窗口怎么跟着走由 controller 定(收起的窄条往里拉是拉抽屉)
+        FloatingPanelController.shared.drag(by: CGVector(dx: p.x - startMouse.x, dy: p.y - startMouse.y), from: startOrigin)
     }
 
     override func mouseUp(with event: NSEvent) {

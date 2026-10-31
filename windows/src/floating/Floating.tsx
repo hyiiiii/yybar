@@ -4,13 +4,12 @@
 // 拖出屏幕左 / 右边缘时收起成贴边窄条（像微信通话小窗），每行只剩小图标和剩余百分比；单击窄条展开，拖动窄条沿边上下移动（贴边逻辑在 windows.rs）。
 // 按下、拖动、松手的处理和 Mac 版一样（FloatingMouseView）：见 usePress。右键弹菜单：统计 / 设置 / bar、简略 / 详细。
 
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type MouseEvent, type PointerEvent } from "react";
 import { api, useAppState, useTicker } from "../shared/api";
 import { ProgressBar, QuotaEntryView, quotaEntries, ServiceTile, statusColor } from "../shared/design";
 import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
-import { ALL_APPS, floatingShows, localShown, type DockEdge, type QuotaSnapshot, type StateSnapshot, type UsageApp } from "../shared/types";
+import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type StateSnapshot, type UsageApp } from "../shared/types";
 
 /** 悬浮窗（展开的、收起的窄条都一样）上的鼠标：按下、松手报给后台。按着时后台每帧跟一次光标，超过 3 像素才让窗口
  *  跟着鼠标走；松手时按有没有拖动过决定单击展开、吸附、收起或贴回边（windows.rs floating_press）。
@@ -43,29 +42,12 @@ export function Floating() {
   const state = useAppState();
   const ref = useRef<HTMLDivElement>(null);
   const press = usePress();
-  // 窄条拖离屏幕边就地展开时（windows.rs snap_and_persist）：窄条原来贴的那条边。展开的内容先挪到只露窄条那么宽、
-  // 再滑回来，和点开时从屏幕边滑出来一样（窗口贴着窄条那一边长，窗口边就是遮挡）；动完清掉
-  const [unfold, setUnfold] = useState<DockEdge | null>(null);
-  useEffect(() => {
-    let alive = true;
-    let unlisten: (() => void) | undefined;
-    listen<DockEdge>("floating-unfold", (e) => setUnfold(e.payload)).then((u) => {
-      if (alive) unlisten = u;
-      else u();
-    });
-    return () => {
-      alive = false;
-      unlisten?.();
-    };
-  }, []);
-  const unfoldClass = unfold ? ` unfold-${unfold}` : "";
-  // 每 10 秒向后台报一次平安：网页卡死 / 渲染进程崩了（透明窗口里什么也不画，看着像悬浮窗没了）时后台重建窗口
+  // 每 10 秒向后台报一次平安：网页卡死 / 渲染进程崩了（窗口里只剩 WebView2 的出错页）时后台重建窗口
   useEffect(() => {
     api.floatingAlive();
     const timer = setInterval(() => api.floatingAlive(), 10_000);
     return () => clearInterval(timer);
   }, []);
-  const endUnfold = () => setUnfold(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -124,7 +106,7 @@ export function Floating() {
 
   if (state?.settings.floatingStyle === "detailed") {
     return (
-      <div ref={ref} key="open-detailed" className={`hud detailed${unfoldClass}`} onAnimationEnd={endUnfold} {...press} title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}>
+      <div ref={ref} key="open-detailed" className="hud detailed" {...press} title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}>
         <DetailedRows state={state} />
       </div>
     );
@@ -134,8 +116,7 @@ export function Floating() {
     <div
       ref={ref}
       key="open"
-      className={`hud${unfoldClass}`}
-      onAnimationEnd={endUnfold}
+      className="hud"
       {...press}
       title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}
     >

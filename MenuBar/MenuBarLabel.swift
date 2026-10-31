@@ -441,9 +441,16 @@ enum MenuBarBadgeImage {
         return "\(Int(window.remainingPercent.rounded()))%"
     }
 
-    /// 菜单栏什么都不显示时：yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)。2026-10-29 前画的是 Codex 的标。
+    /// 菜单栏什么都不显示时：yybar 的两张扑克牌。2026-10-29 前画的是 Codex 的标。
     private static func placeholderImage() -> NSImage {
-        let cardsHeight = iconSize - 2, cardsWidth = ceil(cardsHeight * 1.25)
+        playingCardsImage(height: iconSize - 2, canvasHeight: height)
+    }
+
+    /// yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)，模板图：菜单栏什么都没选时、悬浮窗右键菜单的 bar 都用。
+    /// canvasHeight 比牌高时上下居中。
+    static func playingCardsImage(height cardsHeight: CGFloat, canvasHeight: CGFloat? = nil) -> NSImage {
+        let height = canvasHeight ?? cardsHeight
+        let cardsWidth = ceil(cardsHeight * 1.25)
         let image = NSImage(size: NSSize(width: cardsWidth, height: height))
         image.lockFocus()
         defer { image.unlockFocus() }

@@ -169,5 +169,8 @@ export const api = {
   floatingPress: () => call("floating_press"),
   floatingRelease: () => call("floating_release"),
   floatingMenu: () => call("floating_menu"),
+  fitFloatingMenu: (width: number, height: number) => call("fit_floating_menu", { width, height }),
+  pickFloatingMenu: (id: string) => call("pick_floating_menu", { id }),
+  hideFloatingMenu: () => call("hide_floating_menu"),
   floatingAlive: () => call("floating_alive"),
 };

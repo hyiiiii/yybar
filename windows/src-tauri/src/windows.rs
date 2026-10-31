@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 use yybar_core::storage::settings::{DockEdge, FloatingStyle};
@@ -25,6 +24,8 @@ use crate::tray::TrayState;
 pub const POPOVER: &str = "popover";
 pub const MAIN: &str = "main";
 pub const FLOATING: &str = "floating";
+/// 悬浮窗的右键菜单
+pub const FLOATING_MENU: &str = "floatmenu";
 pub const ONBOARDING: &str = "onboarding";
 
 const POPOVER_GAP: f64 = 10.0;
@@ -41,6 +42,8 @@ const SLIDE_MS: f64 = 220.0;
 
 /// 按下后移动超过这么多（逻辑像素）才算拖动（和 Mac FloatingMouseView 一样）
 const DRAG_THRESHOLD: f64 = 3.0;
+/// 收起的窄条往屏幕里拉超过这么多（逻辑像素）才换成展开的内容、跟着鼠标拉出来（和 Mac pullStart 一样）；没到之前只沿着屏幕边上下挪
+const PULL_START: f64 = 8.0;
 
 /// 一次改完窗口的位置和尺寸（物理像素）。分成 set_size + set_position 两步时，中间那一帧窗口可能整个在屏幕外
 /// （比如收在左边：先缩成窄条宽，那时还在「只露一条」的位置），看着就是闪一下。
@@ -149,11 +152,12 @@ pub struct WindowState {
     floating_expanded_size: Mutex<Option<PhysicalSize<u32>>>,
     /// 滑动中前端报上来的尺寸：滑完再用（滑动时改尺寸、位置会和动画打架）
     floating_pending_fit: Mutex<Option<(f64, f64)>>,
-    /// 刚把窄条拖离屏幕边、就地展开：窄条原来贴的那条边。下一次量到展开的尺寸时窗口贴着窄条那一边长（从左边拉出来的往右长、
-    /// 从右边拉出来的往左长），并记住位置；前端同时把内容从窄条那里滑出来（Floating.tsx 的 unfold）
-    floating_unfold: Mutex<Option<DockEdge>>,
+    /// 正在把窄条拉出来（像拉抽屉）：窄条原来贴的边。这期间前端报的展开尺寸只改窗口大小、露出来的那一条不动（fit_floating）
+    floating_pulling: Mutex<Option<DockEdge>>,
     /// 悬浮窗网页上次报平安的时刻（前端每 10 秒报一次，看门狗 2 分钟收不到就重建窗口）
     floating_alive_at: Mutex<Option<Instant>>,
+    /// 右键时的光标位置（物理像素）：菜单窗口量好尺寸后放到这里显示
+    floating_menu_at: Mutex<Option<PhysicalPosition<f64>>>,
 }
 
 /// 按下悬浮窗时的鼠标和窗口位置（物理像素），和这一下有没有拖动过。
@@ -164,11 +168,25 @@ struct FloatingPress {
     dragging: bool,
     /// 上一帧挪到的位置（光标没动就不再挪）
     last: Option<(i32, i32)>,
+    /// 按下时收着贴在哪条边（None 为展开）
+    dock: Option<DockEdge>,
+    /// 已经开始拉抽屉：展开的内容放在「只露窄条那么宽」时的窗口 x（拖动距离为 0 时）；之后只能往屏幕里拉
+    pull: Option<i32>,
+    /// 往里拉过了 PULL_START，已经请主线程换成展开的内容（begin_pull），还没换好
+    pull_requested: bool,
+}
+
+/// 按着时这一帧要做的事。
+enum Follow {
+    Move(i32, i32),
+    /// 收起的窄条往屏幕里拉过了 PULL_START：开始拉抽屉
+    BeginPull,
 }
 
 impl FloatingPress {
     /// 光标到了这里时窗口该在哪（物理像素）：移动超过 threshold 才算拖动；和上一帧一样时为 None。
-    fn follow(&mut self, cursor: PhysicalPosition<f64>, threshold: f64) -> Option<(i32, i32)> {
+    /// 收着时往屏幕里拉不到 pull_start 只沿着屏幕边上下挪，超过了就开始拉抽屉；拉抽屉时只能往屏幕里拉。
+    fn follow(&mut self, cursor: PhysicalPosition<f64>, threshold: f64, pull_start: f64) -> Option<Follow> {
         let (dx, dy) = (cursor.x - self.cursor.x, cursor.y - self.cursor.y);
         if !self.dragging {
             if dx.hypot(dy) < threshold {
@@ -176,10 +194,25 @@ impl FloatingPress {
             }
             self.dragging = true;
         }
-        let target = (self.origin.x + dx.round() as i32, self.origin.y + dy.round() as i32);
-        (self.last != Some(target)).then(|| {
-            self.last = Some(target);
-            target
+        let y = self.origin.y + dy.round() as i32;
+        let x = match (self.dock, self.pull) {
+            (Some(edge), Some(base)) => {
+                let x = base + dx.round() as i32;
+                if edge == DockEdge::Right { x.min(base) } else { x.max(base) }
+            }
+            (Some(edge), None) => {
+                let away = if edge == DockEdge::Right { -dx } else { dx };
+                if away >= pull_start && !self.pull_requested {
+                    self.pull_requested = true;
+                    return Some(Follow::BeginPull);
+                }
+                self.origin.x
+            }
+            (None, _) => self.origin.x + dx.round() as i32,
+        };
+        (self.last != Some((x, y))).then(|| {
+            self.last = Some((x, y));
+            Follow::Move(x, y)
         })
     }
 }
@@ -421,7 +454,6 @@ fn create_floating(app: &AppHandle) -> tauri::Result<()> {
         .focused(false)
         .focusable(false)
         .build()?;
-    window.on_menu_event(|w, e| on_floating_menu(w.app_handle(), e.id().as_ref()));
     *app.state::<WindowState>().floating_alive_at.lock().unwrap() = Some(Instant::now());
     place_floating(app, &window);
     let _ = window.show();
@@ -430,7 +462,7 @@ fn create_floating(app: &AppHandle) -> tauri::Result<()> {
 
 /// 悬浮窗看门狗（2026-10-31）：开着悬浮窗时每 5 秒看一眼，有人反馈开了半天悬浮窗不见了、在设置里关掉再打开才回来。
 /// 窗口没了就重建；被最小化 / 藏起来就放回来；重新置顶（别的程序可能把置顶抢走）；整个不在任何屏幕上（拔了外接屏、
-/// 改了分辨率）就放回主屏右上角；网页 2 分钟没报平安（渲染进程崩了，透明窗口里什么也不画）就销毁重建。拖动、滑动中不动它。
+/// 改了分辨率）就放回主屏右上角；网页 2 分钟没报平安（渲染进程崩了，窗口里只剩 WebView2 的出错页）就销毁重建。拖动、滑动中不动它。
 pub fn start_floating_watchdog(app: &AppHandle) {
     let h = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -494,33 +526,89 @@ fn check_floating(app: &AppHandle) {
     }
 }
 
-/// 右键悬浮窗弹出的菜单（对应 Mac `FloatingPanelController.contextMenu`）：统计 / 设置 / bar，和悬浮窗样式（简略 / 详细，勾着当前的）。
-/// 交给主线程排队弹出，不在命令回调里直接弹（菜单是模态的）。
+/// 右键悬浮窗弹出的菜单（对应 Mac `FloatingPanelController.contextMenu`）：自己画的小窗口（floatmenu.html），
+/// 底色、描边、圆角和悬浮窗一样，每项前面有图标（系统菜单是白底方角、没有图标，和悬浮窗不搭）。放在光标处，
+/// 第一次右键时才建、之后藏起来重用；点了某项、点到别处（失焦）、按 Esc 就收起。
 pub fn show_floating_menu(app: &AppHandle) {
-    let h = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let Some(w) = h.get_webview_window(FLOATING) else { return };
-        let style = h.state::<AppState>().settings().floating_style;
-        let build = || -> tauri::Result<Menu<tauri::Wry>> {
-            Menu::with_items(
-                &h,
-                &[
-                    &MenuItem::with_id(&h, "floating-stats", tr("Statistics", "统计"), true, None::<&str>)?,
-                    &MenuItem::with_id(&h, "floating-settings", tr("Settings", "设置"), true, None::<&str>)?,
-                    &MenuItem::with_id(&h, "floating-bar", "bar", true, None::<&str>)?,
-                    &PredefinedMenuItem::separator(&h)?,
-                    &CheckMenuItem::with_id(&h, "floating-compact", tr("Compact", "简略"), true, style == FloatingStyle::Compact, None::<&str>)?,
-                    &CheckMenuItem::with_id(&h, "floating-detailed", tr("Detailed", "详细"), true, style == FloatingStyle::Detailed, None::<&str>)?,
-                ],
-            )
-        };
-        match build() {
-            Ok(menu) => {
-                let _ = w.popup_menu(&menu);
+    let Some(cursor) = cursor_now(app) else { return };
+    *app.state::<WindowState>().floating_menu_at.lock().unwrap() = Some(cursor);
+    match app.get_webview_window(FLOATING_MENU) {
+        Some(w) => open_floating_menu(app, &w),
+        // 建好、页面量好尺寸后（fit_floating_menu）再放到光标处显示
+        None => build_later(app, FLOATING_MENU, |app| {
+            if let Err(e) = create_floating_menu(app) {
+                log::warn!("floating menu: {e}");
             }
-            Err(e) => log::warn!("floating menu: {e}"),
+        }),
+    }
+}
+
+fn create_floating_menu(app: &AppHandle) -> tauri::Result<()> {
+    let window = WebviewWindowBuilder::new(app, FLOATING_MENU, WebviewUrl::App("floatmenu.html".into()))
+        .title("yybar")
+        .inner_size(140.0, 160.0)
+        .visible(false)
+        .decorations(false)
+        .transparent(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .shadow(false)
+        .build()?;
+    let h = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::Focused(false) = event {
+            hide_floating_menu(&h);
         }
     });
+    Ok(())
+}
+
+/// 菜单页面量好的尺寸（逻辑像素）；等着打开时放到光标处显示。
+pub fn fit_floating_menu(app: &AppHandle, width: f64, height: f64) {
+    let Some(w) = app.get_webview_window(FLOATING_MENU) else { return };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let size = PhysicalSize::new((width * scale).round() as u32, (height * scale).round() as u32);
+    if w.outer_size().ok() != Some(size) {
+        let _ = w.set_size(size);
+    }
+    open_floating_menu(app, &w);
+}
+
+/// 有等着打开的（右键时记下的光标位置）就放过去显示：右下放不下就往左 / 往上翻。
+fn open_floating_menu(app: &AppHandle, w: &WebviewWindow) {
+    let Some(at) = app.state::<WindowState>().floating_menu_at.lock().unwrap().take() else { return };
+    let Ok(size) = w.outer_size() else { return };
+    let (mut x, mut y) = (at.x.round() as i32, at.y.round() as i32);
+    if let Some(m) = w.monitor_from_point(at.x, at.y).ok().flatten() {
+        let a = m.work_area();
+        let (right, bottom) = (a.position.x + a.size.width as i32, a.position.y + a.size.height as i32);
+        if x + size.width as i32 > right {
+            x -= size.width as i32;
+        }
+        if y + size.height as i32 > bottom {
+            y -= size.height as i32;
+        }
+        x = x.max(a.position.x);
+        y = y.max(a.position.y);
+    }
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    let _ = w.show();
+    let _ = w.set_focus();
+}
+
+pub fn hide_floating_menu(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(FLOATING_MENU) {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+        }
+    }
+}
+
+/// 点了菜单里的某项。
+pub fn pick_floating_menu(app: &AppHandle, id: &str) {
+    hide_floating_menu(app);
+    on_floating_menu(app, id);
 }
 
 fn on_floating_menu(app: &AppHandle, id: &str) {
@@ -570,6 +658,7 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
 /// 松手：前端报上来（floating_release），或后台看到左键已经松开（在窗口外松手等），先到的算。
 /// 滑入 / 滑出动画进行中按下的不理（对应 Mac 的 `animating`）。
 pub fn floating_press(app: &AppHandle) {
+    hide_floating_menu(app);
     let ws = app.state::<WindowState>();
     let id = ws.floating_press_seq.fetch_add(1, Ordering::SeqCst) + 1;
     {
@@ -580,12 +669,14 @@ pub fn floating_press(app: &AppHandle) {
         }
         let Some(w) = app.get_webview_window(FLOATING) else { return };
         let (Some(cursor), Ok(origin)) = (cursor_now(app), w.outer_position()) else { return };
-        *press = Some(FloatingPress { id, cursor, origin, dragging: false, last: None });
+        let dock = app.state::<AppState>().settings().floating_dock;
+        *press = Some(FloatingPress { id, cursor, origin, dragging: false, last: None, dock, pull: None, pull_requested: false });
     }
     let h = app.clone();
     std::thread::spawn(move || {
         let Some(w) = h.get_webview_window(FLOATING) else { return };
-        let threshold = DRAG_THRESHOLD * w.scale_factor().unwrap_or(1.0);
+        let scale = w.scale_factor().unwrap_or(1.0);
+        let (threshold, pull_start) = (DRAG_THRESHOLD * scale, PULL_START * scale);
         let mover = Mover::new(w);
         loop {
             wait_frame();
@@ -598,14 +689,90 @@ pub fn floating_press(app: &AppHandle) {
                 let ws = h.state::<WindowState>();
                 let mut slot = ws.floating_press.lock().unwrap();
                 let Some(press) = slot.as_mut().filter(|p| p.id == id) else { break };
-                cursor_now(&h).and_then(|c| press.follow(c, threshold))
+                cursor_now(&h).and_then(|c| press.follow(c, threshold, pull_start))
             };
             // 挪窗口时不拿着锁（SetWindowPos 要等主线程处理完）
-            if let Some((x, y)) = target {
-                mover.move_to(x, y);
+            match target {
+                Some(Follow::Move(x, y)) => mover.move_to(x, y),
+                Some(Follow::BeginPull) => {
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || begin_pull(&h2, id));
+                }
+                None => {}
             }
         }
     });
+}
+
+/// 开始拉抽屉（对应 Mac `FloatingPanelController.drag`）：窗口换成上次展开的尺寸、放在「只露窄条那么宽」的位置
+/// （和单击展开滑出来的起点一样，顶边和窄条对齐），内容换成展开的；之后按着的线程让它跟着鼠标往屏幕里拉。
+/// 2026-10-31 前窄条整个跟着鼠标走，松手时才在原地一下子变成展开的。
+fn begin_pull(app: &AppHandle, id: u64) {
+    let ws = app.state::<WindowState>();
+    let Some(w) = app.get_webview_window(FLOATING) else { return };
+    let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
+    let Some(m) = w.monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0).ok().flatten() else {
+        return;
+    };
+    let scale = m.scale_factor();
+    let work = m.work_area();
+    let tab = (TAB_WIDTH * scale).round() as i32;
+    // 还不知道展开尺寸（收着重启过）时先按最小宽度放，前端量好后 fit_floating 再改大小
+    let full = ws.floating_expanded_size.lock().unwrap().unwrap_or(PhysicalSize::new((168.0 * scale).round() as u32, size.height));
+    {
+        let mut slot = ws.floating_press.lock().unwrap();
+        let Some(press) = slot.as_mut().filter(|p| p.id == id) else { return };
+        let Some(edge) = press.dock else { return };
+        let base = if edge == DockEdge::Right { work.position.x + work.size.width as i32 - tab } else { work.position.x - full.width as i32 + tab };
+        press.pull = Some(base);
+        press.last = None;
+        *ws.floating_pulling.lock().unwrap() = Some(edge);
+        set_frame(&w, base, pos.y, full.width, full.height);
+    }
+    if save_floating(app, (pos.x, pos.y), None) {
+        crate::app_state::publish(app);
+    }
+}
+
+/// 拉抽屉时松手：拉出来不到三分之一就滑回去收着，否则整块滑进屏幕里、停在松手的高度。
+fn finish_pull(app: &AppHandle, edge: DockEdge, base: i32) {
+    *app.state::<WindowState>().floating_pulling.lock().unwrap() = None;
+    let Some(w) = app.get_webview_window(FLOATING) else { return };
+    let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
+    let Some(m) = w.monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0).ok().flatten() else {
+        return;
+    };
+    let work = m.work_area();
+    let tab = (TAB_WIDTH * m.scale_factor()).round() as i32;
+    let (left, top) = (work.position.x, work.position.y);
+    let work_right = left + work.size.width as i32;
+    let width = size.width as i32;
+    let y = pos.y.clamp(top, (top + work.size.height as i32 - size.height as i32).max(top));
+    let revealed = if edge == DockEdge::Right { base - pos.x } else { pos.x - base };
+    if revealed < (width - tab) / 3 {
+        *app.state::<WindowState>().floating_expanded_size.lock().unwrap() = Some(size);
+        let edge_pos = if edge == DockEdge::Left { left } else { work_right - tab };
+        slide_floating(
+            app,
+            pos.x,
+            base,
+            y,
+            Some(Box::new(move |app: &AppHandle| {
+                if save_floating(app, (edge_pos, y), Some(edge)) {
+                    crate::app_state::publish(app);
+                }
+            })),
+        );
+        return;
+    }
+    let x = pos.x.clamp(left, (work_right - width).max(left));
+    if (x, y) == (pos.x, pos.y) {
+        save_floating(app, (x, y), None);
+        return;
+    }
+    slide_floating(app, pos.x, x, y, Some(Box::new(move |app: &AppHandle| {
+        save_floating(app, (x, y), None);
+    })));
 }
 
 /// 前端报松手。
@@ -629,7 +796,17 @@ fn finish_press(app: &AppHandle, only: Option<u64>) {
         return;
     }
     // 不在这里再跟一次光标：处理松手时光标可能已经移走了，窗口会被带过去（最多差一帧，看不出来）
-    if press.dragging {
+    if let (Some(edge), Some(base)) = (press.dock, press.pull) {
+        finish_pull(app, edge, base);
+    } else if press.pull_requested {
+        // 已经请主线程换成展开的内容、还没换好就松手了：照旧收着
+        *ws.floating_pulling.lock().unwrap() = None;
+        if let Some(edge) = press.dock {
+            if save_floating(app, (press.origin.x, press.origin.y), Some(edge)) {
+                crate::app_state::publish(app);
+            }
+        }
+    } else if press.dragging {
         snap_and_persist(app);
     } else {
         expand_floating(app);
@@ -721,13 +898,7 @@ fn snap_and_persist(app: &AppHandle) {
                 slide_floating(app, pos.x, to, y, None);
             }
             None => {
-                // 拖离了屏幕边：就地展开，和点开一样从窄条那里滑出来。窗口不在这里改尺寸，等前端换成展开的内容、量好尺寸
-                // （fit_floating 按 floating_unfold 贴着窄条那一边长：从左边拉出来的往右长、从右边拉出来的往左长，整块留在屏幕里）；
-                // 前端把展开的内容先挪到只露窄条那么宽、再滑回来，窗口边就是遮挡，看着和从屏幕边滑出来一样。
-                // 2026-10-31 前松手时直接摆成展开的尺寸：窄条先跳到窗口另一边，再一下子变大。
-                let edge = docked.unwrap_or(DockEdge::Right);
-                *app.state::<WindowState>().floating_unfold.lock().unwrap() = Some(edge);
-                let _ = app.emit("floating-unfold", if edge == DockEdge::Left { "left" } else { "right" });
+                // 收着的窄条只沿着屏幕边上下挪（往里拉就成了拉抽屉，见 begin_pull），一般到不了这里；万一离边远了就地展开
                 save_floating(app, (pos.x, y), None);
                 crate::app_state::publish(app);
             }
@@ -888,19 +1059,24 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
         return;
     }
     let right = pos.x + size.width as i32;
-    // 刚把窄条拖出来就地展开：内容已经换成展开的（比窄条宽）才按它的方向长
-    let unfold = if dock.is_none() && nw as f64 > (TAB_WIDTH + 10.0) * scale { ws.floating_unfold.lock().unwrap().take() } else { None };
+    // 正在拉抽屉：只改大小，露出来的那一条不动（从右边拉的左边不动，从左边拉的右边不动，拉抽屉的起点跟着挪）
+    let pulling = *ws.floating_pulling.lock().unwrap();
+    if let Some(edge) = pulling.filter(|_| dock.is_none()) {
+        let shift = if edge == DockEdge::Left { size.width as i32 - nw as i32 } else { 0 };
+        if let Some(press) = ws.floating_press.lock().unwrap().as_mut() {
+            if let Some(base) = press.pull.as_mut() {
+                *base += shift;
+            }
+        }
+        set_frame(&w, pos.x + shift, pos.y, nw, nh);
+        return;
+    }
     let x = match (dock, work) {
         (Some(DockEdge::Left), Some(a)) => a.position.x,
         (Some(DockEdge::Right), Some(a)) => a.position.x + a.size.width as i32 - nw as i32,
-        // 展开时整块留在屏幕里（就地展开时贴着窄条那一边长；否则贴着左边就保持左边不动，不然保持右边不动）
+        // 展开时整块留在屏幕里（贴着左边就保持左边不动，否则保持右边不动）
         (None, Some(a)) => {
-            let x = match unfold {
-                Some(DockEdge::Left) => pos.x,
-                Some(DockEdge::Right) => right - nw as i32,
-                None if pos.x <= a.position.x => pos.x,
-                None => right - nw as i32,
-            };
+            let x = if pos.x <= a.position.x { pos.x } else { right - nw as i32 };
             x.clamp(a.position.x, (a.position.x + a.size.width as i32 - nw as i32).max(a.position.x))
         }
         _ => right - nw as i32,
@@ -908,9 +1084,6 @@ pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     // 上下也留在屏幕里（换成详细样式、账号多了变高时往下长，碰到任务栏就整块往上挪）
     let y = work.map_or(pos.y, |a| pos.y.clamp(a.position.y, (a.position.y + a.size.height as i32 - nh as i32).max(a.position.y)));
     set_frame(&w, x, y, nw, nh);
-    if unfold.is_some() {
-        save_floating(app, (x, y), None);
-    }
 }
 
 // ---------- 材质 ----------

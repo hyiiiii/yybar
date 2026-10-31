@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "弹出浮窗、主窗口、悬浮窗、引导窗口可用的接口",
-  "windows": ["popover", "main", "floating", "onboarding"],
+  "description": "弹出浮窗、主窗口、悬浮窗、悬浮窗右键菜单、引导窗口可用的接口",
+  "windows": ["popover", "main", "floating", "floatmenu", "onboarding"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

@@ -28,8 +28,16 @@ final class FloatingPanelController: NSObject {
     private var animating = false
     /// 刚点了展开：等 SwiftUI 换成展开的内容、量到它的尺寸后，从这条边滑出来
     private var pendingSlideOut: FloatingDockEdge?
-    /// 刚把窄条拖离屏幕边、就地展开：窄条原来贴的那条边。量到展开的尺寸后窗口贴着窄条那一边长，内容从窄条那里滑出来
-    private var pendingUnfold: FloatingDockEdge?
+    /// 往屏幕里拉收起的窄条超过这么多(pt)才换成展开的内容、跟着鼠标拉出来；没到之前只沿着屏幕边上下挪
+    private static let pullStart: CGFloat = 8
+    /// 正在把窄条拉出来(像拉抽屉):窄条原来贴的边，和展开的内容量好尺寸后「只露窄条那么宽」的位置(拖动距离为 0 时的窗口原点)
+    private struct Pull {
+        let edge: FloatingDockEdge
+        var base: NSPoint?
+    }
+    private var pull: Pull?
+    /// 这次按下以来的拖动距离(FloatingMouseView 报上来)
+    private var dragDelta: CGVector = .zero
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -90,18 +98,14 @@ final class FloatingPanelController: NSObject {
             animate(to: target)
             return
         }
-        if let edge = pendingUnfold {
-            // 就地展开：窗口贴着窄条那一边长(从右边拉出来的往左长、从左边拉出来的往右长)，整块留在屏幕里，
-            // 内容先挪到只露窄条那么宽、再滑回来——窗口边就是遮挡，看着和点开时从屏幕边滑出来一样
-            guard fit.width > Self.tabWidth + 10 else { return }
-            pendingUnfold = nil
-            frame.origin.x = edge == .right ? panel.frame.maxX - fit.width : panel.frame.minX
-            frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - fit.width))
-            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - fit.height)
-            frame.size = fit
-            panel.setFrame(frame, display: true)
-            persistFrame()
-            unfoldContent(from: edge, width: fit.width)
+        if var current = pull {
+            // 拉抽屉：内容换成展开的、量到尺寸后，放在只露窄条那么宽的位置(和单击展开滑出来的起点一样，顶边和窄条对齐)，
+            // 再按拖动距离挪出来；之后由 drag(by:from:) 跟着鼠标走，这里不再动它
+            guard current.base == nil, fit.width > Self.tabWidth + 10 else { return }
+            let x = current.edge == .right ? visible.maxX - Self.tabWidth : visible.minX - fit.width + Self.tabWidth
+            current.base = NSPoint(x: x, y: panel.frame.maxY - fit.height - dragDelta.dy)
+            pull = current
+            panel.setFrame(NSRect(origin: pullOrigin(current), size: fit), display: true)
             return
         }
         if let edge = SettingsStore.shared.floatingDockEdge {
@@ -138,29 +142,36 @@ final class FloatingPanelController: NSObject {
         }
     }
 
-    /// 就地展开的动画：内容图层从窄条那一边滑回原位(窗口已经是展开的尺寸，窗口边挡住还没滑进来的部分)。
-    /// 动画期间不画窗口阴影：阴影按整个窗口的内容算，会先露出一个空的框。
-    private func unfoldContent(from edge: FloatingDockEdge, width: CGFloat) {
-        guard let panel, let layer = hostingView?.layer else { return }
-        let offset = width - Self.tabWidth
-        let slide = CABasicAnimation(keyPath: "transform.translation.x")
-        slide.fromValue = edge == .right ? offset : -offset
-        slide.toValue = 0
-        slide.duration = Self.slideDuration
-        slide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        animating = true
-        panel.hasShadow = false
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
-            Task { @MainActor in
-                guard let self, let panel = self.panel else { return }
-                self.animating = false
-                panel.hasShadow = true
-                panel.invalidateShadow()
-            }
+    /// 按着拖动(FloatingMouseView 报上来，delta 是这次按下以来鼠标挪了多少，startOrigin 是按下时的窗口原点)。
+    /// 展开时整块跟着鼠标走。收起时：往屏幕里拉不到 8pt 只沿着屏幕边上下挪窄条；超过了就开始拉抽屉——
+    /// 换成展开的内容、放在只露窄条那么宽的位置，跟着鼠标一点点拉出来(和单击时从屏幕边滑出来一样，只是由鼠标带着走)。
+    /// 2026-10-31 前窄条整个跟着鼠标走，松手时才在原地一下子变成展开的。
+    func drag(by delta: CGVector, from startOrigin: NSPoint) {
+        guard let panel, !animating else { return }
+        dragDelta = delta
+        if let current = pull {
+            if current.base != nil { panel.setFrameOrigin(pullOrigin(current)) }
+            return
         }
-        layer.add(slide, forKey: "unfold")
-        CATransaction.commit()
+        if let edge = SettingsStore.shared.floatingDockEdge {
+            let away = edge == .right ? -delta.dx : delta.dx
+            guard away >= Self.pullStart else {
+                panel.setFrameOrigin(NSPoint(x: startOrigin.x, y: startOrigin.y + delta.dy))
+                return
+            }
+            pull = Pull(edge: edge, base: nil)
+            SettingsStore.shared.floatingDockEdge = nil
+            resizeToFitContent()
+            return
+        }
+        panel.setFrameOrigin(NSPoint(x: startOrigin.x + delta.dx, y: startOrigin.y + delta.dy))
+    }
+
+    /// 拉抽屉时窗口的位置：只能往屏幕里拉，往外推不动(露出来的至少是窄条那么宽)。
+    private func pullOrigin(_ current: Pull) -> NSPoint {
+        guard let base = current.base else { return panel?.frame.origin ?? .zero }
+        let x = current.edge == .right ? min(base.x, base.x + dragDelta.dx) : max(base.x, base.x + dragDelta.dx)
+        return NSPoint(x: x, y: base.y + dragDelta.dy)
     }
 
     /// 收起：整块滑进屏幕边，只剩贴边的一条，再换成窄条(只显示各行的剩余百分比)。
@@ -193,6 +204,28 @@ final class FloatingPanelController: NSObject {
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? panel.screen ?? NSScreen.main
         guard let screen else { return }
         let visible = screen.visibleFrame
+        if let current = pull {
+            pull = nil
+            guard let base = current.base else {
+                // 展开的内容还没换好就松手了：照旧收着
+                settings.floatingDockEdge = current.edge
+                resizeToFitContent()
+                return
+            }
+            let frame = panel.frame
+            let revealed = current.edge == .right ? base.x - frame.minX : frame.minX - base.x
+            if revealed < (frame.width - Self.tabWidth) / 3 {
+                // 拉出来不到三分之一：滑回去收着
+                collapse(to: current.edge, visible: visible)
+            } else {
+                // 拉出来超过三分之一：整块滑进屏幕里，停在松手的高度
+                var target = frame
+                target.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+                target.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+                if target != frame { animate(to: target) } else { persistFrame() }
+            }
+            return
+        }
         guard settings.floatingDockEdge != nil else {
             if moved { releaseExpanded(on: screen) }
             return
@@ -205,9 +238,7 @@ final class FloatingPanelController: NSObject {
         let edge: FloatingDockEdge? = frame.midX - visible.minX < Self.redockDistance ? .left
             : visible.maxX - frame.midX < Self.redockDistance ? .right : nil
         guard let edge else {
-            // 拖离了屏幕边：就地展开，和点开一样从窄条那里滑出来(applyFitOnce 的 pendingUnfold)。
-            // 2026-10-31 前是在松手的地方淡入，一下子变大。
-            pendingUnfold = settings.floatingDockEdge
+            // 收着的窄条只沿着屏幕边上下挪(往里拉就成了上面的拉抽屉)，一般到不了这里；万一离边远了就地展开
             settings.floatingDockEdge = nil
             resizeToFitContent()
             return
@@ -261,11 +292,15 @@ final class FloatingPanelController: NSObject {
     /// 右键悬浮窗(展开的、收起的窄条都一样):统计 / 设置 / bar,和悬浮窗样式(简略 / 详细，勾着当前的)。
     func contextMenu() -> NSMenu {
         let menu = NSMenu()
-        for (title, action) in [(tr("Statistics", "统计"), #selector(openStats)),
-                                (tr("Settings", "设置"), #selector(openSettings)),
-                                ("bar", #selector(openBar))] {
+        // 每项都显式给图标(和弹出窗口顶上三个按钮一样)：只给「设置」时系统会自己配齿轮，另外两项没有，看着不齐
+        for (title, action, image) in [
+            (tr("Statistics", "统计"), #selector(openStats), NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: nil)),
+            (tr("Settings", "设置"), #selector(openSettings), NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)),
+            ("bar", #selector(openBar), MenuBarBadgeImage.playingCardsImage(height: 12, canvasHeight: 15)),
+        ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
+            item.image = image
             menu.addItem(item)
         }
         menu.addItem(.separator())

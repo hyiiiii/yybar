@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
-// 四个页面：托盘弹出浮窗、主窗口（统计 + 设置）、桌面悬浮窗、首次启动引导
+// 五个页面：托盘弹出浮窗、主窗口（统计 + 设置）、桌面悬浮窗、悬浮窗的右键菜单、首次启动引导
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
@@ -14,6 +14,7 @@ export default defineConfig({
         popover: resolve(__dirname, "popover.html"),
         main: resolve(__dirname, "main.html"),
         floating: resolve(__dirname, "floating.html"),
+        floatmenu: resolve(__dirname, "floatmenu.html"),
         onboarding: resolve(__dirname, "onboarding.html"),
       },
     },

@@ -55,6 +55,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         floating_press,
         floating_release,
         floating_menu,
+        fit_floating_menu,
+        pick_floating_menu,
+        hide_floating_menu,
         floating_alive,
         pick_folder,
         finish_onboarding,
@@ -314,6 +317,21 @@ fn floating_alive(app: AppHandle) {
 #[tauri::command]
 fn floating_menu(app: AppHandle) {
     windows::show_floating_menu(&app);
+}
+
+#[tauri::command]
+fn fit_floating_menu(app: AppHandle, width: f64, height: f64) {
+    windows::fit_floating_menu(&app, width, height);
+}
+
+#[tauri::command]
+fn pick_floating_menu(app: AppHandle, id: String) {
+    windows::pick_floating_menu(&app, &id);
+}
+
+#[tauri::command]
+fn hide_floating_menu(app: AppHandle) {
+    windows::hide_floating_menu(&app);
 }
 
 /// 点悬浮窗收起后的窄条：展开。
