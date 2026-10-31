@@ -446,7 +446,7 @@ enum MenuBarBadgeImage {
         playingCardsImage(height: iconSize - 2, canvasHeight: height)
     }
 
-    /// yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)，模板图：菜单栏什么都没选时、悬浮窗右键菜单的 bar 都用。
+    /// yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)，模板图(菜单栏什么都没选时用)。
     /// canvasHeight 比牌高时上下居中。
     static func playingCardsImage(height cardsHeight: CGFloat, canvasHeight: CGFloat? = nil) -> NSImage {
         let height = canvasHeight ?? cardsHeight

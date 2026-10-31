@@ -36,8 +36,13 @@ final class FloatingPanelController: NSObject {
         var base: NSPoint?
     }
     private var pull: Pull?
-    /// 这次按下以来的拖动距离(FloatingMouseView 报上来)
+    /// 这次按下以来的拖动距离
     private var dragDelta: CGVector = .zero
+    /// 按着时接拖动 / 松手的 app 内事件监听(pressBegan 装上，松手时拿掉)
+    private var pressMonitor: Any?
+    private var pressStartMouse: NSPoint = .zero
+    private var pressStartOrigin: NSPoint = .zero
+    private var pressMoved = false
 
     func attach(appState: AppState) {
         self.appState = appState
@@ -142,7 +147,37 @@ final class FloatingPanelController: NSObject {
         }
     }
 
-    /// 按着拖动(FloatingMouseView 报上来，delta 是这次按下以来鼠标挪了多少，startOrigin 是按下时的窗口原点)。
+    /// 悬浮窗上按下(FloatingMouseView)：记下鼠标和窗口位置，之后的拖动和松手用 app 内的事件监听接——不靠按下的那个视图，
+    /// 拉抽屉时 SwiftUI 把窄条换成展开的内容、那个视图被拿掉，靠它就收不到后面的拖动和松手(2026-10-31 收着时拖不动就是这个)。
+    /// 移动超过 3pt 才算拖动(和以前一样)。
+    func pressBegan() {
+        guard let panel else { return }
+        FloatingMenuController.shared.close()
+        if let monitor = pressMonitor { NSEvent.removeMonitor(monitor) }
+        pressStartMouse = NSEvent.mouseLocation
+        pressStartOrigin = panel.frame.origin
+        pressMoved = false
+        pressMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            let released = event.type == .leftMouseUp
+            MainActor.assumeIsolated { self?.handlePress(released: released) }
+            return event
+        }
+    }
+
+    private func handlePress(released: Bool) {
+        let p = NSEvent.mouseLocation
+        if released {
+            if let monitor = pressMonitor { NSEvent.removeMonitor(monitor) }
+            pressMonitor = nil
+            mouseReleased(moved: pressMoved)
+            return
+        }
+        if !pressMoved, hypot(p.x - pressStartMouse.x, p.y - pressStartMouse.y) < 3 { return }
+        pressMoved = true
+        drag(by: CGVector(dx: p.x - pressStartMouse.x, dy: p.y - pressStartMouse.y), from: pressStartOrigin)
+    }
+
+    /// 按着拖动(delta 是这次按下以来鼠标挪了多少，startOrigin 是按下时的窗口原点)。
     /// 展开时整块跟着鼠标走。收起时：往屏幕里拉不到 8pt 只沿着屏幕边上下挪窄条；超过了就开始拉抽屉——
     /// 换成展开的内容、放在只露窄条那么宽的位置，跟着鼠标一点点拉出来(和单击时从屏幕边滑出来一样，只是由鼠标带着走)。
     /// 2026-10-31 前窄条整个跟着鼠标走，松手时才在原地一下子变成展开的。
@@ -289,41 +324,19 @@ final class FloatingPanelController: NSObject {
 
     // MARK: 右键菜单
 
-    /// 右键悬浮窗(展开的、收起的窄条都一样):统计 / 设置 / bar,和悬浮窗样式(简略 / 详细，勾着当前的)。
-    func contextMenu() -> NSMenu {
-        let menu = NSMenu()
-        // 每项都显式给图标(和弹出窗口顶上三个按钮一样)：只给「设置」时系统会自己配齿轮，另外两项没有，看着不齐
-        for (title, action, image) in [
-            (tr("Statistics", "统计"), #selector(openStats), NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: nil)),
-            (tr("Settings", "设置"), #selector(openSettings), NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)),
-            ("bar", #selector(openBar), MenuBarBadgeImage.playingCardsImage(height: 12, canvasHeight: 15)),
-        ] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.image = image
-            menu.addItem(item)
+    /// 右键悬浮窗(展开的、收起的窄条都一样):统计 / 设置 / bar,和悬浮窗样式(简略 / 详细，勾着当前的)。见 FloatingMenuController。
+    func showContextMenu(at point: NSPoint) {
+        FloatingMenuController.shared.show(at: point, style: SettingsStore.shared.floatingStyle) { [weak self] action in
+            switch action {
+            case .stats: WindowCoordinator.shared.showMain(.overview)
+            case .settings: WindowCoordinator.shared.showMain(.settings)
+            case .bar: WindowCoordinator.shared.showMain(.bar)
+            case .style(let style):
+                guard style != SettingsStore.shared.floatingStyle else { return }
+                SettingsStore.shared.floatingStyle = style
+                self?.sync()
+            }
         }
-        menu.addItem(.separator())
-        for style in [FloatingStyle.compact, .detailed] {
-            let item = NSMenuItem(title: style == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"),
-                                  action: #selector(chooseStyle(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = style.rawValue
-            item.state = SettingsStore.shared.floatingStyle == style ? .on : .off
-            menu.addItem(item)
-        }
-        return menu
-    }
-
-    @objc private func openStats() { WindowCoordinator.shared.showMain(.overview) }
-    @objc private func openSettings() { WindowCoordinator.shared.showMain(.settings) }
-    @objc private func openBar() { WindowCoordinator.shared.showMain(.bar) }
-
-    @objc private func chooseStyle(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let style = FloatingStyle(rawValue: raw),
-              style != SettingsStore.shared.floatingStyle else { return }
-        SettingsStore.shared.floatingStyle = style
-        sync()
     }
 
     private func buildPanel(appState: AppState) {
@@ -397,5 +410,164 @@ final class FloatingPanelController: NSObject {
             y: screenFrame.maxY - size.height - defaultMargin
         )
         return CGRect(origin: origin, size: size)
+    }
+}
+
+// MARK: - FloatingMenuController
+//
+// 悬浮窗的右键菜单(2026-10-31):自己画的小浮层。本机 macOS 的系统右键菜单不画我们给的图标(只有系统认得的「设置」会
+// 自己配齿轮，显式给了图标反而连齿轮也没了)，所以和 Windows 版一样自己画：底色、描边、圆角和悬浮窗一样，每项前面有图标，
+// 悬停时强调色底白字(和系统菜单一样);点了某项、点到别处、按 Esc 就收起。
+
+enum FloatingMenuAction {
+    case stats, settings, bar
+    case style(FloatingStyle)
+}
+
+@MainActor
+final class FloatingMenuController {
+    static let shared = FloatingMenuController()
+
+    private var panel: FloatingMenuPanel?
+    private var monitors: [Any] = []
+
+    /// 左上角放在光标处(屏幕坐标)，右边 / 下边放不下就往左 / 往上翻。
+    func show(at point: NSPoint, style: FloatingStyle, onPick: @escaping (FloatingMenuAction) -> Void) {
+        close()
+        let hosting = NSHostingView(rootView: FloatingMenuView(style: style) { [weak self] action in
+            self?.close()
+            onPick(action)
+        })
+        let size = hosting.fittingSize
+        let panel = FloatingMenuPanel(size: size)
+        panel.contentView = hosting
+        let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main)?.visibleFrame ?? .zero
+        var origin = NSPoint(x: point.x, y: point.y - size.height)
+        if origin.x + size.width > visible.maxX { origin.x = point.x - size.width }
+        if origin.y < visible.minY { origin.y = point.y }
+        panel.setFrameOrigin(origin)
+        panel.makeKeyAndOrderFront(nil)
+        self.panel = panel
+        // 点到本 app 别的窗口、按 Esc:收起(Esc 吃掉);点到别的 app:收起
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] event in
+            let (isKey, keyCode, windowNumber) = (event.type == .keyDown, event.keyCode, event.windowNumber)
+            let swallow = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let panel = self.panel else { return false }
+                if isKey {
+                    guard keyCode == 53 else { return false }
+                    self.close()
+                    return true
+                }
+                if windowNumber != panel.windowNumber { self.close() }
+                return false
+            }
+            return swallow ? nil : event
+        }) {
+            monitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }
+        }) {
+            monitors.append(global)
+        }
+    }
+
+    func close() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        panel?.orderOut(nil)
+        panel = nil
+    }
+}
+
+/// 菜单浮层：能成为 key(收 Esc、第一下点击就生效),但不激活 App。
+private final class FloatingMenuPanel: NSPanel {
+    init(size: NSSize) {
+        super.init(contentRect: NSRect(origin: .zero, size: size),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isFloatingPanel = true
+        level = .popUpMenu
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = true
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    }
+
+    override var canBecomeKey: Bool { true }
+}
+
+private struct FloatingMenuView: View {
+    let style: FloatingStyle
+    let onPick: (FloatingMenuAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FloatingMenuRow(title: tr("Statistics", "统计"), action: { onPick(.stats) }) {
+                Image(systemName: "chart.bar.xaxis")
+            }
+            FloatingMenuRow(title: tr("Settings", "设置"), action: { onPick(.settings) }) {
+                Image(systemName: "gearshape")
+            }
+            FloatingMenuRow(title: "bar", action: { onPick(.bar) }) {
+                PlayingCardsIcon(size: 10.5)
+            }
+            Divider()
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+            ForEach([FloatingStyle.compact, .detailed], id: \.self) { option in
+                FloatingMenuRow(title: option == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"),
+                                action: { onPick(.style(option)) }) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(style == option ? 1 : 0)
+                }
+            }
+        }
+        .padding(5)
+        .frame(minWidth: 150, alignment: .leading)
+        .background {
+            // 和悬浮窗同一底色
+            ZStack {
+                Color(nsColor: .windowBackgroundColor).opacity(0.55)
+                VisualEffectBackground(material: .popover, blendingMode: .behindWindow)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+        )
+        .fixedSize()
+    }
+}
+
+/// 菜单里的一项：16pt 图标列 + 13pt 文字，悬停时强调色底白字。
+private struct FloatingMenuRow<Icon: View>: View {
+    let title: String
+    let action: () -> Void
+    @ViewBuilder let icon: Icon
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            icon
+                .font(.system(size: 12))
+                .frame(width: 16)
+            Text(title)
+                .font(.system(size: 13))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .foregroundStyle(hovered ? Color.white : Color.primary)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(hovered ? Color.accentColor : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .onTapGesture(perform: action)
     }
 }

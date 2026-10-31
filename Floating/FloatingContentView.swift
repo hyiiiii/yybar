@@ -243,35 +243,17 @@ private struct FloatingMouse: NSViewRepresentable {
 }
 
 final class FloatingMouseView: NSView {
-    private var startMouse: NSPoint = .zero
-    private var startOrigin: NSPoint = .zero
-    private var dragging = false
-
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
+    /// 按下之后的拖动和松手由 controller 在 app 里统一接(pressBegan):拉抽屉时 SwiftUI 把窄条换成展开的内容，
+    /// 这个视图会被拿掉，之后的拖动 / 松手它就收不到了。
     override func mouseDown(with event: NSEvent) {
-        guard let window else { return }
-        startMouse = NSEvent.mouseLocation
-        startOrigin = window.frame.origin
-        dragging = false
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let p = NSEvent.mouseLocation
-        if !dragging, hypot(p.x - startMouse.x, p.y - startMouse.y) < 3 { return }
-        dragging = true
-        // 窗口怎么跟着走由 controller 定(收起的窄条往里拉是拉抽屉)
-        FloatingPanelController.shared.drag(by: CGVector(dx: p.x - startMouse.x, dy: p.y - startMouse.y), from: startOrigin)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        FloatingPanelController.shared.mouseReleased(moved: dragging)
-        dragging = false
+        FloatingPanelController.shared.pressBegan()
     }
 
     /// 右键：统计 / 设置 / bar、切换简略 / 详细。
     override func rightMouseDown(with event: NSEvent) {
-        NSMenu.popUpContextMenu(FloatingPanelController.shared.contextMenu(), with: event, for: self)
+        FloatingPanelController.shared.showContextMenu(at: NSEvent.mouseLocation)
     }
 }
