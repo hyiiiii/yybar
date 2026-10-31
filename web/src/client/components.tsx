@@ -325,24 +325,27 @@ export function planTier(app: App, plan: string): "free" | "standard" | "premium
   if (p.includes("free") || p === "guest") return "free";
   if (["team", "business", "enterprise", "edu"].some((k) => p.includes(k))) return "team";
   if (app === "codex") return p.includes("pro") ? "premium" : "standard";
-  if (app === "claude") return p.includes("max") ? "premium" : "standard";
+  if (app === "claude") return p.includes("max") || p.includes("ultra") ? "premium" : "standard";
   return p.includes("heavy") || p.includes("ultra") ? "premium" : "standard";
 }
 
-/** ChatGPT 的套餐代号（Codex 登录里的 chatgpt_plan_type）：Pro 分 Lite / 标准 / Max 三档 */
-const CODEX_PLAN_NAMES: Record<string, string> = { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max", go: "Go", self_serve_business_prolite: "Business Pro Lite" };
+/** 套餐代号换成名字。ChatGPT（Codex 登录里的 chatgpt_plan_type）：Pro 分 Lite / 20x / Max 三档；
+ *  Claude 的 Max 两档按现在的叫法：max_5x → Max、max_20x → Ultra（2026-10-31 前写 Max 5x / Max 20x）。和 App 一致。 */
+const PLAN_NAMES: Partial<Record<App, Record<string, string>>> = {
+  codex: { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max", go: "Go", self_serve_business_prolite: "Business Pro Lite" },
+  claude: { max_5x: "Max", max_20x: "Ultra" },
+};
 
-/** 套餐名：首字母大写；ChatGPT 的代号换成名字（prolite → Pro Lite）；Claude Max 带档位（max_20x → Max 20x）；
- *  Google 的去掉前面的「Google」（前面已经有 Gemini 的标） */
+/** 套餐名：首字母大写；代号换成名字（见 PLAN_NAMES）；Google 的去掉前面的「Google」（前面已经有 Gemini 的标） */
 export function planLabel(app: App, plan: string): string {
-  const named = app === "codex" ? CODEX_PLAN_NAMES[plan.toLowerCase()] : undefined;
+  const named = PLAN_NAMES[app]?.[plan.toLowerCase()];
   if (named) return named;
   let p = plan.replace(/[_]+/g, " ").trim();
   if (app === "gemini" || app === "agy") p = p.replace(/^google\s+/i, "");
   return p.charAt(0).toUpperCase() + p.slice(1);
 }
 
-/** 同一服务里的先后：高档在前（同是高档再看档位：Pro Max > Pro > Pro Lite、Max 20x > Max 5x），免费在最后 */
+/** 同一服务里的先后：高档在前（同是高档再看档位：Pro Max > Pro 20x > Pro Lite、Ultra > Max），免费在最后 */
 function planRank(app: App, plan: string): number {
   const p = plan.toLowerCase();
   const base = { premium: 30, team: 20, standard: 10, free: 0 }[planTier(app, plan)];

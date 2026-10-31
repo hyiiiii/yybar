@@ -131,7 +131,11 @@ impl Inner {
                 name: a.display_name(),
                 alias: a.alias.clone(),
                 email: a.email.clone(),
-                plan: a.plan.clone(),
+                // Claude 的 Max 按档位写成 max_5x / max_20x（显示成 Max / Ultra）
+                plan: match a.provider {
+                    Provider::Claude => yybar_core::web::claude_plan(a.plan.as_deref(), a.rate_limit_tier.as_deref()),
+                    _ => a.plan.clone(),
+                },
                 enabled: a.enabled,
                 show_in_tray: a.show_in_tray,
                 show_in_floating: a.show_in_floating,

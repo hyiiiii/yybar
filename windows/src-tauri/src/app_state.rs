@@ -22,7 +22,7 @@ use yybar_core::quota::status::{self as service_status, ServiceStatus};
 use yybar_core::quota::{self, claude_refresh, codex_refresh, google, QuotaError, QuotaSnapshot, QuotaSource, RefreshReason, RefreshState};
 use yybar_core::storage::quota_cache::{QuotaCache, QuotaCacheRecord};
 use yybar_core::storage::quota_history::{keys as history_keys, QuotaHistory};
-use yybar_core::storage::settings::Settings;
+use yybar_core::storage::settings::{FloatingStyle, Settings};
 use yybar_core::usage::activity::ActivityMonitor;
 use yybar_core::usage::pricing::{self, ModelPrice};
 use yybar_core::usage::service::{self as usage_service, Reprice, ScanRoots, UsageService};
@@ -342,9 +342,10 @@ const CLAUDE_PROFILE_INTERVAL: i64 = 6 * 3600;
 impl Inner {
     /// 悬浮窗要不要显示（对应 Mac `FloatingPanelController.sync`）：有勾了「悬浮窗」的账号就显示——本机账号看服务开关和
     /// 悬浮窗勾选（没被删掉），其他账号看它那一行的启用和勾选；一个都没有就关掉。不看本机 CLI 这会儿是否读得到登录：
-    /// CLI 改写凭据文件那一下读不到，悬浮窗不该跟着关一下。
+    /// CLI 改写凭据文件那一下读不到，悬浮窗不该跟着关一下。样式选了「隐藏」也关掉。
     pub fn floating_wanted(&self) -> bool {
-        UsageApp::ALL
+        self.settings.floating_style != FloatingStyle::Hidden
+            && UsageApp::ALL
             .iter()
             .any(|&app| (self.settings.floating_shows(app) && !self.is_removed(app)) || !self.shown_others(app, false).is_empty())
     }
@@ -484,7 +485,11 @@ impl Inner {
             ),
             UsageApp::Claude => (
                 self.claude.as_ref().and_then(|a| a.email.clone()),
-                self.claude.as_ref().and_then(|a| a.subscription_type.clone()),
+                // Max 按档位写成 max_5x / max_20x（显示成 Max / Ultra）
+                site::claude_plan(
+                    self.claude.as_ref().and_then(|a| a.subscription_type.as_deref()),
+                    self.claude.as_ref().and_then(|a| a.rate_limit_tier.as_deref()),
+                ),
                 self.claude.as_ref().and_then(|a| SubscriptionRenewal::monthly(a.subscription_created_at, now)),
                 self.claude.as_ref().map(|a| a.path.to_string_lossy().into_owned()),
             ),

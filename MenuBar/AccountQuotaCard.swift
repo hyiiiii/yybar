@@ -27,7 +27,9 @@ struct LocalQuotaCard: View {
             )
         case .claude:
             QuotaCardView(
-                title: "Claude Code", subtitle: subtitle(email: appState.claudeAccount?.email, plan: appState.claudeAccount?.subscriptionType, fallback: "Anthropic"),
+                title: "Claude Code", subtitle: subtitle(email: appState.claudeAccount?.email,
+                                                         plan: appState.localClaudePlan.map { PlanTag.displayName($0, service: "claude") },
+                                                         fallback: "Anthropic"),
                 tint: .claudeAccent, logoName: "claude", fallback: "K",
                 windows: QuotaCardView.standardWindows(appState.claudeQuota),
                 inUse: true,

@@ -4,7 +4,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTicker } from "../../shared/api";
-import { Collapsible, Icon, RollingText, Segmented, statusColor, Toggle } from "../../shared/design";
+import { Collapsible, Icon, planName, RollingText, Segmented, statusColor, Toggle } from "../../shared/design";
 import { dayString, quotaDelta, timeString } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
@@ -61,8 +61,8 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
       recordingStartedAt,
     });
   };
-  const titleOf = (provider: string, plan: string | null, email: string | null) =>
-    [provider, plan ? plan[0].toUpperCase() + plan.slice(1) : null, email].filter(Boolean).join(" · ");
+  const titleOf = (provider: string, plan: string | null, email: string | null, app: UsageApp) =>
+    [provider, plan ? planName(plan, app) : null, email].filter(Boolean).join(" · ");
 
   // 顺序：Codex 本机 → Codex 其他 → Claude 本机 → Claude 其他 → Grok … → Antigravity …
   const addAgy = (keys: string[], q: QuotaSnapshot | null, plan: string | null, email: string | null) => {
@@ -70,20 +70,20 @@ export function QuotaTimeline({ state }: { state: StateSnapshot }) {
     const labels = ["Gemini", "Claude·GPT"];
     keys.forEach((key, i) => {
       const pool = pools.find((p) => p.label === labels[i]);
-      add("agy", key, titleOf(`Antigravity · ${labels[i]}`, plan, email), weekly ? pool?.weekly : pool?.fiveHour, false);
+      add("agy", key, titleOf(`Antigravity · ${labels[i]}`, plan, email, "agy"), weekly ? pool?.weekly : pool?.fiveHour, false);
     });
   };
   for (const s of state.services) {
     if (s.enabled && localShown(s)) {
       const q = s.quota;
       if (s.app === "agy") addAgy(s.historyKeys, q, s.plan, s.email);
-      else if (s.app !== "grok" || weekly) add(s.app, s.historyKeys[0], titleOf(displayName[s.app], s.plan, s.email), weekly ? q?.weekly ?? q?.primary : q?.fiveHour, s.detected);
+      else if (s.app !== "grok" || weekly) add(s.app, s.historyKeys[0], titleOf(displayName[s.app], s.plan, s.email, s.app), weekly ? q?.weekly ?? q?.primary : q?.fiveHour, s.detected);
     }
     for (const o of state.others) {
       if (o.app !== s.app || !o.enabled) continue;
       const oq = o.quota;
       if (o.provider === "google") addAgy(o.historyKeys, oq, o.plan, o.email ?? o.name);
-      else if (o.app !== "grok" || weekly) add(o.app, o.historyKeys[0], titleOf(displayName[o.app], o.plan, o.email ?? o.name), weekly ? oq?.weekly ?? oq?.primary : oq?.fiveHour, true);
+      else if (o.app !== "grok" || weekly) add(o.app, o.historyKeys[0], titleOf(displayName[o.app], o.plan, o.email ?? o.name, o.app), weekly ? oq?.weekly ?? oq?.primary : oq?.fiveHour, true);
     }
   }
 

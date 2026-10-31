@@ -209,7 +209,7 @@ struct SettingsRootView: View {
             ServiceMatrixRow(
                 title: "Claude Code", logoName: "claude", fallback: "K", tint: .claudeAccent,
                 email: appState.claudeAccount?.email,
-                plan: appState.claudeAccount?.subscriptionType,
+                plan: appState.localClaudePlan,
                 renewal: .monthly(from: appState.claudeAccount?.subscriptionCreatedAt),
                 switchState: appState.claudeAccount?.email != nil ? .inUse : .none,
                 detected: appState.claudeAccount?.email != nil,
@@ -835,10 +835,27 @@ private struct ServiceMatrixHeader: View {
     }
 }
 
-/// 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式(简略 / 详细，默认简略)，和行里「查看额度」按钮一样弹一个浮层。
-/// 悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉。
+/// 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式(简略 / 详细 / 隐藏，默认简略)，和行里「查看额度」按钮一样弹一个浮层。
+/// 悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉；选「隐藏」也关掉，勾选留着。
 private struct FloatingStyleButton: View {
     @State private var showing = false
+
+    static func title(_ style: FloatingStyle) -> String {
+        switch style {
+        case .compact: return tr("Compact", "简略")
+        case .detailed: return tr("Detailed", "详细")
+        case .hidden: return tr("Hide", "隐藏")
+        }
+    }
+
+    static func detail(_ style: FloatingStyle) -> String {
+        switch style {
+        case .compact: return tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比")
+        case .detailed: return tr("Like the menu bar popover: plan, 5H / WK and reset times", "和菜单栏浮窗一样：套餐、5H / WK 和重置时间")
+        case .hidden: return tr("Hide the floating window; your ticks stay. Pick Compact or Detailed to bring it back",
+                                "先不显示悬浮窗，勾选留着；选简略或详细就回来")
+        }
+    }
 
     var body: some View {
         @Bindable var settings = SettingsStore.shared
@@ -856,7 +873,7 @@ private struct FloatingStyleButton: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(tr("Floating window style", "悬浮窗样式"))
                     .font(.system(size: 12, weight: .semibold))
-                ForEach([FloatingStyle.compact, .detailed], id: \.self) { style in
+                ForEach([FloatingStyle.compact, .detailed, .hidden], id: \.self) { style in
                     Button {
                         settings.floatingStyle = style
                         FloatingPanelController.shared.sync()
@@ -866,11 +883,9 @@ private struct FloatingStyleButton: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(settings.floatingStyle == style ? Color.accentColor : Color.secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(style == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"))
+                                Text(Self.title(style))
                                     .font(.system(size: 12))
-                                Text(style == .compact
-                                     ? tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比")
-                                     : tr("Like the menu bar popover: plan, 5H / WK and reset times", "和菜单栏浮窗一样：套餐、5H / WK 和重置时间"))
+                                Text(Self.detail(style))
                                     .font(.system(size: 10.5))
                                     .foregroundStyle(.secondary)
                             }
@@ -1037,15 +1052,19 @@ struct PlanTag: View {
         if ["team", "business", "enterprise", "edu"].contains(where: { p.contains($0) }) { return .team }
         switch service {
         case "codex": return p.contains("pro") ? .premium : .standard
-        case "claude": return p.contains("max") ? .premium : .standard
+        case "claude": return p.contains("max") || p.contains("ultra") ? .premium : .standard
         default: return p.contains("heavy") || p.contains("ultra") ? .premium : .standard
         }
     }
 
-    /// 套餐名：首字母大写;ChatGPT 的代号换成名字(prolite → Pro Lite、pro → Pro 20x、promax → Pro Max,和网站一致)。
+    /// 套餐名：首字母大写;ChatGPT 的代号换成名字(prolite → Pro Lite、pro → Pro 20x、promax → Pro Max),
+    /// Claude 的 Max 两档按现在的叫法：max_5x → Max、max_20x → Ultra(2026-10-31 前写 Max 5x / Max 20x)。和网站一致。
     static func displayName(_ plan: String, service: String) -> String {
-        let codex = ["prolite": "Pro Lite", "pro": "Pro 20x", "promax": "Pro Max"]
-        if service == "codex", let named = codex[plan.lowercased()] { return named }
+        let named: [String: [String: String]] = [
+            "codex": ["prolite": "Pro Lite", "pro": "Pro 20x", "promax": "Pro Max"],
+            "claude": ["max_5x": "Max", "max_20x": "Ultra"],
+        ]
+        if let name = named[service]?[plan.lowercased()] { return name }
         let spaced = plan.replacingOccurrences(of: "_", with: " ")
         return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }

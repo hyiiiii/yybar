@@ -567,12 +567,13 @@ function QuotaButton({ children }: { children: () => ReactNode }) {
   );
 }
 
-/** 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式（简略 / 详细，默认简略），和「查看额度」一样弹一个浮层（对应 Mac `FloatingStyleButton`）。
- *  悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉。 */
+/** 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式（简略 / 详细 / 隐藏，默认简略），和「查看额度」一样弹一个浮层（对应 Mac `FloatingStyleButton`）。
+ *  悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉；选「隐藏」也关掉，勾选留着。 */
 function FloatingStyleButton({ s }: { s: Settings }) {
   const options = [
     { value: "compact", label: tr("Compact", "简略"), desc: tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比") },
     { value: "detailed", label: tr("Detailed", "详细"), desc: tr("Like the popup: plan, 5H / WK and reset times", "和弹出窗口一样：套餐、5H / WK 和重置时间") },
+    { value: "hidden", label: tr("Hide", "隐藏"), desc: tr("Hide the floating window; your ticks stay. Pick Compact or Detailed to bring it back", "先不显示悬浮窗，勾选留着；选简略或详细就回来") },
   ] as const;
   return (
     <PopoverButton icon="sliders" size={12} title={tr("Floating window style", "悬浮窗样式")} popClass="style-popover">

@@ -72,8 +72,8 @@ export type MenuBarWindow = "fiveHour" | "weekly" | "both";
 export type ResetTimeDisplay = "relative" | "absolute";
 export type TextSize = "small" | "standard" | "large" | "extraLarge";
 export type DockEdge = "left" | "right";
-/** 悬浮窗样式：简略（每行一个进度条）/ 详细（和弹出窗口一样） */
-export type FloatingStyle = "compact" | "detailed";
+/** 悬浮窗样式：简略（每行一个进度条）/ 详细（和弹出窗口一样）/ 隐藏（先不显示悬浮窗，勾选留着） */
+export type FloatingStyle = "compact" | "detailed" | "hidden";
 export type AppLanguage = "system" | "zh" | "en";
 export type IntervalChoice = "m1" | "m2" | "m3" | "m5" | "m10";
 

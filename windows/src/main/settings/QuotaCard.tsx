@@ -3,17 +3,17 @@
 // 底部今日 / 本周花费（来自本地日志，仅本机账号）+ 更新时间。
 
 import { useTicker } from "../../shared/api";
-import { ProgressBar, ResetTimeText, ServiceTile, StatusDot, statusColor } from "../../shared/design";
+import { planName, ProgressBar, ResetTimeText, ServiceTile, StatusDot, statusColor } from "../../shared/design";
 import { costInt, relativeShort } from "../../shared/format";
 import { tr } from "../../shared/l10n";
 import { hasDisplayableCost } from "../../shared/pricing";
 import { remaining, windowsFor, type CardWindow } from "../../shared/quota";
 import { displayName, providerName } from "../../shared/services";
-import type { OtherAccountView, RefreshState, ServiceView, StateSnapshot, UsageBucket } from "../../shared/types";
+import type { OtherAccountView, RefreshState, ServiceView, StateSnapshot, UsageApp, UsageBucket } from "../../shared/types";
 import { dayBounds } from "../../shared/usage";
 
-export function subtitleOf(email: string | null, plan: string | null, fallback: string) {
-  const parts = [email, plan ? plan[0].toUpperCase() + plan.slice(1) : null].filter(Boolean);
+export function subtitleOf(email: string | null, plan: string | null, fallback: string, app: UsageApp) {
+  const parts = [email, plan ? planName(plan, app) : null].filter(Boolean);
   return parts.length ? parts.join(" · ") : fallback;
 }
 
@@ -67,7 +67,7 @@ export function QuotaCard({ state, service, other, buckets }: { state: StateSnap
             {!other && <span className="in-use-tag">{tr("In use", "使用中")}</span>}
           </div>
           <div className="qc-subtitle">
-            {other ? subtitleOf(other.email, other.plan, other.name) : subtitleOf(service.email, service.plan, providerName[service.app])}
+            {other ? subtitleOf(other.email, other.plan, other.name, other.app) : subtitleOf(service.email, service.plan, providerName[service.app], service.app)}
           </div>
         </div>
         <span style={{ flex: 1 }} />

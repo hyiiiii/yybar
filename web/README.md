@@ -100,7 +100,7 @@ npm test && npm run typecheck
 
 ## 个人主页
 
-- @用户名后面一排订阅小牌子（`PlanChips`，`src/client/components.tsx`）：服务的标 + 套餐名，同一服务同一套餐几个账号写「×n」，按 Codex → Claude → Grok → Grok Bot → Gemini 排，同一服务里高档在前（Pro Max > Pro > Pro Lite > Plus，Max 20x > Max 5x），免费的排最后。着色和 App 设置里的套餐标签一样：标准档蓝、高档紫（ChatGPT Pro 各档、Claude Max、SuperGrok Heavy、Google AI Ultra）、团队 / 企业青、免费灰。套餐名首字母大写；ChatGPT 的代号换成名字（`prolite` → Pro Lite、`pro` → Pro 20x、`promax` → Pro Max），Claude 的 `max_20x` → Max 20x，Google 的去掉开头的「Google」（`Google AI Pro` → `AI Pro`），悬停看服务全名和账号数。窄屏时整排换到 @用户名下一行。数据见上面 `PUT /api/v1/accounts`，`GET /api/me`、`GET /api/users/<login>` 的 `user.plans`（`[{ app, plan, count }]`）。
+- @用户名后面一排订阅小牌子（`PlanChips`，`src/client/components.tsx`）：服务的标 + 套餐名，同一服务同一套餐几个账号写「×n」，按 Codex → Claude → Grok → Grok Bot → Gemini 排，同一服务里高档在前（Pro Max > Pro > Pro Lite > Plus，Ultra > Max），免费的排最后。着色和 App 设置里的套餐标签一样：标准档蓝、高档紫（ChatGPT Pro 各档、Claude Max、SuperGrok Heavy、Google AI Ultra）、团队 / 企业青、免费灰。套餐名首字母大写；ChatGPT 的代号换成名字（`prolite` → Pro Lite、`pro` → Pro 20x、`promax` → Pro Max），Claude 的 `max_5x` → Max、`max_20x` → Ultra（2026-10-31 前写 Max 5x / Max 20x），Google 的去掉开头的「Google」（`Google AI Pro` → `AI Pro`），悬停看服务全名和账号数。窄屏时整排换到 @用户名下一行。数据见上面 `PUT /api/v1/accounts`，`GET /api/me`、`GET /api/users/<login>` 的 `user.plans`（`[{ app, plan, count }]`）。
 - 「我的」和公开的个人页（`/u/<login>`）一样：三张总数卡片（「总花费」旁边一个小问号，点开是服务端的模型价格表，按厂商分组，`src/client/Prices.tsx`），下面照 yybar App 统计页做（`src/client/UsageCharts.tsx`）。
 - 最上面一排服务筛选：全部 / Codex / Claude / Grok / Grok Bot / Gemini / Antigravity（只列有用量的），按钮上是各家的标（Codex、Claude、Grok、Gemini 和牌面花色同一套，染服务识别色；Grok Bot、Antigravity 用 App 里的标）；下面三块都跟着筛选走。
 - 拆开 / 合并和 App 里一样：Grok + Grok Bot、Gemini + Antigravity 两两一组，默认合并成一个按钮（两个标并排），后面跟一个只有图标的小按钮（分叉 / 汇合箭头），两组各拆各的；每次打开都是合并的，不记。切换时留下的按钮滑到新位置、新出来的放大淡入、小图标转半圈换过去，每日用量里同组的两段渐变成同一个颜色；选着的服务跟着换过去（拆开选前一家，合并选整组）。一组里只用过一家就只显示那一家，不带小按钮。
@@ -135,7 +135,7 @@ npm test && npm run typecheck
 ## 成就
 
 - 达成后不自动发钱：顶栏奖杯右上角出一个红色数字（`GET /api/me` 的 `achievementsReady`，解锁了还没领的个数），去成就页自己点「领取」（卡片金边一圈圈往外亮），两个以上时上面有「全部领取」。奖励第一次登录 $500，其他都是 $100。领了才能把徽章「戴上」挂在名字后面（牌桌、排行榜、个人页），最多同时戴 3 个。目录在 `src/shared/achievements.ts`。
-- 目前 20 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 / 百亿 token、千刀 / 万刀俱乐部（累计花费 $1,000 / $10,000）、Claude Pro、Claude Max、GPT Plus、GPT Pro（App 传上来的订阅里有这一档，见下面 `PUT /api/v1/accounts`；Claude Max 5x / 20x、GPT Pro Lite / Pro / Pro Max 都算，免费和团队 / 企业版不算；徽章 Claude 橙、GPT 黑，前面带白色的 Claude / OpenAI 标，`Badge` 里的 `BADGE_LOGO`）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
+- 目前 20 个：第一次登录！、入座、剁手、连续 7 / 30 / 365 天 work（有用量上传的连续天数）、今天 token 第一！（某天烧的 token 全站第一，今天和昨天都算，避免时区差一天）、一亿 / 十亿 / 百亿 token、千刀 / 万刀俱乐部（累计花费 $1,000 / $10,000）、Claude Pro、Claude Max、GPT Plus、GPT Pro（App 传上来的订阅里有这一档，见下面 `PUT /api/v1/accounts`；Claude Max / Ultra、GPT Pro Lite / Pro / Pro Max 都算，免费和团队 / 企业版不算；徽章 Claude 橙、GPT 黑，前面带白色的 Claude / OpenAI 标，`Badge` 里的 `BADGE_LOGO`）、大赢家（一手赢 $10,000 以上）、葫芦！、四条！、同花顺！（摊牌亮出对应牌型）。
 - 除了牌局的 4 个，都在打开网站（`/api/me`）和成就页时按用量、流水、订阅自动检查；大赢家、葫芦、四条、同花顺由牌桌在一手结束时记下。解锁记在 `user_achievements`（`claimed_at` 为空 = 还没领，迁移 `0010_achievement_claims.sql`；以前解锁的当时已经自动发过奖励，都当作领过），领取时奖励记进 `points_ledger`（`reason = 'achievement'`，`ref = ach:<用户>:<成就>`），只在这一行还没领时写、ref 也去重，连点不会重复发。戴着的徽章在 `users.badges`（JSON 数组，迁移 `0005_achievements.sql`）。
 - 接口：`GET /api/achievements`（成就、进度、每个的 `unlockedAt` / `claimedAt`、正在戴的徽章）、`POST /api/achievements/claim {"id": …}`（不带 id 就把能领的全领了，回 `amount`）、`POST /api/achievements/wear {"id": …, "on": true | false}`。
 

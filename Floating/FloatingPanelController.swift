@@ -49,10 +49,11 @@ final class FloatingPanelController: NSObject {
     }
 
     /// 根据当前设置同步显示 / 隐藏 / 行刷新：设置 · 服务里有勾了「悬浮窗」的账号(本机账号看服务开关和悬浮窗勾选，
-    /// 其他账号看它那一行的启用和勾选)就显示，一个都没有就关掉(2026-10-29 前另有「显示悬浮窗」总开关)。
+    /// 其他账号看它那一行的启用和勾选)就显示，一个都没有就关掉(2026-10-29 前另有「显示悬浮窗」总开关);
+    /// 样式选了「隐藏」也关掉。
     func sync() {
         guard let appState else { return }
-        if QuotaEntry.list(appState, inMenuBar: false).isEmpty {
+        if SettingsStore.shared.floatingStyle == .hidden || QuotaEntry.list(appState, inMenuBar: false).isEmpty {
             hide()
         } else {
             show()
@@ -522,7 +523,7 @@ private struct FloatingMenuView: View {
     let onPick: (FloatingMenuAction) -> Void
 
     private static let space = "floatingMenu"
-    private static let actions: [FloatingMenuAction] = [.stats, .settings, .bar, .style(.compact), .style(.detailed)]
+    private static let actions: [FloatingMenuAction] = [.stats, .settings, .bar, .style(.compact), .style(.detailed), .style(.hidden)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -534,6 +535,7 @@ private struct FloatingMenuView: View {
                 .padding(.horizontal, 6)
             row(3, tr("Compact", "简略")) { checkmark(style == .compact) }
             row(4, tr("Detailed", "详细")) { checkmark(style == .detailed) }
+            row(5, tr("Hide", "隐藏")) { checkmark(style == .hidden) }
         }
         .padding(5)
         .frame(minWidth: 150, alignment: .leading)

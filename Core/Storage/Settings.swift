@@ -105,10 +105,12 @@ enum FloatingDockEdge: String {
     case right
 }
 
-/// 悬浮窗样式：简略 = 每行一个进度条和剩余百分比;详细 = 和菜单栏浮窗一样(名字、套餐、5H / WK 各一条带重置倒计时)。
+/// 悬浮窗样式：简略 = 每行一个进度条和剩余百分比;详细 = 和菜单栏浮窗一样(名字、套餐、5H / WK 各一条带重置倒计时);
+/// 隐藏 = 先不显示悬浮窗，「悬浮窗」勾选留着，选回简略 / 详细就回来(2026-10-31)。
 enum FloatingStyle: String {
     case compact
     case detailed
+    case hidden
 }
 
 enum MenuBarWindowChoice: String, CaseIterable, Identifiable {

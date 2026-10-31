@@ -990,11 +990,16 @@ final class AppState {
     }
 
     /// 本机账号的套餐名(没有就是 nil)。
+    /// 本机 Claude 的套餐，Max 按档位写成 max_5x / max_20x(显示成 Max / Ultra,见 PlanTag.displayName)。
+    var localClaudePlan: String? {
+        YYBarWebAccount.AccountPlan.claudePlan(claudeAccount?.subscriptionType, claudeAccount?.rateLimitTier)
+    }
+
     func localPlan(for app: UsageApp) -> String? {
         let plan: String?
         switch app {
         case .codex: plan = codexAccount?.planType
-        case .claude: plan = claudeAccount?.subscriptionType
+        case .claude: plan = localClaudePlan
         case .grok: plan = grokPlan
         case .grokBot: plan = grokBotQuota?.planType
         case .gemini: plan = geminiAppQuota?.planType

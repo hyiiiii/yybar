@@ -32,13 +32,15 @@ pub enum DockEdge {
     Right,
 }
 
-/// 悬浮窗样式（对应 Mac `FloatingStyle`）：简略 = 每行一个进度条和剩余百分比；详细 = 和弹出窗口一样（名字、套餐、5H / WK 带重置倒计时）。
+/// 悬浮窗样式（对应 Mac `FloatingStyle`）：简略 = 每行一个进度条和剩余百分比；详细 = 和弹出窗口一样（名字、套餐、5H / WK 带重置倒计时）；
+/// 隐藏 = 先不显示悬浮窗，「悬浮窗」勾选留着，选回简略 / 详细就回来（2026-10-31）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum FloatingStyle {
     #[default]
     Compact,
     Detailed,
+    Hidden,
 }
 
 /// 主窗口字号（对应 Mac `TextSize`）：Windows 上按倍数缩放主窗口网页。

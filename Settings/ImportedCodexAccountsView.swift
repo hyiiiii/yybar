@@ -181,7 +181,8 @@ struct OtherAccountRows: View {
             fallback: isClaude ? "K" : "G",
             tint: isClaude ? .claudeAccent : (isGoogle ? .googleAccent : .grokAccent),
             email: account.email ?? account.displayName,
-            plan: account.plan,
+            // Claude 的 Max 按档位写成 max_5x / max_20x,显示成 Max / Ultra
+            plan: isClaude ? YYBarWebAccount.AccountPlan.claudePlan(account.plan, account.rateLimitTier) : account.plan,
             renewal: isClaude ? .monthly(from: account.subscriptionStartedAt) : nil,
             // Google 账号不能切换本机 agy 的登录(agy 的登录在钥匙串里),没有单选。
             switchState: isGoogle ? .none : switchState(id: account.id) { await appState.switchCLI(toExtra: account) },

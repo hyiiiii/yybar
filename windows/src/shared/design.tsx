@@ -100,10 +100,15 @@ export function ServiceLogo({ app, size = 14, title }: { app: UsageApp; size?: n
 
 // ---------- 进度条 ----------
 
-/** 套餐名：首字母大写；ChatGPT 的代号换成名字（prolite → Pro Lite、pro → Pro 20x、promax → Pro Max，和网站一致） */
+/** 套餐名：首字母大写；ChatGPT 的代号换成名字（prolite → Pro Lite、pro → Pro 20x、promax → Pro Max），
+ *  Claude 的 Max 两档按现在的叫法：max_5x → Max、max_20x → Ultra（2026-10-31 前写 Max 5x / Max 20x）。和 Mac、网站一致。 */
+const PLAN_NAMES: Partial<Record<UsageApp, Record<string, string>>> = {
+  codex: { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max" },
+  claude: { max_5x: "Max", max_20x: "Ultra" },
+};
+
 export function planName(plan: string, app: UsageApp): string {
-  const codex: Record<string, string> = { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max" };
-  const named = app === "codex" ? codex[plan.toLowerCase()] : undefined;
+  const named = PLAN_NAMES[app]?.[plan.toLowerCase()];
   return named ?? plan.replace(/_+/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
 
@@ -115,7 +120,7 @@ export function PlanTag({ plan, app }: { plan: string; app: UsageApp }) {
   if (p.includes("free") || p === "guest") tier = "free";
   else if (["team", "business", "enterprise", "edu"].some((t) => p.includes(t))) tier = "team";
   else if (app === "codex") tier = p.includes("pro") ? "premium" : "standard";
-  else if (app === "claude") tier = p.includes("max") ? "premium" : "standard";
+  else if (app === "claude") tier = p.includes("max") || p.includes("ultra") ? "premium" : "standard";
   else tier = p.includes("heavy") || p.includes("ultra") ? "premium" : "standard";
   const color = { free: "var(--text-secondary)", standard: "var(--sys-blue)", premium: "var(--sys-purple)", team: "var(--sys-teal)" }[tier];
   return (

@@ -616,8 +616,12 @@ fn on_floating_menu(app: &AppHandle, id: &str) {
         "floating-stats" => open_main(app, Some("overview")),
         "floating-settings" => open_main(app, Some("services")),
         "floating-bar" => open_main(app, Some("bar")),
-        "floating-compact" | "floating-detailed" => {
-            let style = if id == "floating-compact" { FloatingStyle::Compact } else { FloatingStyle::Detailed };
+        "floating-compact" | "floating-detailed" | "floating-hidden" => {
+            let style = match id {
+                "floating-compact" => FloatingStyle::Compact,
+                "floating-detailed" => FloatingStyle::Detailed,
+                _ => FloatingStyle::Hidden,
+            };
             {
                 let state = app.state::<AppState>();
                 let mut g = state.inner.lock().unwrap();
@@ -628,6 +632,8 @@ fn on_floating_menu(app: &AppHandle, id: &str) {
                 g.settings.save();
             }
             crate::app_state::publish(app);
+            // 选了「隐藏」就关掉悬浮窗（选回简略 / 详细时由设置页改样式再打开）
+            sync_floating(app);
         }
         _ => {}
     }

@@ -1697,11 +1697,14 @@ struct StatsView: View {
         }
 
         add(base: QuotaHistoryAccountKey.claudePrimary(),
-            provider: "Claude Code", plan: appState.claudeAccount?.subscriptionType, email: appState.claudeAccount?.email,
+            provider: "Claude Code", plan: appState.localClaudePlan.map { PlanTag.displayName($0, service: "claude") },
+            email: appState.claudeAccount?.email,
             index: nil, tint: .claudeAccent, snapshot: appState.claudeQuota, accountExists: appState.claudeAccount != nil)
         for (idx, account) in appState.extraAccounts(for: .claude).enumerated() {
             add(base: QuotaHistoryAccountKey.extra(id: account.id),
-                provider: "Claude Code", plan: account.plan, email: account.email, index: idx + 1,
+                provider: "Claude Code",
+                plan: YYBarWebAccount.AccountPlan.claudePlan(account.plan, account.rateLimitTier).map { PlanTag.displayName($0, service: "claude") },
+                email: account.email, index: idx + 1,
                 tint: .claudeAccent, snapshot: appState.extraQuotas[account.id], accountExists: true)
         }
 

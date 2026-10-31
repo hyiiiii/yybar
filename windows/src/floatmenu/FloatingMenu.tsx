@@ -1,4 +1,4 @@
-// 右键悬浮窗弹出的菜单（对应 Mac `FloatingPanelController.contextMenu`）：统计 / 设置 / bar，和悬浮窗样式（简略 / 详细，勾着当前的）。
+// 右键悬浮窗弹出的菜单（对应 Mac `FloatingMenuController`）：统计 / 设置 / bar，和悬浮窗样式（简略 / 详细 / 隐藏，勾着当前的）。
 // 自己画、不用系统菜单：底色、描边、圆角和悬浮窗一样，每项前面有图标。窗口由后台放在光标处（windows.rs show_floating_menu），
 // 点了某项、点到别处（窗口失焦）或按 Esc 就收起。
 
@@ -42,6 +42,7 @@ export function FloatingMenu() {
   const styles: Item[] = [
     { id: "floating-compact", icon: style === "compact" ? "check" : null, label: tr("Compact", "简略") },
     { id: "floating-detailed", icon: style === "detailed" ? "check" : null, label: tr("Detailed", "详细") },
+    { id: "floating-hidden", icon: style === "hidden" ? "check" : null, label: tr("Hide", "隐藏") },
   ];
   const row = (it: Item) => (
     <button key={it.id} className="fmenu-item" onClick={() => api.pickFloatingMenu(it.id)}>
