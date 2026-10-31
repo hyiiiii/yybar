@@ -451,7 +451,10 @@ final class FloatingMenuController {
         self.panel = panel
         // 点到本 app 别的窗口、按 Esc:收起(Esc 吃掉);点到别的 app:收起
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] event in
-            let (isKey, keyCode, windowNumber) = (event.type == .keyDown, event.keyCode, event.windowNumber)
+            // keyCode 只能对按键事件读：对鼠标事件读会抛异常，AppKit 吞掉异常、这次点击就丢了(菜单点不动)
+            let isKey = event.type == .keyDown
+            let keyCode = isKey ? event.keyCode : 0
+            let windowNumber = event.windowNumber
             let swallow = MainActor.assumeIsolated { () -> Bool in
                 guard let self, let panel = self.panel else { return false }
                 if isKey {
