@@ -739,7 +739,14 @@ fn finish_pull(app: &AppHandle, edge: DockEdge, base: i32) {
     *app.state::<WindowState>().floating_pulling.lock().unwrap() = None;
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
-    let Some(m) = w.monitor_from_point(pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0).ok().flatten() else {
+    // 按露出来的那一条找屏幕：只拉出来一点时窗口中心还在屏幕外
+    let strip_x = if edge == DockEdge::Right { pos.x + 4 } else { pos.x + size.width as i32 - 4 };
+    let Some(m) = w
+        .monitor_from_point(strip_x as f64, pos.y as f64 + size.height as f64 / 2.0)
+        .ok()
+        .flatten()
+        .or_else(|| w.current_monitor().ok().flatten())
+    else {
         return;
     };
     let work = m.work_area();
