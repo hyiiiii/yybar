@@ -417,7 +417,8 @@ final class FloatingPanelController: NSObject {
 //
 // 悬浮窗的右键菜单(2026-10-31):自己画的小浮层。本机 macOS 的系统右键菜单不画我们给的图标(只有系统认得的「设置」会
 // 自己配齿轮，显式给了图标反而连齿轮也没了)，所以和 Windows 版一样自己画：底色、描边、圆角和悬浮窗一样，每项前面有图标，
-// 悬停时强调色底白字(和系统菜单一样);点了某项、点到别处、按 Esc 就收起。
+// 悬停时强调色底白字(和系统菜单一样);点了某项、点到别处、按 Esc 就收起。悬停和点击由 AppKit 视图接(FloatingMenuMouseView):
+// App 在后台时 SwiftUI 的悬停 / 点击收不到。
 
 enum FloatingMenuAction {
     case stats, settings, bar
@@ -434,7 +435,7 @@ final class FloatingMenuController {
     /// 左上角放在光标处(屏幕坐标)，右边 / 下边放不下就往左 / 往上翻。
     func show(at point: NSPoint, style: FloatingStyle, onPick: @escaping (FloatingMenuAction) -> Void) {
         close()
-        let hosting = NSHostingView(rootView: FloatingMenuView(style: style) { [weak self] action in
+        let hosting = NSHostingView(rootView: FloatingMenuView(style: style, model: FloatingMenuModel()) { [weak self] action in
             self?.close()
             onPick(action)
         })
@@ -486,6 +487,7 @@ private final class FloatingMenuPanel: NSPanel {
         super.init(contentRect: NSRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isFloatingPanel = true
+        acceptsMouseMovedEvents = true
         level = .popUpMenu
         backgroundColor = .clear
         isOpaque = false
@@ -498,32 +500,37 @@ private final class FloatingMenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+/// 菜单的悬停状态和各行位置：悬停 / 点击由 FloatingMenuMouseView(AppKit)接，SwiftUI 只负责画。
+@MainActor
+@Observable
+final class FloatingMenuModel {
+    var hovered: Int?
+    /// 各行在菜单里的位置(左上角为原点，和 FloatingMenuMouseView 的坐标一样)
+    var rowFrames: [Int: CGRect] = [:]
+
+    func row(at point: CGPoint) -> Int? {
+        rowFrames.first { $0.value.contains(point) }?.key
+    }
+}
+
 private struct FloatingMenuView: View {
     let style: FloatingStyle
+    let model: FloatingMenuModel
     let onPick: (FloatingMenuAction) -> Void
+
+    private static let space = "floatingMenu"
+    private static let actions: [FloatingMenuAction] = [.stats, .settings, .bar, .style(.compact), .style(.detailed)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FloatingMenuRow(title: tr("Statistics", "统计"), action: { onPick(.stats) }) {
-                Image(systemName: "chart.bar.xaxis")
-            }
-            FloatingMenuRow(title: tr("Settings", "设置"), action: { onPick(.settings) }) {
-                Image(systemName: "gearshape")
-            }
-            FloatingMenuRow(title: "bar", action: { onPick(.bar) }) {
-                PlayingCardsIcon(size: 10.5)
-            }
+            row(0, tr("Statistics", "统计")) { Image(systemName: "chart.bar.xaxis") }
+            row(1, tr("Settings", "设置")) { Image(systemName: "gearshape") }
+            row(2, "bar") { PlayingCardsIcon(size: 10.5) }
             Divider()
                 .padding(.vertical, 4)
                 .padding(.horizontal, 6)
-            ForEach([FloatingStyle.compact, .detailed], id: \.self) { option in
-                FloatingMenuRow(title: option == .compact ? tr("Compact", "简略") : tr("Detailed", "详细"),
-                                action: { onPick(.style(option)) }) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .opacity(style == option ? 1 : 0)
-                }
-            }
+            row(3, tr("Compact", "简略")) { checkmark(style == .compact) }
+            row(4, tr("Detailed", "详细")) { checkmark(style == .detailed) }
         }
         .padding(5)
         .frame(minWidth: 150, alignment: .leading)
@@ -539,16 +546,40 @@ private struct FloatingMenuView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+        .coordinateSpace(.named(Self.space))
+        .onPreferenceChange(FloatingMenuRowFrames.self) { frames in
+            MainActor.assumeIsolated { model.rowFrames = frames }
+        }
+        .overlay(FloatingMenuMouse(model: model) { index in onPick(Self.actions[index]) })
         .fixedSize()
+    }
+
+    private func row<Icon: View>(_ index: Int, _ title: String, @ViewBuilder icon: () -> Icon) -> some View {
+        FloatingMenuRow(title: title, highlighted: model.hovered == index, icon: icon())
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: FloatingMenuRowFrames.self, value: [index: proxy.frame(in: .named(Self.space))])
+            })
+    }
+
+    private func checkmark(_ on: Bool) -> some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 11, weight: .semibold))
+            .opacity(on ? 1 : 0)
+    }
+}
+
+private struct FloatingMenuRowFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
 /// 菜单里的一项：16pt 图标列 + 13pt 文字，悬停时强调色底白字。
 private struct FloatingMenuRow<Icon: View>: View {
     let title: String
-    let action: () -> Void
-    @ViewBuilder let icon: Icon
-    @State private var hovered = false
+    let highlighted: Bool
+    let icon: Icon
 
     var body: some View {
         HStack(spacing: 7) {
@@ -561,13 +592,59 @@ private struct FloatingMenuRow<Icon: View>: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .foregroundStyle(hovered ? Color.white : Color.primary)
+        .foregroundStyle(highlighted ? Color.white : Color.primary)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(hovered ? Color.accentColor : Color.clear)
+                .fill(highlighted ? Color.accentColor : Color.clear)
         )
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 }
-        .onTapGesture(perform: action)
+    }
+}
+
+private struct FloatingMenuMouse: NSViewRepresentable {
+    let model: FloatingMenuModel
+    let onPick: (Int) -> Void
+
+    func makeNSView(context: Context) -> FloatingMenuMouseView {
+        let view = FloatingMenuMouseView()
+        view.model = model
+        view.onPick = onPick
+        return view
+    }
+
+    func updateNSView(_ view: FloatingMenuMouseView, context: Context) {
+        view.model = model
+        view.onPick = onPick
+    }
+}
+
+/// 菜单上的鼠标(和悬浮窗的 FloatingMouseView 一个道理)：悬浮窗所在的 App 一直在后台，菜单浮层不是活动窗口，
+/// SwiftUI 自己的悬停和点击在这里收不到(第一下点击被当成激活窗口吞掉，所以点不动)。用 AppKit 视图接：接受第一下点击，
+/// 跟踪区域在后台也跟踪；鼠标移动时按各行的位置算出悬停哪一行，松开时执行那一行。
+final class FloatingMenuMouseView: NSView {
+    var model: FloatingMenuModel?
+    var onPick: ((Int) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    private func row(_ event: NSEvent) -> Int? {
+        model?.row(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { model?.hovered = row(event) }
+    override func mouseMoved(with event: NSEvent) { model?.hovered = row(event) }
+    override func mouseDragged(with event: NSEvent) { model?.hovered = row(event) }
+    override func mouseExited(with event: NSEvent) { model?.hovered = nil }
+    override func mouseDown(with event: NSEvent) { model?.hovered = row(event) }
+
+    override func mouseUp(with event: NSEvent) {
+        if let index = row(event) { onPick?(index) }
     }
 }
