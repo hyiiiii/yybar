@@ -341,13 +341,13 @@ const CLAUDE_PROFILE_INTERVAL: i64 = 6 * 3600;
 
 impl Inner {
     /// 悬浮窗要不要显示（对应 Mac `FloatingPanelController.sync`）：有勾了「悬浮窗」的账号就显示——本机账号看服务开关和
-    /// 悬浮窗勾选（没被删掉），其他账号看它那一行的启用和勾选；一个都没有就关掉。不看本机 CLI 这会儿是否读得到登录：
-    /// CLI 改写凭据文件那一下读不到，悬浮窗不该跟着关一下。样式选了「隐藏」也关掉。
+    /// 悬浮窗勾选，以及账号是否实际列出；其他账号看它那一行的启用和勾选。与前端账号列表保持一致，
+    /// 一个都没有或样式选了「隐藏」就关掉；额度刷新失败不影响已有账号的显示。
     pub fn floating_wanted(&self) -> bool {
         self.settings.floating_style != FloatingStyle::Hidden
             && UsageApp::ALL
             .iter()
-            .any(|&app| (self.settings.floating_shows(app) && !self.is_removed(app)) || !self.shown_others(app, false).is_empty())
+            .any(|&app| (self.settings.floating_shows(app) && self.local_shown(app)) || !self.shown_others(app, false).is_empty())
     }
 
     /// 把资料接口读到的订阅盖到本机 Claude 账号上（同一个账号才盖）：等级、订阅开始日（订阅不是 active 时没有，就不显示续费日）、档位。

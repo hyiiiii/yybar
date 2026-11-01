@@ -110,8 +110,3 @@ body:has(.hud.dock-left) {
   font-weight: 600;
   letter-spacing: -0.3px;
 }
-
-.tab-chevron {
-  font-size: 13px;
-  color: var(--text-secondary);
-}

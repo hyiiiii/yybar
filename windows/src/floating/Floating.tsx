@@ -7,7 +7,6 @@
 import { useEffect, useLayoutEffect, useRef, type MouseEvent, type PointerEvent } from "react";
 import { api, useAppState, useTicker } from "../shared/api";
 import { ProgressBar, QuotaEntryView, quotaEntries, ServiceTile, statusColor } from "../shared/design";
-import { tr } from "../shared/l10n";
 import { headlineWindow, remaining } from "../shared/quota";
 import { ALL_APPS, floatingShows, localShown, type QuotaSnapshot, type StateSnapshot, type UsageApp } from "../shared/types";
 
@@ -49,20 +48,6 @@ export function Floating() {
     return () => clearInterval(timer);
   }, []);
 
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const fit = () => {
-      const r = el.getBoundingClientRect();
-      api.fitFloating(Math.ceil(r.width), Math.ceil(r.height));
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    return () => ro.disconnect();
-    // 收起 / 展开、换样式时根节点换了，要重新观察尺寸
-  }, [state != null, state?.settings.floatingDock ?? null, state?.settings.floatingStyle]);
-
   type Row = { key: string; app: UsageApp; name: string | null; quota: QuotaSnapshot | null };
   const rows: Row[] = [];
   if (state) {
@@ -78,7 +63,25 @@ export function Floating() {
     }
   }
 
+  const visible = rows.length > 0 && state?.settings.floatingStyle !== "hidden";
   const dock = state?.settings.floatingDock ?? null;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      const r = el.getBoundingClientRect();
+      api.fitFloating(Math.ceil(r.width), Math.ceil(r.height));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // 账号重新出现、收起 / 展开、换样式时根节点换了，要重新观察尺寸
+  }, [visible, dock, state?.settings.floatingStyle]);
+
+  // 后台按相同账号条件关闭窗口；状态更新到窗口关闭之间也不画空白胶囊或窄条。
+  if (!visible) return null;
+
   if (dock) {
     return (
       <div
@@ -99,14 +102,13 @@ export function Floating() {
             </div>
           );
         })}
-        {rows.length === 0 && <span className="tab-chevron">{dock === "right" ? "‹" : "›"}</span>}
       </div>
     );
   }
 
   if (state?.settings.floatingStyle === "detailed") {
     return (
-      <div ref={ref} key="open-detailed" className="hud detailed" {...press} title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}>
+      <div ref={ref} key="open-detailed" className="hud detailed" {...press}>
         <DetailedRows state={state} />
       </div>
     );
@@ -118,7 +120,6 @@ export function Floating() {
       key="open"
       className="hud"
       {...press}
-      title={tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")}
     >
       {rows.map((s) => {
         const w = headlineWindow(s.app, s.quota);
@@ -135,7 +136,6 @@ export function Floating() {
           </div>
         );
       })}
-      {state && rows.length === 0 && <span className="secondary" style={{ fontSize: 11 }}>{tr("Nothing to show", "没有要显示的账号")}</span>}
     </div>
   );
 }
@@ -144,7 +144,6 @@ export function Floating() {
 function DetailedRows({ state }: { state: StateSnapshot }) {
   const now = useTicker(1000);
   const entries = quotaEntries(state, "floating");
-  if (entries.length === 0) return <span className="secondary" style={{ fontSize: 11 }}>{tr("Nothing to show", "没有要显示的账号")}</span>;
   return (
     <>
       {entries.map((e) => (
