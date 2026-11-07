@@ -4,12 +4,14 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { api, fmtInt } from "./api";
 import { Guide } from "./Guide";
 import { Avatar, LoginButton } from "./components";
-import { BarIcon, BookIcon, CartIcon, EyeIcon, GiftIcon, PodiumIcon, RunoutIcon, TimeIcon, TrophyIcon } from "./icons";
+import { BarIcon, BookIcon, CartIcon, EyeIcon, GiftIcon, GitHubIcon, MailIcon, PodiumIcon, RunoutIcon, TimeIcon, TrophyIcon } from "./icons";
 import { pick, setLang, useLang, useT } from "./i18n";
 import { findItem, type ItemId } from "../shared/cosmetics";
 import { loginHref, notifyMeChanged, useMe } from "./useMe";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
+/** 页面右下角的联系方式 */
+const CONTACT = { github: "https://github.com/hyiiiii", email: "hyi030618@proton.me" };
 
 /** 礼盒拆到一半要先登录：记下这个意图，登录回来自动拆 */
 const GIFT_INTENT = "yyb:open-gift";
@@ -161,6 +163,16 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
+      <footer className="footer site-footer">
+        <a href={CONTACT.github} target="_blank" rel="noreferrer" title="GitHub">
+          <GitHubIcon />
+          {CONTACT.github.replace(/^https:\/\//, "")}
+        </a>
+        <a href={`mailto:${CONTACT.email}`} title={t("发邮件", "Email")}>
+          <MailIcon />
+          {CONTACT.email}
+        </a>
+      </footer>
       {guide && <Guide onClose={() => setGuide(false)} />}
     </div>
   );

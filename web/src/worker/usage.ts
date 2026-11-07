@@ -47,7 +47,7 @@ function tokenCount(v: unknown, field: string, where: string): number {
  * 校验上传内容。格式：
  * { days: [{ day: "2026-10-17", entries: [{ app, model, inputTokens, outputTokens,
  *   cacheReadTokens, cacheCreationTokens, costUSD: "1.23" }] }] }
- * 每个 day 是那一天的完整汇总；每一天只收第一次（见 saveUpload），App 只传今天以前、已经过完的天。
+ * 每个 day 是那一天的完整汇总；每一天的每个服务记一份，量变多了才换（见 saveUpload），App 只传今天以前、已经过完的天。
  */
 export function parseUpload(body: unknown, today = isoDay(new Date())): ParsedUpload {
   if (!body || typeof body !== "object" || !Array.isArray((body as { days?: unknown }).days)) {
@@ -134,20 +134,37 @@ export async function uploadHistory(db: D1Database, userId: number, limit = 10) 
   return results;
 }
 
+export interface UploadedPair {
+  day: string;
+  app: string;
+  /** 传了多少：token 总数（Gemini 是回答次数）。App 那边这一天的量比它多时会再传一次 */
+  total: number;
+  /** 这一天这个服务按服务端价格算的花费（微美元） */
+  costMicro: number;
+}
+
 /** 这个用户已经上传过的（日期, 服务），按日期升序。 */
-export async function uploadedPairs(db: D1Database, userId: number, from = "0000-00-00", to = "9999-99-99"): Promise<{ day: string; app: string }[]> {
+export async function uploadedPairs(db: D1Database, userId: number, from = "0000-00-00", to = "9999-99-99"): Promise<UploadedPair[]> {
   const { results } = await db
-    .prepare("SELECT day, app FROM usage_uploads WHERE user_id = ? AND day BETWEEN ? AND ? ORDER BY day, app")
+    .prepare(
+      `SELECT u.day, u.app, u.total, COALESCE(SUM(d.cost_micro), 0) AS costMicro
+       FROM usage_uploads u LEFT JOIN daily_usage d ON d.user_id = u.user_id AND d.day = u.day AND d.app = u.app
+       WHERE u.user_id = ? AND u.day BETWEEN ? AND ? GROUP BY u.day, u.app ORDER BY u.day, u.app`,
+    )
     .bind(userId, from, to)
-    .all<{ day: string; app: string }>();
+    .all<UploadedPair>();
   return results;
 }
 
+/** 一行用量算进「传了多少」的量：token 总数加回答次数（Gemini 只有回答次数） */
+const sizeOf = (r: UsageRow) => r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens + r.answers;
+
 /**
- * 每一天的每个服务只收第一次：已经上传过的（日期, 服务）（usage_uploads 里有记录）整个跳过，不改也不加，
- * 所以同一天传几次、从几台 Mac 传，筹码都只算一次；以后 App 新支持了某个服务，以前的日子还能把这个服务补上。
- * 写用量和打标记在同一个事务里：用量只在「这一天这个服务还没标记」时写入，写完再标记，并发的两次上传只有先到的那次生效。
- * 返回这次有新内容收下的日期，和整天都传过、全部跳过的日期。
+ * 每一天的每个服务记一份：没传过的（日期, 服务）收下并标记、记下传了多少；传过的只有这次的量更多时
+ * （App 新找到了这一天的会话，比如新加了一个 Codex 目录）才整份换成新的，一样多或更少就跳过。
+ * 所以同一天传几次、从几台电脑传，筹码都只算一份（量最多的那份）；以后 App 新支持了某个服务，以前的日子还能把这个服务补上。
+ * 删旧的、写新的、改标记在同一个事务里，条件都按标记里记的量判断：并发的两次上传不会叠加，量少的那次不会盖掉量多的。
+ * 返回这次有新内容收下（或换掉）的日期，和整天都没变、全部跳过的日期。
  */
 export async function saveUpload(db: D1Database, userId: number, upload: ParsedUpload): Promise<{ accepted: string[]; skipped: string[] }> {
   if (upload.days.length === 0) return { accepted: [], skipped: [] };
@@ -159,28 +176,42 @@ export async function saveUpload(db: D1Database, userId: number, upload: ParsedU
     if (total > LIMITS.maxDailyCostUSD * 1_000_000) throw new UploadError(`${day}: 单日花费超过 $${LIMITS.maxDailyCostUSD}，疑似异常数据`);
   }
   const sorted = [...upload.days].sort();
-  const done = new Set((await uploadedPairs(db, userId, sorted[0], sorted[sorted.length - 1])).map((p) => `${p.day}|${p.app}`));
+  const done = new Map((await uploadedPairs(db, userId, sorted[0], sorted[sorted.length - 1])).map((p) => [`${p.day}|${p.app}`, p.total]));
+  // 标记里记的量比这次少（或还没标记）才动：删掉旧的、写这次的、把标记改成这次的量
+  const clear = db.prepare(
+    `DELETE FROM daily_usage WHERE user_id = ?1 AND day = ?2 AND app = ?3
+       AND EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2 AND app = ?3 AND total < ?4)`,
+  );
   const insert = db.prepare(
     `INSERT OR IGNORE INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens,
        cache_read_tokens, cache_creation_tokens, cost_micro, answers, client_cost_micro)
      SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
-     WHERE NOT EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2 AND app = ?3)`,
+     WHERE NOT EXISTS (SELECT 1 FROM usage_uploads WHERE user_id = ?1 AND day = ?2 AND app = ?3 AND total >= ?12)`,
   );
-  const mark = db.prepare("INSERT OR IGNORE INTO usage_uploads (user_id, day, app) VALUES (?, ?, ?)");
+  const mark = db.prepare(
+    `INSERT INTO usage_uploads (user_id, day, app, total) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT (user_id, day, app) DO UPDATE SET total = excluded.total, uploaded_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE usage_uploads.total < excluded.total`,
+  );
   const stmts: D1PreparedStatement[] = [];
   const accepted: string[] = [];
   const skipped: string[] = [];
   for (const day of upload.days) {
     const apps = [...new Set(upload.rows.filter((r) => r.day === day).map((r) => r.app))];
-    const fresh = apps.filter((app) => !done.has(`${day}|${app}`));
-    if (apps.length && !fresh.length) skipped.push(day);
-    if (fresh.length) accepted.push(day);
-    for (const app of fresh) {
-      for (const r of upload.rows) {
-        if (r.day !== day || r.app !== app) continue;
-        stmts.push(insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, cost.get(r)!, r.answers, r.clientCostMicro));
+    const changed = apps.filter((app) => {
+      const before = done.get(`${day}|${app}`);
+      return before === undefined || upload.rows.reduce((s, r) => s + (r.day === day && r.app === app ? sizeOf(r) : 0), 0) > before;
+    });
+    if (apps.length && !changed.length) skipped.push(day);
+    if (changed.length) accepted.push(day);
+    for (const app of changed) {
+      const rows = upload.rows.filter((r) => r.day === day && r.app === app);
+      const total = rows.reduce((s, r) => s + sizeOf(r), 0);
+      stmts.push(clear.bind(userId, day, app, total));
+      for (const r of rows) {
+        stmts.push(insert.bind(userId, r.day, r.app, r.model, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheCreationTokens, cost.get(r)!, r.answers, r.clientCostMicro, total));
       }
-      stmts.push(mark.bind(userId, day, app));
+      stmts.push(mark.bind(userId, day, app, total));
     }
   }
   // batch 在一个事务里执行，失败会整体回滚

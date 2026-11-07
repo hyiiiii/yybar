@@ -1,8 +1,8 @@
 import Foundation
 
 enum CodexAuth {
-    nonisolated static func load() throws -> CodexAccount {
-        let url = authFileURL()
+    /// 读一份 Codex 的 auth.json;默认本机主目录(`CODEX_HOME` 或 `~/.codex`),其他 Codex 目录传各自的。
+    nonisolated static func load(url: URL = authFileURL()) throws -> CodexAccount {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw CredentialError.fileNotFound(url.path)
         }
@@ -62,6 +62,34 @@ enum CodexAuth {
             idToken: idToken,
             subscriptionActiveUntil: activeUntil
         )
+    }
+
+    /// 本机主目录之外的其他 Codex 目录(第二个 Codex 用 CODEX_HOME 放在别处、和主目录同时在用时)。按路径去重，不含主目录:
+    /// - 自动找到的：家目录下以 `.codex` 开头、里面有 `sessions` 的目录(`.codex-pro`、`.codex2`…);
+    ///   菜单栏 App 读不到终端里设的 CODEX_HOME,别的位置要手动添加;
+    /// - 设置里手动添加的(选的是 Codex 目录或它的 `sessions` 都行)。
+    /// 用户移除过的自动目录(ignored)不要；手动添加的不受影响。返回(目录, 是不是自动找到的)。
+    nonisolated static func extraHomes(manual: [String], ignored: [String]) -> [(url: URL, auto: Bool)] {
+        let fm = FileManager.default
+        let key = { (u: URL) in u.resolvingSymlinksInPath().standardizedFileURL.path.lowercased() }
+        var seen: Set<String> = [key(authFileURL().deletingLastPathComponent())]
+        let ignoredKeys = Set(ignored.map { key(URL(fileURLWithPath: $0)) })
+        var found: [(url: URL, auto: Bool)] = []
+        for raw in manual.map({ $0.trimmingCharacters(in: .whitespaces) }) where !raw.isEmpty {
+            var url = URL(fileURLWithPath: raw, isDirectory: true)
+            if url.lastPathComponent.lowercased() == "sessions" { url.deleteLastPathComponent() }
+            if seen.insert(key(url)).inserted { found.append((url, false)) }
+        }
+        let home = fm.homeDirectoryForCurrentUser
+        let names = ((try? fm.contentsOfDirectory(atPath: home.path)) ?? []).filter { $0.lowercased().hasPrefix(".codex") }.sorted()
+        for name in names {
+            let url = home.appendingPathComponent(name, isDirectory: true)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.appendingPathComponent("sessions").path, isDirectory: &isDir), isDir.boolValue,
+                  !ignoredKeys.contains(key(url)), seen.insert(key(url)).inserted else { continue }
+            found.append((url, true))
+        }
+        return found.sorted { $0.url.path < $1.url.path }
     }
 
     nonisolated static func authFileURL() -> URL {

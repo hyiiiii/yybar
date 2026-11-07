@@ -35,6 +35,8 @@ nonisolated struct ExtraAccount: Sendable, Equatable, Codable, Identifiable {
     var showInFloating: Bool? = nil
     /// 仅 Claude:订阅开始日(资料接口的 subscription_created_at),用于推算续费日;订阅不是 active 时为 nil。
     var subscriptionStartedAt: Date? = nil
+    /// 仅 Claude:凭据 / 资料接口的 rateLimitTier(default_claude_max_5x / _20x),区分 Max 的两档。旧数据没有。
+    var rateLimitTier: String? = nil
 
     /// 列表 / Popover 上的显示名：别名 > 邮箱 @ 前缀 > 服务名。
     var displayName: String {
@@ -170,6 +172,7 @@ enum ExtraAccountPaste {
         var tokens: ExtraClaudeTokens
         var email: String?
         var plan: String?
+        var rateLimitTier: String? = nil
     }
 
     /// 解析 `~/.claude/.credentials.json`(或 Keychain 中同格式的 JSON)。
@@ -190,7 +193,8 @@ enum ExtraAccountPaste {
         return .success(ClaudeParsed(
             tokens: ExtraClaudeTokens(accessToken: access, refreshToken: refresh, expiresAt: expiresAt),
             email: (oauth["emailAddress"] ?? oauth["email"]) as? String,
-            plan: oauth["subscriptionType"] as? String
+            plan: oauth["subscriptionType"] as? String,
+            rateLimitTier: oauth["rateLimitTier"] as? String
         ))
     }
 
@@ -302,25 +306,60 @@ enum ClaudeProfileClient {
         var plan: String?
         /// 订阅开始日;订阅状态不是 active(已取消等)时为 nil。
         var subscriptionStartedAt: Date? = nil
+        /// 组织的 rate_limit_tier(default_claude_max_20x 等)
+        var rateLimitTier: String? = nil
+        /// 资料接口里和订阅有关的原样字段(JSON,不含邮箱、id):本机账号读完写进 claude-plan-check.json,排查「订阅过期了还显示 Pro」用。
+        var check: String = "{}"
+    }
+
+    /// 读资料接口失败的原因(HTTP 状态码或网络错误)。
+    struct CheckError: Error, Sendable {
+        var message: String
     }
 
     nonisolated static func fetch(accessToken: String) async -> Profile? {
-        guard let root = await profileJSON(accessToken: accessToken) else { return nil }
+        try? await fetchChecked(accessToken: accessToken).get()
+    }
+
+    nonisolated static func fetchChecked(accessToken: String) async -> Result<Profile, CheckError> {
+        let root: [String: Any]
+        switch await profileResult(accessToken: accessToken) {
+        case .success(let r): root = r
+        case .failure(let e): return .failure(e)
+        }
         let account = root["account"] as? [String: Any]
         let organization = root["organization"] as? [String: Any]
         let email = (account?["email_address"] ?? account?["email"]) as? String
-        var plan: String?
-        if let type = organization?["organization_type"] as? String {
-            // claude_max / claude_pro / claude_team / claude_enterprise → max / pro / team / enterprise
-            plan = type.hasPrefix("claude_") ? String(type.dropFirst("claude_".count)) : type
-        } else if account?["has_claude_max"] as? Bool == true {
-            plan = "max"
-        } else if account?["has_claude_pro"] as? Bool == true {
-            plan = "pro"
-        }
+        let plan = plan(organizationType: organization?["organization_type"] as? String,
+                        hasMax: account?["has_claude_max"] as? Bool, hasPro: account?["has_claude_pro"] as? Bool,
+                        status: organization?["subscription_status"] as? String)
         let active = (organization?["subscription_status"] as? String).map { $0 == "active" } ?? true
-        return Profile(email: email, plan: plan,
-                       subscriptionStartedAt: active ? SubscriptionRenewal.parseDate(organization?["subscription_created_at"]) : nil)
+        let checked: [String: Any] = [
+            "organizationType": organization?["organization_type"] ?? NSNull(),
+            "hasClaudePro": account?["has_claude_pro"] ?? NSNull(),
+            "hasClaudeMax": account?["has_claude_max"] ?? NSNull(),
+            "subscriptionStatus": organization?["subscription_status"] ?? NSNull(),
+            "billingType": organization?["billing_type"] ?? NSNull(),
+            "rateLimitTier": organization?["rate_limit_tier"] ?? NSNull(),
+        ]
+        return .success(Profile(email: email, plan: plan,
+                                subscriptionStartedAt: active ? SubscriptionRenewal.parseDate(organization?["subscription_created_at"]) : nil,
+                                rateLimitTier: organization?["rate_limit_tier"] as? String,
+                                check: CLIAccountSwitch.jsonString(checked) ?? "{}"))
+    }
+
+    /// 订阅等级。凭据里的 subscriptionType 是登录那一刻的，订阅过期后还写着 pro,这里按资料接口的现状算：
+    /// 团队 / 企业看组织类型；订阅状态已经不是 active / trialing / past_due(取消了、过期了)时算 free,不管 has_claude_pro
+    /// 还写着什么；再看 has_claude_max / has_claude_pro,两个都明确是 false 也算 free;都没有时照组织类型(claude_pro → pro)。
+    /// 和 Windows `profile::plan_of` 一样。
+    nonisolated static func plan(organizationType: String?, hasMax: Bool?, hasPro: Bool?, status: String?) -> String? {
+        let stripped = organizationType.map { $0.hasPrefix("claude_") ? String($0.dropFirst("claude_".count)) : $0 }
+        if let stripped, stripped.contains("team") || stripped.contains("enterprise") { return stripped }
+        if let status, !["active", "trialing", "past_due"].contains(status) { return "free" }
+        if hasMax == true { return "max" }
+        if hasPro == true { return "pro" }
+        if hasMax == false && hasPro == false { return "free" }
+        return stripped
     }
 
     /// 切换本机 CLI 账号时，为没有保存 `oauthAccount` 的账号(粘贴 / 浏览器添加)补齐
@@ -331,7 +370,7 @@ enum ClaudeProfileClient {
     }
 
     nonisolated static func fetchOAuthAccount(accessToken: String) async -> OAuthAccount? {
-        guard let root = await profileJSON(accessToken: accessToken) else { return nil }
+        guard case .success(let root) = await profileResult(accessToken: accessToken) else { return nil }
         let account = root["account"] as? [String: Any] ?? [:]
         let organization = root["organization"] as? [String: Any] ?? [:]
         var oauth: [String: Any] = [:]
@@ -349,13 +388,21 @@ enum ClaudeProfileClient {
         return OAuthAccount(json: json, rateLimitTier: organization["rate_limit_tier"] as? String)
     }
 
-    nonisolated private static func profileJSON(accessToken: String) async -> [String: Any]? {
+    nonisolated private static func profileResult(accessToken: String) async -> Result<[String: Any], CheckError> {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!, timeoutInterval: 15)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let data: Data, response: URLResponse
+        do { (data, response) = try await URLSession.shared.data(for: request) } catch {
+            return .failure(CheckError(message: error.localizedDescription))
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            return .failure(CheckError(message: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"))
+        }
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .failure(CheckError(message: "invalid JSON"))
+        }
+        return .success(root)
     }
 }

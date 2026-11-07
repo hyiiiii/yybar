@@ -73,8 +73,10 @@ enum ClaudeAuth {
         let oauth = root["claudeAiOauth"] as? [String: Any] ?? [:]
         let email = oauth["emailAddress"] as? String ?? oauth["email"] as? String
         let sub = oauth["subscriptionType"] as? String
-        let accessToken = oauth["accessToken"] as? String ?? oauth["access_token"] as? String
-        let refreshToken = oauth["refreshToken"] as? String ?? oauth["refresh_token"] as? String
+        // 空字符串当作没有：refresh token 到期后 Claude Code 会把保存的令牌清成 ""(条目还在)，这时就是退出登录了
+        let nonEmpty = { (s: String?) in s.flatMap { $0.isEmpty ? nil : $0 } }
+        let accessToken = nonEmpty(oauth["accessToken"] as? String ?? oauth["access_token"] as? String)
+        let refreshToken = nonEmpty(oauth["refreshToken"] as? String ?? oauth["refresh_token"] as? String)
         let expiresAt: Date? = {
             if let n = oauth["expiresAt"] as? Double {
                 return Date(timeIntervalSince1970: n > 10_000_000_000 ? n / 1000 : n)
@@ -92,7 +94,8 @@ enum ClaudeAuth {
             expiresAt: expiresAt,
             expiredGuess: expired,
             accessToken: accessToken,
-            refreshToken: refreshToken
+            refreshToken: refreshToken,
+            rateLimitTier: oauth["rateLimitTier"] as? String
         )
     }
 }

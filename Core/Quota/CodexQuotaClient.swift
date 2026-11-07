@@ -35,15 +35,36 @@ enum CodexQuotaClient {
     nonisolated private static func parse(root: [String: Any]) -> QuotaSnapshot {
         let planType = root["plan_type"] as? String
         let rate = root["rate_limit"] as? [String: Any] ?? [:]
+        let (fiveHour, long) = slot(primary: parseWindow(rate["primary_window"] as? [String: Any]),
+                                    secondary: parseWindow(rate["secondary_window"] as? [String: Any]))
         return QuotaSnapshot(
             app: .codex,
-            fiveHour: parseWindow(rate["primary_window"] as? [String: Any]),
-            weekly: parseWindow(rate["secondary_window"] as? [String: Any]),
+            fiveHour: fiveHour,
+            weekly: long,
             weeklyOpus: nil,
             weeklySonnet: nil,
             planType: planType,
             fetchedAt: Date()
         )
+    }
+
+    /// 按窗口长度放格子，不按接口里的先后：不到一天的是 5H,一天以上的是长窗口(每周，或免费账号的每月，标签按长度写 WK / MO)。
+    /// ChatGPT Pro 现在只有周额度、免费账号只有月额度，它们排在 primary_window,以前都被当成了 5H。没给长度时照先后。
+    nonisolated static func slot(primary: QuotaWindow?, secondary: QuotaWindow?) -> (fiveHour: QuotaWindow?, long: QuotaWindow?) {
+        var fiveHour: QuotaWindow?
+        var long: QuotaWindow?
+        for (index, window) in [primary, secondary].enumerated() {
+            guard let window else { continue }
+            let isLong = window.windowSeconds.map { $0 >= 86_400 } ?? (index == 1)
+            if isLong {
+                // 两个都是长窗口时(周 + 月),格子里放短的那个
+                if let current = long, (current.windowSeconds ?? 0) <= (window.windowSeconds ?? 0) { continue }
+                long = window
+            } else if fiveHour == nil {
+                fiveHour = window
+            }
+        }
+        return (fiveHour, long)
     }
 
     nonisolated private static func parseWindow(_ dict: [String: Any]?) -> QuotaWindow? {

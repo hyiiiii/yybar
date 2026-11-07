@@ -21,6 +21,7 @@ yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / Swift
 - 设置：`Settings/`
 - 凭据 / 额度 / 调度 / 用量 / 存储：`Core/`
 - Xcode 工程：`yybar.xcodeproj`
+- Windows 版：`windows/`（Tauri 2：Rust 后台 `windows/src-tauri/`，核心逻辑在 `windows/src-tauri/core/`，React 界面 `windows/src/`），模块与流程对照 Mac 版，见 `docs/Windows版.md`。改 Mac 版的价格表、接口解析、文案时，Windows 版对应模块要一起改
 
 ## 必读文档
 

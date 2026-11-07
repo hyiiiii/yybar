@@ -33,6 +33,10 @@
   --gemini: #3b7bf6;
   --agy: #8a6fd0;
   --chip: #c96442;
+  /* 订阅档次（个人主页 @ 后面的套餐）：标准档蓝、高档紫、团队青，和 App 设置里的套餐标签一致 */
+  --tier-standard: #2f6fd6;
+  --tier-premium: #8b4fd6;
+  --tier-team: #13897f;
 
   --card: #fffdf8;
   --card-ink: #141413;
@@ -69,6 +73,9 @@
     --gemini: #6a9ef0;
     --agy: #a58ee6;
     --chip: #d97757;
+    --tier-standard: #78a6f5;
+    --tier-premium: #b48cf5;
+    --tier-team: #4fc2b6;
     --card-back: #4a4844;
     --card-back-line: #5a5853;
     color-scheme: dark;
@@ -99,6 +106,9 @@
   --gemini: #6a9ef0;
   --agy: #a58ee6;
   --chip: #d97757;
+  --tier-standard: #78a6f5;
+  --tier-premium: #b48cf5;
+  --tier-team: #4fc2b6;
   --card-back: #4a4844;
   --card-back-line: #5a5853;
   color-scheme: dark;
@@ -138,6 +148,11 @@ nav a.active { color: var(--label); background: var(--fill); }
 
 main { min-height: 60vh; }
 .footer { color: var(--label-3); font-size: 12px; text-align: center; padding-block: 32px 24px; }
+/* 右下角：GitHub 和邮箱 */
+.site-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px 16px; text-align: right; }
+.site-footer a { display: inline-flex; align-items: center; gap: 5px; color: var(--label-3); text-decoration: none; transition: color .2s; }
+.site-footer a:hover { color: var(--label); }
+.site-footer .icon { width: 14px; height: 14px; }
 
 /* 按钮 */
 .btn {
@@ -607,6 +622,15 @@ main { min-height: 60vh; }
 .badge-gold { background: linear-gradient(180deg, #f6cf5a, #c99212); color: #4a3200; }
 .badge-clay { background: linear-gradient(180deg, #e68a6e, #c45a3a); }
 .badge-ink { background: linear-gradient(180deg, #3b3b40, #141416); color: #f6d36b; }
+/* 订阅成就：Claude 橙、ChatGPT 黑白 */
+.badge-claude { background: linear-gradient(180deg, #e8916f, #c4623f); }
+.badge-gpt { background: linear-gradient(180deg, #2b2b2e, #0d0d0e); color: #fff; }
+/* 带服务标的徽章：标绝对定位在左边留出的位置里、上下居中，徽章里参与排版的还是只有文字，
+   高度、基线和其他徽章完全一样（标放进 flex 里时徽章按标的底边对齐，比旁边的高出一截） */
+.badge-logo { position: relative; padding-left: 15px; }
+.badge-logo .svc-logo { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); color: inherit; }
+.badge-big.badge-logo { padding-left: 21px; }
+.badge-big.badge-logo .svc-logo { left: 6px; }
 .plate-name .badge { margin-left: 3px; }
 /* 成就页 */
 .ach-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
@@ -738,6 +762,20 @@ main { min-height: 60vh; }
 .profile-head { display: flex; align-items: center; gap: 14px; padding-block: 18px; flex-wrap: wrap; }
 .profile-head h1 { font-size: 24px; font-weight: 700; }
 .profile-head a { color: var(--label-2); }
+/* @ 后面那一排订阅：服务的标 + 套餐，按档次着色的小牌子，同一套餐几个账号写「× n」 */
+.profile-sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 3px; }
+.plan-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.plan-chip {
+  --tier: var(--tier-standard);
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px 0 5px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: default;
+  color: var(--tier); background: color-mix(in srgb, var(--tier) 12%, transparent);
+}
+.plan-chip.tier-premium { --tier: var(--tier-premium); }
+.plan-chip.tier-team { --tier: var(--tier-team); }
+.plan-chip.tier-free { --tier: var(--label-3); font-weight: 500; background: var(--fill); }
+.plan-chip .svc-logo { vertical-align: 0; }
+.plan-count { font-weight: 500; opacity: 0.7; font-variant-numeric: tabular-nums; margin-left: 1px; }
 .card-box { background: var(--panel); border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: var(--shadow), 0 0 0 0.5px var(--separator); }
 .card-box h2 { margin-bottom: 12px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -804,8 +842,17 @@ main { min-height: 60vh; }
   .seat-face-letter { font-size: 19px; }
   .seat-pos { font-size: 12px; }
   .seat-stack { font-size: 13px; }
-  .seat:not(.seat-you) .seat-cards { display: none; }
+  /* 别人的牌：背面不摆（地方不够），翻开的（摊牌、亮牌、偷偷看到的）摆出来：
+     上面一排和左右两边的人摆在名牌下面，下面一排的摆在头像上方（和自己的一样），都以头像为中心，不压公共牌 */
+  .seat:not(.seat-you) .seat-cards:not(.seat-cards-up) { display: none; }
+  .seat:not(.seat-you) .seat-cards-up { left: 50%; right: auto; top: calc(100% + 34px); transform: translateX(-50%); z-index: 4; }
+  .pos-3:not(.seat-you) .seat-cards-up, .pos-4:not(.seat-you) .seat-cards-up { top: auto; bottom: calc(100% + 30px); }
   .seat-you .seat-cards { left: 50%; right: auto; top: auto; bottom: calc(100% + 30px); transform: translateX(-50%); }
+  /* 点头像弹出的卡片：从靠屏幕边的那一侧展开（以头像为中心会伸出屏幕），太窄时按钮换行 */
+  .pos-0 .seat-info, .pos-4 .seat-info, .pos-5 .seat-info { left: 0; translate: none; }
+  .pos-1 .seat-info, .pos-2 .seat-info, .pos-3 .seat-info { left: auto; right: 0; translate: none; }
+  .info-card, .info-card:has(.throw-row) { width: max-content; max-width: calc(100vw - 24px); white-space: normal; }
+  .throw-row { flex-wrap: wrap; }
   .pos-0 .seat-bet, .pos-1 .seat-bet { top: calc(100% + 34px); }
   .pos-2 .seat-bet { right: calc(100% + 12px); top: calc(100% + 2px); }
   .pos-5 .seat-bet { left: calc(100% + 12px); top: calc(100% + 2px); }

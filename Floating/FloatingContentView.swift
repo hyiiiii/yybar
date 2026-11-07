@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - FloatingContentView
 //
-// 见 docs/04-界面布局.md §2。
-// 默认变体:Two-row pill。
-// 结构:14pt 圆角 HUD 容器 + .hudWindow material 背景 + 两行 pill。
-// 每行:18pt ServiceTile + flex 4pt bar + 34pt 百分比(服务色)。
+// 见 docs/界面布局.md §2。
+// 结构:14pt 圆角 HUD 容器 + .popover material 背景。
+// 简略(默认):每行 18pt ServiceTile + flex 4pt bar + 34pt 百分比(状态色)。
+// 详细：和菜单栏浮窗的账号块一样(QuotaEntryView:名字、套餐、5H / WK 各一条带重置倒计时)。
 
 struct FloatingContentView: View {
     @Environment(AppState.self) private var appState
@@ -37,40 +37,77 @@ struct FloatingContentView: View {
                 }
                 rows.append(Row(id: "local:\(app.rawValue)", app: app,
                                 name: email.map { $0.components(separatedBy: "@").first ?? $0 } ?? app.displayName,
-                                window: app.hasSinglePeriod ? snapshot?.primary : snapshot?.fiveHour))
+                                window: app.hasSinglePeriod ? snapshot?.primary : (snapshot?.fiveHour ?? snapshot?.weekly)))
             }
             for other in appState.otherAccountsShown(for: app, inMenuBar: false) {
                 rows.append(Row(id: other.id, app: app, name: other.name,
-                                window: app.hasSinglePeriod ? other.snapshot?.primary : other.snapshot?.fiveHour))
+                                window: app.hasSinglePeriod ? other.snapshot?.primary : (other.snapshot?.fiveHour ?? other.snapshot?.weekly)))
             }
         }
         return rows
     }
 
     var body: some View {
-        let rows = rows
-        // 同一服务有不止一行时，所有行都加上账号名(统一占一列，保证进度条对齐)。
-        let showNames = Dictionary(grouping: rows, by: \.app).values.contains { $0.count > 1 }
+        if let edge = settings.floatingDockEdge {
+            collapsedTab(edge: edge)
+        } else {
+            expandedPanel
+        }
+    }
 
-        VStack(alignment: .leading, spacing: 7) {
+    /// 拖出屏幕边缘后收起的窄条(像微信通话小窗):贴边一侧是直角，每行一个小图标 + 剩余百分比。
+    /// 单击展开；拖动沿着屏幕边上下移动。
+    private func collapsedTab(edge: FloatingDockEdge) -> some View {
+        let rows = rows
+        let radius: CGFloat = 10
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: edge == .right ? radius : 0,
+            bottomLeadingRadius: edge == .right ? radius : 0,
+            bottomTrailingRadius: edge == .left ? radius : 0,
+            topTrailingRadius: edge == .left ? radius : 0,
+            style: .continuous
+        )
+        return VStack(spacing: 7) {
             ForEach(rows) { row in
-                FloatingRow(
-                    logoName: row.app.rawValue,
-                    fallback: row.app.fallbackLetter,
-                    tint: row.app.accent,
-                    window: row.window,
-                    name: showNames ? row.name : nil
-                )
+                VStack(spacing: 2) {
+                    ServiceTile(logoName: row.app.rawValue, fallback: row.app.fallbackLetter, tint: row.app.accent,
+                                size: 14, logoSize: 9, cornerRadius: 4)
+                    Text(row.window.map { "\(Int($0.remainingPercent.rounded()))" } ?? "--")
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(statusColor(remainingPercent: row.window?.remainingPercent, tint: row.app.accent))
+                }
             }
             if rows.isEmpty {
-                Text(tr("No services", "未启用"))
-                    .font(.system(size: 11))
+                Image(systemName: edge == .right ? "chevron.left" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minWidth: 168, alignment: .leading)
+        .padding(.vertical, 9)
+        .frame(width: FloatingPanelController.tabWidth)
+        .background {
+            ZStack {
+                Color(nsColor: .windowBackgroundColor).opacity(0.55)
+                VisualEffectBackground(material: .popover, blendingMode: .behindWindow)
+            }
+        }
+        .clipShape(shape)
+        .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        // 窄条不加悬停提示(2026-10-28 起)
+        .overlay(FloatingMouse(help: nil))
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var expandedPanel: some View {
+        Group {
+            if settings.floatingStyle == .detailed {
+                detailedRows
+            } else {
+                compactRows
+            }
+        }
         .background {
             // 三层叠加,解决 `.hudWindow` 在彩色桌面下前景被吃掉的问题:
             // 1) 实色窗背景压一层,使桌面像素不再直接透上来
@@ -86,9 +123,49 @@ struct FloatingContentView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+        .overlay(FloatingMouse(help: tr("Drag to move · drag past the screen edge to tuck it away", "拖动可移动 · 拖出屏幕边缘可收起")))
         // 阴影交给 NSPanel 的 hasShadow,它按内容 alpha 自动取圆角形状,
         // SwiftUI 这层 shadow 会被 panel 边界裁掉而且和系统阴影叠加,所以移除。
         .fixedSize()
+    }
+
+    private var compactRows: some View {
+        let rows = rows
+        // 同一服务有不止一行时，所有行都加上账号名(统一占一列，保证进度条对齐)。
+        let showNames = Dictionary(grouping: rows, by: \.app).values.contains { $0.count > 1 }
+        return VStack(alignment: .leading, spacing: 7) {
+            ForEach(rows) { row in
+                FloatingRow(
+                    logoName: row.app.rawValue,
+                    fallback: row.app.fallbackLetter,
+                    tint: row.app.accent,
+                    window: row.window,
+                    name: showNames ? row.name : nil
+                )
+            }
+            if rows.isEmpty { emptyText }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minWidth: 168, alignment: .leading)
+    }
+
+    /// 详细：和菜单栏浮窗一样宽(320pt 浮窗去掉两边 16pt)，每个账号一块。
+    private var detailedRows: some View {
+        let entries = QuotaEntry.list(appState, inMenuBar: false)
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(entries) { QuotaEntryView(entry: $0) }
+            if entries.isEmpty { emptyText }
+        }
+        .frame(width: 288, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var emptyText: some View {
+        Text(tr("No services", "未启用"))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -144,5 +221,39 @@ private struct FloatingRow: View {
 
     private var barColor: Color {
         statusColor(remainingPercent: window?.remainingPercent, tint: tint)
+    }
+}
+
+/// 悬浮窗(展开和收起)上的鼠标处理：拖动时窗口跟着鼠标走，松手时告诉 controller 这次有没有拖动过
+/// (见 FloatingPanelController.mouseReleased)。自己移窗口：SwiftUI 内容上「按背景拖动」在新系统上不触发，
+/// performDrag 又立刻返回、拿不到松手的时刻。用 AppKit 视图接：非激活面板里第一下点击也能收到，
+/// 鼠标拖出窗口外也一直收到拖动和松手。
+private struct FloatingMouse: NSViewRepresentable {
+    let help: String?
+
+    func makeNSView(context: Context) -> FloatingMouseView {
+        let view = FloatingMouseView()
+        view.toolTip = help
+        return view
+    }
+
+    func updateNSView(_ nsView: FloatingMouseView, context: Context) {
+        nsView.toolTip = help
+    }
+}
+
+final class FloatingMouseView: NSView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    /// 按下之后的拖动和松手由 controller 在 app 里统一接(pressBegan):拉抽屉时 SwiftUI 把窄条换成展开的内容，
+    /// 这个视图会被拿掉，之后的拖动 / 松手它就收不到了。
+    override func mouseDown(with event: NSEvent) {
+        FloatingPanelController.shared.pressBegan()
+    }
+
+    /// 右键：统计 / 设置 / bar、切换简略 / 详细。
+    override func rightMouseDown(with event: NSEvent) {
+        FloatingPanelController.shared.showContextMenu(at: NSEvent.mouseLocation)
     }
 }

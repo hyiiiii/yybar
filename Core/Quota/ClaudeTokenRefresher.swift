@@ -51,8 +51,9 @@ enum ClaudeTokenRefresher {
         if !isExpired(expiresAt: account.expiresAt) {
             return .success(current)
         }
+        // 没有 refresh token(Claude Code 退出登录后令牌被清空)：只能重新登录，按「登录已失效」提示
         guard let refreshToken = account.refreshToken, !refreshToken.isEmpty else {
-            return .failure(.tokenRefreshFailed("no refresh_token"))
+            return .failure(.tokenRevoked)
         }
         do {
             let r = try await Coordinator.shared.refresh(

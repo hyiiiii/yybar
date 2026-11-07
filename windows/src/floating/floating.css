@@ -1,0 +1,112 @@
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+#root {
+  display: inline-block;
+}
+
+/* 收在左边的窄条贴着窗口右侧：收起 / 展开的那一下窗口还是展开的宽度、只有右边一条露在屏幕上，
+   窄条要正好在露出来的那一条里。收 / 展换内容不做淡入（会闪一下），动的只有窗口的滑入滑出（windows.rs） */
+body:has(.hud.dock-left) {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hud {
+  /* 拖动由 usePress 自己处理：不选中文字、不让触屏手势抢走指针 */
+  user-select: none;
+  touch-action: none;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 168px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--popover-bg-translucent);
+  border: 0.5px solid var(--separator);
+  backdrop-filter: blur(20px) saturate(1.8);
+}
+
+@media (prefers-color-scheme: light) {
+  .hud {
+    background: rgba(255, 255, 255, 0.86);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .hud {
+    background: rgba(28, 28, 30, 0.86);
+  }
+}
+
+/* 详细：和弹出窗口的账号列表一样（288 宽，块之间 12） */
+.hud.detailed {
+  width: 316px;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-row .progress {
+  min-width: 56px;
+}
+
+.hud-percent {
+  min-width: 34px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+/* 同一服务有几行时的账号名 */
+.hud-name {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* 收起：贴着屏幕左 / 右边的窄条，贴边一侧直角，每行小图标 + 剩余百分比 */
+.hud.collapsed {
+  min-width: 0;
+  width: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 0;
+  cursor: pointer;
+}
+
+.hud.collapsed.dock-right {
+  border-radius: 10px 0 0 10px;
+  border-right: none;
+}
+
+.hud.collapsed.dock-left {
+  border-radius: 0 10px 10px 0;
+  border-left: none;
+}
+
+.tab-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tab-percent {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}

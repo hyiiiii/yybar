@@ -32,6 +32,8 @@ struct ClaudeAccount: Sendable, Equatable {
     var refreshToken: String?
     /// `~/.claude.json` oauthAccount 的 `subscriptionCreatedAt`(订阅开始日),用来推算续费日。
     var subscriptionCreatedAt: Date? = nil
+    /// 凭据里的 `rateLimitTier`(如 default_claude_max_20x):Max 分 5x / 20x 两档，只有这里区分得出来。
+    var rateLimitTier: String? = nil
 }
 
 /// 下次续费日。

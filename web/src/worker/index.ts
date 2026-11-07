@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes, requireApiToken, requireSession, sessionUser } from "./auth";
+import { AccountsError, parseAccounts, parseDevice, plansOf, saveAccounts } from "./accounts";
 import { achievementRoutes, readyCount, syncAchievements } from "./achievements";
 import { parseBadges } from "../shared/achievements";
 import { ITEMS } from "../shared/cosmetics";
@@ -219,15 +220,16 @@ app.get("/api/users/:login", async (c) => {
     .bind(c.req.param("login"))
     .first<{ id: number; login: string; name: string | null; avatar_url: string | null; created_at: string }>();
   if (!user) return c.json({ error: "没有这个用户，或对方未公开" }, 404);
-  const [totals, series, models, modelsAll, points, activity] = await Promise.all([
+  const [totals, series, models, modelsAll, points, activity, plans] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
     modelTotals(c.env.DB, user.id),
     pointsOf(c.env.DB, user.id),
     activityOf(c.env.DB, user.id),
+    plansOf(c.env.DB, user.id),
   ]);
-  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at }, totals, series, models, modelsAll, points, activity });
+  return c.json({ user: { ...publicUser(user), joinedAt: user.created_at, plans }, totals, series, models, modelsAll, points, activity });
 });
 
 // ---------- 网页登录后的接口 ----------
@@ -237,7 +239,7 @@ app.get("/api/me", async (c) => {
   if (!user) return c.json({ user: null });
   // 先检查成就（第一次登录、连续天数…）：新解锁的等用户自己去成就页领，顶栏奖杯旁边提醒
   await syncAchievements(c.env.DB, user.id);
-  const [totals, series, models, modelsAll, points, activity, uploads, items, emotes, achievementsReady] = await Promise.all([
+  const [totals, series, models, modelsAll, points, activity, uploads, items, emotes, achievementsReady, plans] = await Promise.all([
     totalsOf(c.env.DB, user.id),
     dailySeries(c.env.DB, user.id, 30),
     topModels(c.env.DB, user.id),
@@ -248,9 +250,10 @@ app.get("/api/me", async (c) => {
     itemsOf(c.env.DB, user.id),
     emotesOf(c.env.DB, user.id),
     readyCount(c.env.DB, user.id),
+    plansOf(c.env.DB, user.id),
   ]);
   return c.json({
-    user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at },
+    user: { ...publicUser(user), showOnBoard: !!user.show_on_board, joinedAt: user.created_at, plans },
     look: lookOf(user),
     // 每日礼盒：今天（UTC）领过没有
     daily: {
@@ -360,6 +363,24 @@ v1.post("/usage", async (c) => {
     return c.json({ ok: true, accepted, skipped });
   } catch (e) {
     if (e instanceof UploadError) return c.json({ error: e.message }, 422);
+    throw e;
+  }
+});
+
+/** 各服务账号的套餐（个人主页 @ 后面那一排）：这台设备（device）传的整份替换上次的 */
+v1.put("/accounts", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "请求体不是合法 JSON" }, 400);
+  }
+  try {
+    const rows = parseAccounts(body);
+    await saveAccounts(c.env.DB, c.get("user").id, c.get("tokenId"), rows, parseDevice(body));
+    return c.json({ ok: true, count: rows.length });
+  } catch (e) {
+    if (e instanceof AccountsError) return c.json({ error: e.message }, 422);
     throw e;
   }
 });

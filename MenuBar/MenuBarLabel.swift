@@ -95,7 +95,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let root = MenuBarPopoverView(
             openStats: { StatusItemController.shared.openFromPopover(.overview) },
             openSettings: { StatusItemController.shared.openFromPopover(.settings) },
-            openBar: { StatusItemController.shared.openFromPopover(.bar) }
+            openBar: { StatusItemController.shared.openWebsite() }
         ).environment(appState)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = [.preferredContentSize]
@@ -110,6 +110,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func openFromPopover(_ tab: MainTab) {
         popover?.performClose(nil)
         WindowCoordinator.shared.showMain(tab)
+    }
+
+    /// 浮窗的 bar:直接在浏览器打开 yybar 网站(和主窗口 bar 页的「进入」一样到「我的」页),不先转到 App 的 bar 页。
+    private func openWebsite() {
+        popover?.performClose(nil)
+        NSWorkspace.shared.open(YYBarWeb.url.appendingPathComponent("me"))
     }
 
     // MARK: Menu
@@ -421,16 +427,18 @@ enum MenuBarBadgeImage {
         ]
     }
 
+    /// 没有 5H 的账号(ChatGPT Pro 只有周额度、免费账号只有月额度)选 5H 时显示长窗口，「都显示」时只写有的那个。
     private static func pctText(_ snap: QuotaSnapshot?, window: MenuBarWindowChoice) -> String {
         switch window {
         case .fiveHour:
-            return pctOrPlaceholder(snap?.fiveHour)
+            return pctOrPlaceholder(snap?.fiveHour ?? snap?.weekly)
         case .weekly:
-            return pctOrPlaceholder(snap?.weekly)
+            return pctOrPlaceholder(snap?.weekly ?? snap?.fiveHour)
         case .both:
-            let a = pctOrPlaceholder(snap?.fiveHour)
-            let b = pctOrPlaceholder(snap?.weekly)
-            return "\(a)/\(b)"
+            guard let five = snap?.fiveHour, let week = snap?.weekly else {
+                return pctOrPlaceholder(snap?.fiveHour ?? snap?.weekly)
+            }
+            return "\(pctOrPlaceholder(five))/\(pctOrPlaceholder(week))"
         }
     }
 
@@ -439,17 +447,57 @@ enum MenuBarBadgeImage {
         return "\(Int(window.remainingPercent.rounded()))%"
     }
 
+    /// 菜单栏什么都不显示时：yybar 的两张扑克牌。2026-10-29 前画的是 Codex 的标。
     private static func placeholderImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: iconSize, height: height))
+        playingCardsImage(height: iconSize - 2, canvasHeight: height)
+    }
+
+    /// yybar 的两张扑克牌(和 bar 页 `PlayingCardsIcon` 同一画法)，模板图(菜单栏什么都没选时用)。
+    /// canvasHeight 比牌高时上下居中。
+    static func playingCardsImage(height cardsHeight: CGFloat, canvasHeight: CGFloat? = nil) -> NSImage {
+        let height = canvasHeight ?? cardsHeight
+        let cardsWidth = ceil(cardsHeight * 1.25)
+        let image = NSImage(size: NSSize(width: cardsWidth, height: height))
         image.lockFocus()
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: image.size).fill()
-        if let img = MenuBarLogo.rawImage(named: "codex") {
-            img.draw(in: NSRect(x: 0, y: floor((height - iconSize) / 2),
-                                width: iconSize, height: iconSize))
-        }
-        image.unlockFocus()
+        defer { image.unlockFocus() }
         image.isTemplate = true
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return image }
+        // 换成左上角为原点(和 SwiftUI Canvas 一样)，下面的尺寸照抄 PlayingCardsIcon
+        ctx.translateBy(x: 0, y: floor((height + cardsHeight) / 2))
+        ctx.scaleBy(x: 1, y: -1)
+        let w = cardsWidth * 0.56, h = cardsHeight * 0.8, radius = cardsWidth * 0.1
+        let line = max(1, cardsWidth * 0.085)
+        func card(cx: CGFloat, cy: CGFloat, angle: CGFloat) -> CGPath {
+            var t = CGAffineTransform(translationX: cx, y: cy).rotated(by: angle * .pi / 180)
+            return CGPath(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h),
+                          cornerWidth: radius, cornerHeight: radius, transform: &t)
+        }
+        let back = card(cx: cardsWidth * 0.38, cy: cardsHeight * 0.5, angle: -14)
+        let front = card(cx: cardsWidth * 0.62, cy: cardsHeight * 0.52, angle: 10)
+        ctx.setStrokeColor(NSColor.black.cgColor)
+        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.setLineWidth(line)
+        ctx.addPath(back)
+        ctx.strokePath()
+        // 先把前一张牌的位置(连同一圈空隙)擦掉，后一张牌的线就不会穿过来
+        ctx.setBlendMode(.clear)
+        ctx.addPath(front)
+        ctx.fillPath()
+        ctx.setLineWidth(line * 2.6)
+        ctx.addPath(front)
+        ctx.strokePath()
+        ctx.setBlendMode(.normal)
+        ctx.setLineWidth(line)
+        ctx.addPath(front)
+        ctx.strokePath()
+        // 方片
+        let c = CGPoint(x: cardsWidth * 0.62, y: cardsHeight * 0.52), d = cardsWidth * 0.12
+        ctx.move(to: CGPoint(x: c.x, y: c.y - d * 1.3))
+        ctx.addLine(to: CGPoint(x: c.x + d, y: c.y))
+        ctx.addLine(to: CGPoint(x: c.x, y: c.y + d * 1.3))
+        ctx.addLine(to: CGPoint(x: c.x - d, y: c.y))
+        ctx.closePath()
+        ctx.fillPath()
         return image
     }
 

@@ -1,0 +1,33 @@
+[package]
+name = "yybar-core"
+version = "0.2.0"
+description = "yybar for Windows：凭据、额度、日志扫描、价格、存储（对应 Mac 版 Core/）"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread", "process"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+memchr = "2"
+base64 = "0.22"
+sha2 = "0.10"
+ruzstd = "0.7"
+notify = "6"
+log = "0.4"
+uuid = { version = "1", features = ["v4"] }
+
+# 读 agy 会话库：运行时加载系统自带的 SQLite（Windows 的 winsqlite3.dll），不编译 C 源码
+libloading = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+# 读注册表里的用户 / 系统 PATH（找 CLI 用）
+winreg = "0.52"
+# 系统设置了代理脚本（PAC）时按脚本选代理（proxy.rs）
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Networking_WinHttp"] }
+
+[dev-dependencies]
+tempfile = "3"

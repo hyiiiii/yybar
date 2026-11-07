@@ -3,7 +3,8 @@ import SwiftUI
 // MARK: - MenuBarPopoverView
 //
 // 左键点菜单栏图标弹出的额度浮窗(320pt)。只放一眼要看的东西：
-// 顶部 yybar + 统计 / 设置 / bar 三个按钮(bar 用两张扑克牌的图标，打开主窗口的 bar 页，从那里进 yybar 网站的德州大厅，见 YYBarWeb);
+// 顶部 yybar + 统计 / 设置 / 悬浮窗 / bar 四个按钮(悬浮窗弹出样式浮层：简略 / 详细 / 隐藏，和设置 › 悬浮窗一样;
+// bar 用两张扑克牌的图标，直接在浏览器打开 yybar 网站，见 YYBarWeb);
 // 中间是菜单栏上显示的每个账号(顺序同菜单栏):图标、名称、套餐、官方状态点，下面 5H / WK 的剩余条和重置倒计时
 // (标签和菜单栏一样用 5H / WK;Antigravity 按池写成「Gemini 5H」),刷新失败时名称旁一个小警告(悬停看原因);
 // 底部左边刷新按钮 +「x 前更新」,右边今日花费 / Token。
@@ -20,38 +21,9 @@ struct MenuBarPopoverView: View {
     let openBar: () -> Void
 
     @State private var refreshRotation: Double = 0
+    @State private var showingFloatingStyle = false
 
-    /// 浮窗里的一个账号。
-    private struct Entry: Identifiable {
-        let id: String
-        let app: UsageApp
-        let title: String
-        let plan: String?
-        let snapshot: QuotaSnapshot?
-        let error: String?
-        let status: ServiceStatus?
-        let isLocal: Bool
-    }
-
-    private var entries: [Entry] {
-        let settings = SettingsStore.shared
-        var result: [Entry] = []
-        for app in UsageApp.allCases {
-            if settings.effectiveMenuBarShow(app) {
-                result.append(Entry(
-                    id: "local:\(app.rawValue)", app: app, title: app.displayName,
-                    plan: appState.localPlan(for: app), snapshot: appState.localQuota(for: app),
-                    error: appState.localQuotaError(for: app),
-                    status: settings.showServiceStatus ? appState.serviceStatus(for: app) : nil,
-                    isLocal: true))
-            }
-            for other in appState.otherAccountsShown(for: app, inMenuBar: true) {
-                result.append(Entry(id: "other:\(other.id)", app: app, title: "\(app.displayName) · \(other.name)",
-                                    plan: nil, snapshot: other.snapshot, error: nil, status: nil, isLocal: false))
-            }
-        }
-        return result
-    }
+    private var entries: [QuotaEntry] { QuotaEntry.list(appState, inMenuBar: true) }
 
     var body: some View {
         let entries = entries
@@ -72,7 +44,7 @@ struct MenuBarPopoverView: View {
                     .padding(.horizontal, 16)
             } else {
                 VStack(spacing: 12) {
-                    ForEach(entries) { entryView($0) }
+                    ForEach(entries) { QuotaEntryView(entry: $0) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -91,6 +63,7 @@ struct MenuBarPopoverView: View {
         HStack(spacing: 6) {
             Text("yybar")
                 .font(.system(size: 13, weight: .semibold))
+                .fixedSize()
             Spacer(minLength: 8)
             HStack(spacing: 2) {
                 headerButton(tr("Stats", "统计"), action: openStats) {
@@ -99,10 +72,23 @@ struct MenuBarPopoverView: View {
                 headerButton(tr("Settings", "设置"), action: openSettings) {
                     Image(systemName: "gearshape")
                 }
+                headerButton(tr("HUD", "悬浮窗"), action: { showingFloatingStyle.toggle() }) {
+                    Image(systemName: "pip")
+                }
+                .help(tr("Floating window style", "悬浮窗样式"))
+                .popover(isPresented: $showingFloatingStyle, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(tr("Floating window style", "悬浮窗样式"))
+                            .font(.system(size: 12, weight: .semibold))
+                        FloatingStyleOptions()
+                    }
+                    .padding(14)
+                    .frame(width: 270, alignment: .leading)
+                }
                 headerButton("bar", action: openBar) {
                     PlayingCardsIcon(size: 11.5)
                 }
-                .help(tr("Open the bar: yybar's poker tavern", "打开 bar:yybar 的德州小酒馆"))
+                .help(tr("Open the bar (yybar's poker tavern) in your browser", "在浏览器中打开 bar（yybar 德州小酒馆）"))
             }
         }
     }
@@ -122,57 +108,6 @@ struct MenuBarPopoverView: View {
         let cost = StatsFormatter.cost(totals.costUSD)
         let tokens = StatsFormatter.compactToken(totals.totalTokens)
         return tr("Today \(cost) · \(tokens) tokens", "今日 \(cost) · \(tokens) Token")
-    }
-
-    // MARK: Entry
-
-    private func entryView(_ entry: Entry) -> some View {
-        let windows = entry.app == .grok || entry.app == .grokBot
-            ? QuotaCardView.grokWindows(entry.snapshot)
-            : QuotaCardView.standardWindows(entry.snapshot)
-        let pools = entry.snapshot?.pools
-        // Antigravity 的行标签带池名(Gemini 5H …),标签列放宽。
-        let labelWidth: CGFloat = pools != nil ? 92 : 30
-        return HStack(alignment: .top, spacing: 10) {
-            ServiceTile(logoName: entry.app.rawValue, fallback: entry.app.fallbackLetter, tint: entry.app.accent,
-                        size: 22, logoSize: 13, cornerRadius: 6)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(entry.title)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let plan = entry.plan {
-                        Text(plan)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.primary.opacity(0.07)))
-                            .lineLimit(1)
-                    }
-                    if let error = entry.error {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.orange)
-                            .help(error)
-                    }
-                    Spacer(minLength: 0)
-                    if let status = entry.status, status.indicator != .unknown {
-                        Circle()
-                            .fill(status.indicator.dotColor)
-                            .frame(width: 6, height: 6)
-                            .help(status.description ?? status.indicator.label)
-                    }
-                }
-                .frame(height: 22)
-                ForEach(windows) { window in
-                    LimitBarRow(label: Self.shortLabel(window, pools: pools), window: window.window,
-                                tint: entry.app.accent, labelWidth: labelWidth)
-                        .padding(.vertical, -2)
-                }
-            }
-        }
     }
 
     // MARK: Footer
@@ -227,18 +162,21 @@ struct MenuBarPopoverView: View {
         }
     }
 
-    /// 顶部三个按钮一样宽：图标都放在同样大小的框里，文字居中，看起来间距均匀。
+    /// 顶部四个按钮：图标都放在同样大小的框里，按钮按内容宽度、左右各留 4pt,相邻两个按钮的内容间距都一样
+    /// (英文 Settings 较长，左右再多留就放不下 320pt)。
+    /// (2026-11-07 前中文定宽 56pt、内容居中：字数不同的按钮两边空白不同，看着间距不均。)
     private func headerButton(_ title: String, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 icon()
                     .font(.system(size: 11.5))
                     .frame(width: 15, height: 13)
                 Text(title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: L10n.current == .zh ? 52 : 66)
+            .padding(.horizontal, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -254,5 +192,87 @@ struct MenuBarPopoverView: View {
         }
         let age = RelativeTime.short(from: latest, now: now)
         return tr("Updated \(age) ago", "\(age) 前更新")
+    }
+}
+
+// MARK: - QuotaEntry
+
+/// 一个账号的额度块(服务 tile + 名字 + 套餐 + 各额度条，带重置倒计时)：菜单栏浮窗和「详细」样式的悬浮窗共用。
+struct QuotaEntry: Identifiable {
+    let id: String
+    let app: UsageApp
+    let title: String
+    let plan: String?
+    let snapshot: QuotaSnapshot?
+    let error: String?
+    let status: ServiceStatus?
+
+    /// 要显示的账号：每个服务本机账号在前、其他账号在后，按服务顺序。inMenuBar 为 false 时按悬浮窗的勾选。
+    @MainActor static func list(_ appState: AppState, inMenuBar: Bool) -> [QuotaEntry] {
+        let settings = SettingsStore.shared
+        var result: [QuotaEntry] = []
+        for app in UsageApp.allCases {
+            if inMenuBar ? settings.effectiveMenuBarShow(app) : settings.effectiveFloatingShow(app) {
+                result.append(QuotaEntry(
+                    id: "local:\(app.rawValue)", app: app, title: app.displayName,
+                    plan: appState.localPlan(for: app), snapshot: appState.localQuota(for: app),
+                    error: appState.localQuotaError(for: app),
+                    status: settings.showServiceStatus ? appState.serviceStatus(for: app) : nil))
+            }
+            for other in appState.otherAccountsShown(for: app, inMenuBar: inMenuBar) {
+                result.append(QuotaEntry(id: "other:\(other.id)", app: app, title: "\(app.displayName) · \(other.name)",
+                                         plan: nil, snapshot: other.snapshot, error: nil, status: nil))
+            }
+        }
+        return result
+    }
+}
+
+struct QuotaEntryView: View {
+    let entry: QuotaEntry
+
+    var body: some View {
+        let windows = entry.app == .grok || entry.app == .grokBot
+            ? QuotaCardView.grokWindows(entry.snapshot)
+            : QuotaCardView.standardWindows(entry.snapshot)
+        let pools = entry.snapshot?.pools
+        // Antigravity 的行标签带池名(Gemini 5H …),标签列放宽。
+        let labelWidth: CGFloat = pools != nil ? 92 : 30
+        return HStack(alignment: .top, spacing: 10) {
+            ServiceTile(logoName: entry.app.rawValue, fallback: entry.app.fallbackLetter, tint: entry.app.accent,
+                        size: 22, logoSize: 13, cornerRadius: 6)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(entry.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let plan = entry.plan {
+                        // 和设置里一样按档次着色(免费灰、标准蓝、高档紫、团队青)
+                        PlanTag(plan: plan, service: entry.app.rawValue)
+                            .lineLimit(1)
+                    }
+                    if let error = entry.error {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.orange)
+                            .help(error)
+                    }
+                    Spacer(minLength: 0)
+                    if let status = entry.status, status.indicator != .unknown {
+                        Circle()
+                            .fill(status.indicator.dotColor)
+                            .frame(width: 6, height: 6)
+                            .help(status.description ?? status.indicator.label)
+                    }
+                }
+                .frame(height: 22)
+                ForEach(windows) { window in
+                    LimitBarRow(label: MenuBarPopoverView.shortLabel(window, pools: pools), window: window.window,
+                                tint: entry.app.accent, labelWidth: labelWidth)
+                        .padding(.vertical, -2)
+                }
+            }
+        }
     }
 }

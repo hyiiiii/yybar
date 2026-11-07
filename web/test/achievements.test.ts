@@ -34,6 +34,19 @@ describe("achievements are claimed by hand", () => {
     expect(paid()).toBe(600);
   });
 
+  it("unlocks the subscription and big-spender badges", async () => {
+    sqlite.exec("INSERT INTO api_tokens (id, user_id, token_hash, label) VALUES (10, 1, 'h10', 'mac')");
+    sqlite.exec(`INSERT INTO user_accounts (token_id, user_id, app, account, plan) VALUES
+      (10, 1, 'claude', 'b1b1b1b1', 'max_20x'), (10, 1, 'codex', 'c1c1c1c1', 'pro'), (10, 1, 'codex', 'c2c2c2c2', 'free')`);
+    sqlite.exec(`INSERT INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_micro)
+      VALUES (1, '2026-10-01', 'codex', 'gpt-5', 11000000000, 0, 0, 0, 10000000000)`);
+    await syncAchievements(d1, 1);
+    const ids = (sqlite.prepare("SELECT id FROM user_achievements WHERE user_id = 1").all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining(["claude_max", "gpt_pro", "tokens_10b", "spend_10k"]));
+    expect(ids).not.toContain("claude_pro");
+    expect(ids).not.toContain("gpt_plus");
+  });
+
   it("pays $100 for everything except the first login", () => {
     expect(ACHIEVEMENTS.filter((a) => a.id !== "first_login").every((a) => a.reward === 100)).toBe(true);
     expect(ACHIEVEMENTS.find((a) => a.id === "first_login")!.reward).toBe(500);

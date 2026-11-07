@@ -1,0 +1,68 @@
+html,
+body,
+#root {
+  background: transparent;
+  overflow: hidden;
+}
+
+#root {
+  display: inline-block;
+}
+
+/* 和悬浮窗（floating.css .hud）同一底色、描边、圆角 */
+.fmenu {
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 132px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--popover-bg-translucent);
+  border: 0.5px solid var(--separator);
+  backdrop-filter: blur(20px) saturate(1.8);
+}
+
+@media (prefers-color-scheme: light) {
+  .fmenu {
+    background: rgba(255, 255, 255, 0.86);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .fmenu {
+    background: rgba(28, 28, 30, 0.86);
+  }
+}
+
+.fmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 7px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.fmenu-item:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.fmenu-icon {
+  flex: none;
+  width: 16px;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.fmenu-sep {
+  height: 0.5px;
+  margin: 4px 6px;
+  background: var(--separator);
+}

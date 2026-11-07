@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - SettingsRootView
 //
 // 见 docs/界面布局.md §4。
-// 设置分 4 页(服务 / 显示 / 刷新 / 通用),由主窗口侧边栏切换。
+// 设置分 5 页(服务 / 悬浮窗 / 显示 / 刷新 / 通用),由主窗口侧边栏切换。
 // 每页沿用 PrefsGroup + PrefsRow 卡片结构，内容限宽，避免控件离标签太远。
 
 struct SettingsRootView: View {
@@ -25,10 +25,12 @@ struct SettingsRootView: View {
                 servicesGroup(settings: settings)
                 switchNotice
             }
+            settingsSection(.floating) {
+                floatingGroup
+            }
             settingsSection(.display) {
                 menuBarGroup(settings: settings)
                 statsDisplayGroup(settings: settings)
-                floatingGroup(settings: settings)
             }
             settingsSection(.refresh) {
                 refreshGroup(settings: settings)
@@ -48,13 +50,14 @@ struct SettingsRootView: View {
         }
     }
 
-    /// 设置大页里的一个部分：标题 + 内容，内容限宽 640pt。
+    /// 设置大页里的一个部分：标题 + 内容，内容限宽 640pt(随字号放大),在窗口里水平居中。
     private func settingsSection<Content: View>(_ tab: MainTab, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             SectionHeading(title: tab.title)
             content()
         }
-        .frame(maxWidth: 640, alignment: .topLeading)
+        .frame(maxWidth: 640 * SettingsStore.shared.textSize.scale, alignment: .topLeading)
+        .frame(maxWidth: .infinity)
         .sectionAnchor(tab)
     }
 
@@ -66,10 +69,10 @@ struct SettingsRootView: View {
         if let notice = appState.accountSwitchNotice {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: notice.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(notice.isError ? Color.orange : Color.green)
                 Text(notice.text)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -128,10 +131,10 @@ struct SettingsRootView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.uturn.backward.circle")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(.secondary)
                         Text(tr("Restore removed on-Mac accounts", "恢复已删除的本机账号"))
-                            .font(.system(size: 12.5))
+                            .scaledFont(size: 12.5)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -202,7 +205,6 @@ struct SettingsRootView: View {
                 enabled: Binding(get: { settings.showCodex }, set: { settings.showCodex = $0 }),
                 menuBar: Binding(get: { settings.menuBarShowCodex }, set: { settings.menuBarShowCodex = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowCodex }, set: { settings.floatingShowCodex = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .codex).environment(appState)),
                 onDelete: { localDeleteTarget = .codex }
             )
@@ -210,14 +212,13 @@ struct SettingsRootView: View {
             ServiceMatrixRow(
                 title: "Claude Code", logoName: "claude", fallback: "K", tint: .claudeAccent,
                 email: appState.claudeAccount?.email,
-                plan: appState.claudeAccount?.subscriptionType,
+                plan: appState.localClaudePlan,
                 renewal: .monthly(from: appState.claudeAccount?.subscriptionCreatedAt),
                 switchState: appState.claudeAccount?.email != nil ? .inUse : .none,
                 detected: appState.claudeAccount?.email != nil,
                 enabled: Binding(get: { settings.showClaude }, set: { settings.showClaude = $0 }),
                 menuBar: Binding(get: { settings.menuBarShowClaude }, set: { settings.menuBarShowClaude = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowClaude }, set: { settings.floatingShowClaude = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .claude).environment(appState)),
                 onDelete: { localDeleteTarget = .claude }
             )
@@ -237,7 +238,6 @@ struct SettingsRootView: View {
                 ),
                 menuBar: Binding(get: { settings.menuBarShowGrok }, set: { settings.menuBarShowGrok = $0 }),
                 floating: floatingBinding(get: { settings.floatingShowGrok }, set: { settings.floatingShowGrok = $0 }),
-                floatingAvailable: settings.floatingEnabled,
                 quotaCard: AnyView(LocalQuotaCard(provider: .grok).environment(appState)),
                 onDelete: { localDeleteTarget = .grok }
             )
@@ -292,7 +292,6 @@ struct SettingsRootView: View {
             enabled: enabled,
             menuBar: menuBar,
             floating: floating,
-            floatingAvailable: settings.floatingEnabled,
             quotaCard: AnyView(QuotaOnlyServiceCard(app: app).environment(appState)),
             onDelete: { quotaOnlyDeleteTarget = app }
         )
@@ -305,14 +304,28 @@ struct SettingsRootView: View {
         })
     }
 
+    // MARK: Floating window
+
+    /// 悬浮窗样式(简略 / 详细 / 隐藏，默认简略)。显示哪些账号仍在「服务」页悬浮窗一列勾选;选「隐藏」时那一列变灰。
+    private var floatingGroup: some View {
+        PrefsGroup(
+            title: "",
+            chinese: "",
+            desc: "Choose which accounts to show in the HUD column on the Services page.",
+            chineseDesc: "在「服务」页的「悬浮窗」列中选择要显示的账号"
+        ) {
+            FloatingStyleOptions(inCard: true)
+        }
+    }
+
     // MARK: Display
 
     private func menuBarGroup(settings: SettingsStore) -> some View {
         PrefsGroup(
             title: "Menu Bar",
             chinese: "菜单栏",
-            desc: "Which services appear is set on the Services page.",
-            chineseDesc: "显示哪些服务在「服务」页勾选"
+            desc: "Choose which services to show in the Menu bar column on the Services page.",
+            chineseDesc: "在「服务」页的「菜单栏」列中选择要显示的服务"
         ) {
             PrefsRow(label: "Quota period", chinese: "额度周期") {
                 Picker("", selection: Binding(get: { settings.menuBarWindow }, set: { settings.menuBarWindow = $0 })) {
@@ -339,8 +352,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Hold colour while waiting for approval",
                 chinese: "等待审批保持颜色",
-                desc: "When a CLI is waiting for you to approve a tool call, its icon stays in its own colour.",
-                chineseDesc: "CLI 等待你批准工具调用时，图标保持自身颜色不闪烁"
+                desc: "While a CLI is waiting for a tool call to be approved, its icon stays in its own colour instead of pulsing.",
+                chineseDesc: "CLI 等待批准工具调用时，图标保持自身颜色，不再闪烁"
             ) {
                 Toggle("", isOn: Binding(get: { settings.menuBarHoldColorWhileWaiting }, set: { settings.menuBarHoldColorWhileWaiting = $0 }))
                     .labelsHidden()
@@ -350,8 +363,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Drive breathing with CLI hooks",
                 chinese: "用 hook 驱动呼吸",
-                desc: "Adds yybar's own hooks to Codex, Claude Code, Grok and agy so the icon reacts the moment a prompt, tool call, approval or reply happens. Your existing hooks are left alone; turning this off removes only yybar's.",
-                chineseDesc: "给 Codex、Claude Code、Grok、agy 挂上 yybar 自己的 hook:提问、调用工具、请求审批、回答结束时图标立刻响应。不动你已有的 hook,关掉只删 yybar 的"
+                desc: "Installs yybar hooks for Codex, Claude Code, Grok and agy so the icon updates as soon as a prompt, tool call, approval request or reply happens. Existing hooks are left unchanged; turning this off removes only the hooks yybar added.",
+                chineseDesc: "为 Codex、Claude Code、Grok、agy 安装 yybar 的 hook，在提问、调用工具、请求审批和回答结束时即时更新图标。不会改动已有的 hook，关闭后仅移除 yybar 添加的部分"
             ) {
                 HStack(spacing: 6) {
                     if hookWorking { ProgressView().controlSize(.small) }
@@ -366,7 +379,7 @@ struct SettingsRootView: View {
             }
             if let hookStatus {
                 Text(hookStatus)
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: 10.5)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
@@ -374,7 +387,7 @@ struct SettingsRootView: View {
             }
             if let hookError {
                 Text(hookError)
-                    .font(.system(size: 10.5))
+                    .scaledFont(size: 10.5)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
@@ -461,28 +474,84 @@ struct SettingsRootView: View {
         }
     }
 
-    private func floatingGroup(settings: SettingsStore) -> some View {
-        PrefsGroup(title: "Floating HUD", chinese: "悬浮窗") {
-            PrefsRow(
-                label: "Show floating window",
-                chinese: "显示悬浮窗",
-                desc: "A small always-on-top window. Pick its services on the Services page.",
-                chineseDesc: "固定在桌面上的小窗口，显示哪些服务在「服务」页勾选"
-            ) {
-                Toggle("", isOn: Binding(
-                    get: { settings.floatingEnabled },
-                    set: { newValue in
-                        settings.floatingEnabled = newValue
-                        FloatingPanelController.shared.sync()
+    // MARK: Refresh
+
+    /// 其他 Codex 目录：另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号(服务页列成「Codex · 目录名」)和会话记录也统计。
+    /// 自动找到的(用户目录下的 .codex-*)移除后记进忽略，可恢复；手动添加的直接去掉。改动后重读账号、重扫日志。
+    @ViewBuilder
+    private func codexDirsRows(settings: SettingsStore) -> some View {
+        let same = { (a: String, b: String) in a.lowercased() == b.lowercased() }
+        let apply = {
+            appState.syncLinkedCodexHomes()
+            Task { await appState.refreshNow() }
+        }
+        PrefsRow(
+            label: "Other Codex folders",
+            chinese: "其他 Codex 目录",
+            desc: "If another Codex stores its data elsewhere via CODEX_HOME, add that folder to include its account and logs. .codex-* folders in your home folder are detected automatically.",
+            chineseDesc: "通过 CODEX_HOME 将 Codex 数据放在其他目录时，添加该目录即可一并统计其账号和会话记录。用户目录下的 .codex-* 会自动识别"
+        ) {
+            Button(tr("Add…", "添加…")) {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.showsHiddenFiles = true
+                panel.message = tr("Choose the other Codex data folder (where CODEX_HOME points)", "选择另一个 Codex 的数据目录（即 CODEX_HOME 指向的目录）")
+                guard panel.runModal() == .OK, let path = panel.url?.path,
+                      !settings.extraCodexDirs.contains(where: { same($0, path) }) else { return }
+                settings.extraCodexDirs.append(path)
+                settings.ignoredCodexHomes.removeAll { same($0, path) }
+                apply()
+            }
+            .controlSize(.small)
+        }
+        ForEach(appState.codexHomeDirs) { dir in
+            HStack(spacing: 8) {
+                Text(dir.path)
+                    .scaledFont(size: 11, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(dir.path)
+                Spacer(minLength: 8)
+                Text(dir.auto ? tr("Found", "自动找到") : tr("Added", "手动添加"))
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.07)))
+                Button {
+                    if settings.extraCodexDirs.contains(where: { same($0, dir.path) }) {
+                        settings.extraCodexDirs.removeAll { same($0, dir.path) }
+                    } else {
+                        settings.ignoredCodexHomes.append(dir.path)
                     }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
+                    apply()
+                } label: {
+                    Image(systemName: "minus.circle").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("Stop tracking", "不再统计"))
+            }
+        }
+        ForEach(settings.ignoredCodexHomes, id: \.self) { path in
+            HStack(spacing: 8) {
+                Text(path)
+                    .scaledFont(size: 11, design: .monospaced)
+                    .foregroundStyle(.tertiary)
+                    .strikethrough()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Button(tr("Track again", "恢复统计")) {
+                    settings.ignoredCodexHomes.removeAll { same($0, path) }
+                    apply()
+                }
+                .buttonStyle(.link)
+                .scaledFont(size: 11)
             }
         }
     }
-
-    // MARK: Refresh
 
     private func refreshGroup(settings: SettingsStore) -> some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -535,13 +604,15 @@ struct SettingsRootView: View {
                     .pickerStyle(.menu)
                     .fixedSize()
                 }
+                Divider()
+                codexDirsRows(settings: settings)
             }
 
             PrefsGroup(title: "Claude Projects", chinese: "Claude 云端项目") {
                 PrefsRow(
                     label: "Sync cloud usage", chinese: "同步云端用量",
-                    desc: "Uses the local Claude Code account. First sync starts yesterday; checks at least 5 minutes apart.",
-                    chineseDesc: "使用本机 Claude Code 账号。首次回补昨天起的记录，至少间隔 5 分钟同步"
+                    desc: "Syncs with the local Claude Code account. The first sync backfills records from yesterday onward; syncs run at least 5 minutes apart.",
+                    chineseDesc: "使用本机 Claude Code 账号同步。首次同步补齐昨天以来的记录，两次同步至少间隔 5 分钟"
                 ) {
                     Toggle("", isOn: Binding(
                         get: { settings.claudeCloudUsageEnabled },
@@ -553,10 +624,10 @@ struct SettingsRootView: View {
                 }
                 Text(tr("Usage is assigned to each turn's completion date. Disabling sync keeps recovered history.",
                         "按每轮结束日期统计，跨午夜任务计入结束当天；关闭同步会保留已恢复的历史。"))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .scaledFont(size: 11).foregroundStyle(.secondary)
                 if settings.claudeCloudUsageEnabled {
                     Text(appState.usageService.cloudStatus)
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                        .scaledFont(size: 11.5).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
 
@@ -564,7 +635,7 @@ struct SettingsRootView: View {
                 PrefsRow(label: "Last refresh", chinese: "上次刷新") {
                     HStack(spacing: 10) {
                         Text(lastRefreshText)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: 11.5)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                         Button {
@@ -597,6 +668,20 @@ struct SettingsRootView: View {
                 .fixedSize()
             }
             Divider()
+            PrefsRow(label: "Text size", chinese: "字体大小") {
+                Picker("", selection: Binding(
+                    get: { settings.textSize },
+                    set: { newValue in withAnimation(.easeInOut(duration: 0.2)) { settings.textSize = newValue } }
+                )) {
+                    ForEach(TextSize.allCases) { size in
+                        Text(size.label).tag(size)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            Divider()
             PrefsRow(label: "Launch at login", chinese: "开机自动启动") {
                 Toggle("", isOn: Binding(
                     get: { settings.launchAtLogin },
@@ -616,7 +701,7 @@ struct SettingsRootView: View {
                 Divider()
                 PrefsRow(label: "Error", chinese: "错误") {
                     Text(launchAtLoginError)
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(.red)
                         .lineLimit(2)
                         .frame(maxWidth: 260, alignment: .trailing)
@@ -625,7 +710,7 @@ struct SettingsRootView: View {
             Divider()
             PrefsRow(label: "Version", chinese: "版本") {
                 Text(appVersion)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -635,7 +720,7 @@ struct SettingsRootView: View {
     private var footer: some View {
         Text(tr("yybar \(appVersion) · quota and usage for Codex, Claude Code, Grok, Grok Bot, Gemini and Antigravity",
                 "yybar \(appVersion) · Codex、Claude Code、Grok、Grok Bot、Gemini 和 Antigravity 的额度与用量"))
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)
     }
@@ -677,12 +762,12 @@ private struct PrefsGroup<Content: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if !title.isEmpty {
                         Text(tr(title, chinese))
-                            .font(.system(size: 12, weight: .semibold))
+                            .scaledFont(size: 12, weight: .semibold)
                             .kerning(-0.05)
                     }
                     if let desc, let chineseDesc {
                         Text(tr(desc, chineseDesc))
-                            .font(.system(size: 10.5))
+                            .scaledFont(size: 10.5)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -712,10 +797,10 @@ private struct PrefsRow<Trailing: View>: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(tr(label, chinese))
-                    .font(.system(size: 12.5))
+                    .scaledFont(size: 12.5)
                 if let desc, let chineseDesc {
                     Text(tr(desc, chineseDesc))
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -736,6 +821,7 @@ enum ServiceMatrixColumn {
     static let textInset: CGFloat = 14 + radio + 26 + 10
     static let enabled: CGFloat = 56
     static let menuBar: CGFloat = 64
+    /// 悬浮窗列(2026-10-29 ~ 11-07 表头带选样式的小按钮时放宽到 76;样式挪到设置 › 悬浮窗后改回 56)。
     static let floating: CGFloat = 56
     /// 「查看额度」按钮列。
     static let quota: CGFloat = 40
@@ -755,10 +841,70 @@ private struct ServiceMatrixHeader: View {
             Text(tr("Quota", "额度")).frame(width: ServiceMatrixColumn.quota)
             Color.clear.frame(width: ServiceMatrixColumn.action, height: 1)
         }
-        .font(.system(size: 10.5))
+        .scaledFont(size: 10.5)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+    }
+}
+
+/// 悬浮窗样式的三个选项(简略 / 详细 / 隐藏，默认简略)：设置 › 悬浮窗，和菜单栏浮窗顶部「悬浮窗」按钮弹出的浮层共用。
+/// 悬浮窗本身跟着「服务」页悬浮窗一列的勾选走：有勾的就显示，一个都没勾就关掉;选「隐藏」也关掉，勾选留着(那一列变灰不能点)。
+/// 2026-10-29 ~ 11-07 是服务表头「悬浮窗」右边的小按钮。
+struct FloatingStyleOptions: View {
+    /// 放在设置页的卡片里：每项一行，行间分隔线;否则(浮层里)紧凑的竖排。
+    var inCard = false
+
+    static let styles: [FloatingStyle] = [.compact, .detailed, .hidden]
+
+    static func title(_ style: FloatingStyle) -> String {
+        switch style {
+        case .compact: return tr("Compact", "简略")
+        case .detailed: return tr("Detailed", "详细")
+        case .hidden: return tr("Hide", "隐藏")
+        }
+    }
+
+    static func detail(_ style: FloatingStyle) -> String {
+        switch style {
+        case .compact: return tr("Each account shows a progress bar and percentage", "每个账号显示进度条和百分比")
+        case .detailed: return tr("Each account shows 5H / WK and reset times", "每个账号显示5H/WK和重置时间")
+        case .hidden: return tr("Turn the floating window off", "关闭悬浮窗")
+        }
+    }
+
+    var body: some View {
+        @Bindable var settings = SettingsStore.shared
+        VStack(alignment: .leading, spacing: inCard ? 0 : 10) {
+            ForEach(Array(Self.styles.enumerated()), id: \.element) { index, style in
+                if inCard && index > 0 {
+                    Divider().padding(.leading, 14 + 13 + 10)
+                }
+                Button {
+                    settings.floatingStyle = style
+                    FloatingPanelController.shared.sync()
+                } label: {
+                    HStack(alignment: .top, spacing: inCard ? 10 : 8) {
+                        Image(systemName: settings.floatingStyle == style ? "checkmark.circle.fill" : "circle")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(settings.floatingStyle == style ? Color.accentColor : Color.secondary)
+                        VStack(alignment: .leading, spacing: inCard ? 1 : 2) {
+                            Text(Self.title(style))
+                                .scaledFont(size: inCard ? 12.5 : 12)
+                            Text(Self.detail(style))
+                                .scaledFont(size: 10.5)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, inCard ? 10 : 0)
+                    .padding(.horizontal, inCard ? 14 : 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 
@@ -789,8 +935,6 @@ struct ServiceMatrixRow: View {
     @Binding var enabled: Bool
     var menuBar: Binding<Bool>? = nil
     var floating: Binding<Bool>? = nil
-    /// 悬浮窗总开关(「显示」页)关闭时，悬浮窗列不可勾选。
-    var floatingAvailable: Bool = true
     /// 「查看额度」浮层内容(取代原来点菜单栏图标弹出的额度窗口)。
     var quotaCard: AnyView? = nil
     var onDelete: (() -> Void)? = nil
@@ -807,7 +951,7 @@ struct ServiceMatrixRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(title)
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .scaledFont(size: 12.5, weight: .semibold)
                         if let plan, !plan.isEmpty, detected {
                             PlanTag(plan: plan, service: logoName)
                         }
@@ -816,7 +960,7 @@ struct ServiceMatrixRow: View {
                         }
                     }
                     Text(detected ? (email ?? "—") : tr("Not detected", "未识别"))
-                        .font(.system(size: 10.5))
+                        .scaledFont(size: 10.5)
                         .foregroundStyle(detected ? Color.secondary : Color.orange)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -848,12 +992,13 @@ struct ServiceMatrixRow: View {
 
             Group {
                 if let floating {
+                    // 设置 › 悬浮窗选了「隐藏」:悬浮窗关着，这一列变灰不能点(勾选留着，选回简略 / 详细就照旧)
+                    let floatingOff = SettingsStore.shared.floatingStyle == .hidden
                     Toggle("", isOn: floating)
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        .disabled(!enabled || !detected || !floatingAvailable)
-                        .help(floatingAvailable ? "" : tr("Turn on the floating window on the Display page first.",
-                                                          "先在「显示」页开启悬浮窗"))
+                        .disabled(!enabled || !detected || floatingOff)
+                        .help(floatingOff ? tr("The floating window is off. Choose Compact or Detailed in Settings › Floating window to turn it back on.", "悬浮窗已关闭，可在「设置 › 悬浮窗」中选择简略或详细重新开启") : "")
                 } else {
                     Color.clear.frame(height: 1)
                 }
@@ -866,7 +1011,7 @@ struct ServiceMatrixRow: View {
                         showingQuota.toggle()
                     } label: {
                         Image(systemName: "gauge.with.dots.needle.67percent")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(showingQuota ? Color.accentColor : Color.secondary)
                     }
                     .buttonStyle(.plain)
@@ -884,7 +1029,7 @@ struct ServiceMatrixRow: View {
                 if let onDelete, detected {
                     Button(action: onDelete) {
                         Image(systemName: "minus.circle")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -903,8 +1048,8 @@ struct ServiceMatrixRow: View {
     }
 }
 
-/// 订阅等级标签：按档次着色(免费灰、标准档蓝、高档紫、团队 / 企业青)。
-private struct PlanTag: View {
+/// 订阅等级标签：按档次着色(免费灰、标准档蓝、高档紫、团队 / 企业青)。设置、菜单栏浮窗、悬浮窗共用。
+struct PlanTag: View {
     let plan: String
     /// 服务(logoName):codex / claude / grok,同名档次在不同服务里含义不同(ChatGPT Pro 是最高档，Claude Pro 是标准档)。
     let service: String
@@ -917,9 +1062,21 @@ private struct PlanTag: View {
         if ["team", "business", "enterprise", "edu"].contains(where: { p.contains($0) }) { return .team }
         switch service {
         case "codex": return p.contains("pro") ? .premium : .standard
-        case "claude": return p.contains("max") ? .premium : .standard
-        default: return p.contains("heavy") ? .premium : .standard
+        case "claude": return p.contains("max") || p.contains("ultra") ? .premium : .standard
+        default: return p.contains("heavy") || p.contains("ultra") ? .premium : .standard
         }
+    }
+
+    /// 套餐名：首字母大写;ChatGPT 的代号换成名字(prolite → Pro Lite、pro → Pro 20x、promax → Pro Max),
+    /// Claude 的 Max 两档按现在的叫法：max_5x → Max、max_20x → Ultra(2026-10-31 前写 Max 5x / Max 20x)。和网站一致。
+    static func displayName(_ plan: String, service: String) -> String {
+        let named: [String: [String: String]] = [
+            "codex": ["prolite": "Pro Lite", "pro": "Pro 20x", "promax": "Pro Max"],
+            "claude": ["max_5x": "Max", "max_20x": "Ultra"],
+        ]
+        if let name = named[service]?[plan.lowercased()] { return name }
+        let spaced = plan.replacingOccurrences(of: "_", with: " ")
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }
 
     var body: some View {
@@ -930,8 +1087,8 @@ private struct PlanTag: View {
         case .premium: color = .purple
         case .team: color = .teal
         }
-        return Text(plan.prefix(1).uppercased() + plan.dropFirst())
-            .font(.system(size: 10, weight: tier == .free ? .regular : .medium))
+        return Text(Self.displayName(plan, service: service))
+            .scaledFont(size: 10, weight: tier == .free ? .regular : .medium)
             .foregroundStyle(color)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
@@ -953,7 +1110,7 @@ private struct RenewalTag: View {
         let soon = days <= 3
         let basis = renewal.basis.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
         Text(tr("Renews \(english)", "\(month)月\(day)日续费"))
-            .font(.system(size: 10))
+            .scaledFont(size: 10)
             .monospacedDigit()
             .foregroundStyle(soon ? Color.orange : Color.secondary)
             .padding(.horizontal, 5)

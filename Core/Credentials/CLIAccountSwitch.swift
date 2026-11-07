@@ -58,7 +58,9 @@ enum CLIAccountSwitch {
     // MARK: Codex
 
     /// 写入 `~/.codex/auth.json`:换掉 tokens,其余字段(OPENAI_API_KEY 等)沿用原文件。
-    nonisolated static func writeCodexAuth(base: [String: Any]?, tokens: ImportedCodexTokens, accountId: String) throws {
+    /// 写 Codex 的 auth.json;默认本机主目录，切进其他 Codex 目录时传那个目录的。
+    nonisolated static func writeCodexAuth(base: [String: Any]?, tokens: ImportedCodexTokens, accountId: String,
+                                           to url: URL = CodexAuth.authFileURL()) throws {
         var root = base ?? ["OPENAI_API_KEY": NSNull()]
         root["auth_mode"] = "chatgpt"
         var entry: [String: Any] = ["access_token": tokens.accessToken, "account_id": accountId]
@@ -68,7 +70,7 @@ enum CLIAccountSwitch {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         root["last_refresh"] = iso.string(from: Date())
-        try writeSecureJSON(root, to: CodexAuth.authFileURL())
+        try writeSecureJSON(root, to: url)
     }
 
     // MARK: Claude

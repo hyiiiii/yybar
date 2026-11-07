@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { api, fmtInt, fmtTokens, fmtUSD, type Profile } from "../api";
-import { Avatar, Badges, Stat } from "../components";
+import { Avatar, Badges, PlanChips, Stat } from "../components";
 import { UsageStats } from "../UsageCharts";
 import { PriceHelp } from "../Prices";
 import { tr, useLang, useT } from "../i18n";
@@ -43,7 +43,10 @@ export function UserPage() {
             {profile.user.name || profile.user.login}
             <Badges ids={profile.user.badges} />
           </h1>
-          <a href={`https://github.com/${profile.user.login}`} target="_blank" rel="noreferrer">@{profile.user.login}</a>
+          <div className="profile-sub">
+            <a href={`https://github.com/${profile.user.login}`} target="_blank" rel="noreferrer">@{profile.user.login}</a>
+            <PlanChips plans={profile.user.plans} />
+          </div>
         </div>
       </div>
       <ProfileView profile={profile} />

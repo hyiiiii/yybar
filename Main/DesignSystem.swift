@@ -1,6 +1,41 @@
 import SwiftUI
 import AppKit
 
+// MARK: - 字号缩放
+//
+// 主窗口(统计 / 设置 / bar)的文字按「设置 · 通用 · 字体大小」缩放：MainWindowRootView 把倍数放进环境，
+// 文字用 `.scaledFont(size:)` 代替 `.font(.system(size:))`。菜单栏弹出窗口、悬浮窗里倍数是 1,不受影响
+// (LimitBarRow 等组件两边共用)。
+
+private struct TextScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var textScale: CGFloat {
+        get { self[TextScaleKey.self] }
+        set { self[TextScaleKey.self] = newValue }
+    }
+}
+
+private struct ScaledFont: ViewModifier {
+    @Environment(\.textScale) private var scale
+    let size: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size * scale, weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// 按主窗口字号设置缩放的系统字体。
+    func scaledFont(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> some View {
+        modifier(ScaledFont(size: size, weight: weight, design: design))
+    }
+}
+
 // MARK: - Product accent colors
 //
 // Codex / Claude 识别色定义在 Asset Catalog (CodexAccent / ClaudeAccent)。
@@ -279,7 +314,7 @@ struct ServiceTile: View {
                 .frame(width: logoSize, height: logoSize)
         } else {
             Text(fallback)
-                .font(.system(size: logoSize * 0.7, weight: .semibold))
+                .scaledFont(size: logoSize * 0.7, weight: .semibold)
                 .foregroundStyle(foreground)
         }
     }

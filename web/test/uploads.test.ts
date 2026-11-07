@@ -1,4 +1,4 @@
-// 上传「每一天只收第一次」：用 Node 自带的 SQLite 跑真实的建表迁移，配一个最小的 D1 外壳。
+// 上传「每一天的每个服务记一份，量变多了才换」：用 Node 自带的 SQLite 跑真实的建表迁移，配一个最小的 D1 外壳。
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ const entry = (cost: string, model = "test-opus", app = "claude", answers?: numb
 const TEST_PRICE = "INSERT INTO model_prices (model, vendor, input, output, cache_read, cache_write) VALUES ('test-*', 'anthropic', 1, 0, 0, 0)";
 const today = "2026-10-22";
 
-describe("uploads count each day once", () => {
+describe("uploads count each day once (the biggest copy)", () => {
   let d1: D1Database;
   let sqlite: DatabaseSync;
   beforeEach(() => {
@@ -31,8 +31,8 @@ describe("uploads count each day once", () => {
     expect(await saveUpload(d1, 1, first)).toEqual({ accepted: ["2026-10-20", "2026-10-21"], skipped: [] });
     expect(cost(1)).toBe(17); // $1 = 1 筹码，向下取整
 
-    // 同样的天再传（哪怕数字变大）：整天跳过，筹码不变；新的一天照收
-    const again = parseUpload({ days: [{ day: "2026-10-21", entries: [entry("99")] }, { day: "2026-10-22", entries: [entry("3")] }] }, today);
+    // 同样的天再传、量没变多：整天跳过，筹码不变；新的一天照收
+    const again = parseUpload({ days: [{ day: "2026-10-21", entries: [entry("6")] }, { day: "2026-10-22", entries: [entry("3")] }] }, today);
     expect(await saveUpload(d1, 1, again)).toEqual({ accepted: ["2026-10-22"], skipped: ["2026-10-21"] });
     expect(cost(1)).toBe(20);
     expect((await uploadedPairs(d1, 1)).map((p) => p.day)).toEqual(["2026-10-20", "2026-10-21", "2026-10-22"]);
@@ -44,8 +44,8 @@ describe("uploads count each day once", () => {
 
   it("locks each service per day: a newly supported service can still fill in an uploaded day, once", async () => {
     await saveUpload(d1, 1, parseUpload({ days: [{ day: "2026-10-20", entries: [entry("10")] }] }, today));
-    // 同一天：Claude 已经传过 → 跳过；Antigravity、Gemini（只有回答次数）是新的 → 收下
-    const more = parseUpload({ days: [{ day: "2026-10-20", entries: [entry("99"), entry("3", "test-gem", "agy"), entry("0", "gemini-3-pro", "gemini", 12)] }] }, today);
+    // 同一天：Claude 已经传过、量没变 → 跳过；Antigravity、Gemini（只有回答次数）是新的 → 收下
+    const more = parseUpload({ days: [{ day: "2026-10-20", entries: [entry("10"), entry("3", "test-gem", "agy"), entry("0", "gemini-3-pro", "gemini", 12)] }] }, today);
     expect(await saveUpload(d1, 1, more)).toEqual({ accepted: ["2026-10-20"], skipped: [] });
     expect(cost(1)).toBe(13);
     const answers = sqlite.prepare("SELECT SUM(answers) AS a FROM daily_usage WHERE user_id = 1 AND app = 'gemini'").get() as { a: number };
@@ -66,6 +66,32 @@ describe("uploads count each day once", () => {
     expect(history.map((h) => h.day)).toEqual(days.slice(2).reverse().map((d) => d.day));
     // 每天 300 万 token、共 $3；三个服务各有一条上传标记，不会把它再乘三
     expect(history[0]).toMatchObject({ day: "2026-10-12", tokens: 3_000_000, cost_micro: 3_000_000 });
+  });
+
+  it("replaces a day when the app later finds more usage for it, never with less", async () => {
+    await saveUpload(d1, 1, parseUpload({ days: [{ day: "2026-10-20", entries: [entry("5", "test-codex", "codex")] }] }, today));
+    expect(cost(1)).toBe(5);
+    // 新加了一个 Codex 目录：这一天多了另一个账号的会话（另一个模型），整份换掉，不叠加
+    const more = parseUpload({ days: [{ day: "2026-10-20", entries: [entry("5", "test-codex", "codex"), entry("20", "test-codex-pro", "codex")] }] }, today);
+    expect(await saveUpload(d1, 1, more)).toEqual({ accepted: ["2026-10-20"], skipped: [] });
+    expect(cost(1)).toBe(25);
+    // 另一台电脑只有其中一部分：量更少，跳过
+    expect(await saveUpload(d1, 1, parseUpload({ days: [{ day: "2026-10-20", entries: [entry("5", "test-codex", "codex")] }] }, today))).toEqual({ accepted: [], skipped: ["2026-10-20"] });
+    expect(cost(1)).toBe(25);
+    const models = sqlite.prepare("SELECT model FROM daily_usage WHERE user_id = 1 ORDER BY model").all() as { model: string }[];
+    expect(models.map((m) => m.model)).toEqual(["test-codex", "test-codex-pro"]);
+    expect(await uploadedPairs(d1, 1)).toEqual([{ day: "2026-10-20", app: "codex", total: 25_000_000, costMicro: 25_000_000 }]);
+  });
+
+  it("backfills the totals of days uploaded before totals were kept", () => {
+    const old = migrate(new DatabaseSync(":memory:"), "0014_account_devices.sql");
+    old.exec("INSERT INTO users (id, github_id, login) VALUES (1, 100, 'u1')");
+    old.exec(`INSERT INTO daily_usage (user_id, day, app, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_micro, answers)
+      VALUES (1, '2026-10-20', 'codex', 'a', 10, 20, 30, 40, 0, 0), (1, '2026-10-20', 'codex', 'b', 1, 0, 0, 0, 0, 0), (1, '2026-10-20', 'gemini', 'g', 0, 0, 0, 0, 0, 7)`);
+    old.exec("INSERT INTO usage_uploads (user_id, day, app) VALUES (1, '2026-10-20', 'codex'), (1, '2026-10-20', 'gemini'), (1, '2026-10-20', 'grok')");
+    old.exec(readFileSync("migrations/0015_upload_totals.sql", "utf8"));
+    const rows = old.prepare("SELECT app, total FROM usage_uploads ORDER BY app").all() as { app: string; total: number }[];
+    expect(rows).toEqual([{ app: "codex", total: 101 }, { app: "gemini", total: 7 }, { app: "grok", total: 0 }]);
   });
 
   it("does not double count when the same day slips through twice in one batch run", async () => {

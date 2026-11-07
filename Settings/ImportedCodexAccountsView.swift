@@ -17,6 +17,8 @@ struct OtherAccountRows: View {
     var leadingDivider: Bool = true
 
     @State private var deleteTarget: ImportedCodexAccount?
+    /// 有其他 Codex 目录时点了切换：先选把哪个 Codex(主目录 / 哪个目录)切换到这个账号
+    @State private var switchTarget: ImportedCodexAccount?
     @State private var extraDeleteTarget: ExtraAccount?
     @State private var draggingId: String?
     @State private var dropTargetId: String?
@@ -35,7 +37,7 @@ struct OtherAccountRows: View {
                         }
                         .draggable(account.id) {
                             Text(rowTitle(account))
-                                .font(.system(size: 12.5))
+                                .scaledFont(size: 12.5)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(.background.secondary)
@@ -61,12 +63,12 @@ struct OtherAccountRows: View {
             }
         }
         .confirmationDialog(
-            tr("Remove account?", "删除此账号？"),
+            deleteTarget?.homePath != nil ? tr("Stop tracking this Codex folder?", "不再统计这个 Codex 目录？") : tr("Remove account?", "删除此账号？"),
             isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
             titleVisibility: .visible
         ) {
             if let target = deleteTarget {
-                Button(tr("Remove", "删除"), role: .destructive) {
+                Button(target.homePath != nil ? tr("Stop tracking", "不再统计") : tr("Remove", "删除"), role: .destructive) {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.88)) {
                         appState.removeImportedCodexAccount(id: target.id)
                     }
@@ -76,8 +78,32 @@ struct OtherAccountRows: View {
             }
         } message: {
             if let target = deleteTarget {
-                Text(tr("\u{201C}\(rowTitle(target))\u{201D} will be removed from yybar. The account itself is not affected.",
-                        "\u{201C}\(rowTitle(target))\u{201D} 将从 yybar 中移除，账号本身不受影响。"))
+                if let home = target.homePath {
+                    Text(tr("yybar will stop showing the account in \(home) and counting its logs. Nothing in the folder is deleted; add it back under Settings › Refresh.",
+                            "yybar 不再显示 \(home) 里登录的账号、也不再统计它的记录。目录里的文件不会删除，可以在 设置 · 刷新 里加回来。"))
+                } else {
+                    Text(tr("\u{201C}\(rowTitle(target))\u{201D} will be removed from yybar. The account itself is not affected.",
+                            "\u{201C}\(rowTitle(target))\u{201D} 将从 yybar 中移除，账号本身不受影响。"))
+                }
+            }
+        }
+        .confirmationDialog(
+            tr("Switch which Codex to this account?", "把哪个 Codex 切换到这个账号？"),
+            isPresented: Binding(get: { switchTarget != nil }, set: { if !$0 { switchTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = switchTarget {
+                Button(tr("Main folder (.codex)", "主目录(.codex)")) {
+                    switchTarget = nil
+                    Task { await appState.switchCLI(toCodex: target) }
+                }
+                ForEach(linkedCodexHomes, id: \.id) { linked in
+                    Button("\(Self.dirName(linked.homePath ?? ""))" + (linked.email.map { "(\($0))" } ?? "")) {
+                        switchTarget = nil
+                        Task { await appState.switchCLI(toCodex: target, home: linked.homePath) }
+                    }
+                }
+                Button(tr("Cancel", "取消"), role: .cancel) { switchTarget = nil }
             }
         }
         .confirmationDialog(
@@ -107,12 +133,21 @@ struct OtherAccountRows: View {
     /// 和本机账号同一布局(ServiceMatrixRow):单选(点击切换本机 CLI)+ 服务名 + 订阅标签 + 邮箱 + 全部开关。
     private func codexRow(_ account: ImportedCodexAccount) -> some View {
         ServiceMatrixRow(
-            title: account.alias.isEmpty ? "Codex" : "Codex · \(account.alias)",
+            // 其他 Codex 目录里的账号带上目录名，和主目录的本机账号区分开
+            title: !account.alias.isEmpty ? "Codex · \(account.alias)"
+                : account.homePath.map { "Codex · \(Self.dirName($0))" } ?? "Codex",
             logoName: "codex", fallback: "C", tint: .codexAccent,
             email: account.email ?? account.id,
             plan: account.planType,
             renewal: .codex(activeUntil: account.subscriptionActiveUntil),
-            switchState: switchState(id: account.id) { await appState.switchCLI(toCodex: account) },
+            // 其他 Codex 目录里的账号本来就在用(绿点),不能切换过去;别的账号有其他目录时先选切进哪个目录
+            switchState: account.homePath != nil ? .inUse : switchState(id: account.id) {
+                if linkedCodexHomes.isEmpty {
+                    await appState.switchCLI(toCodex: account)
+                } else {
+                    switchTarget = account
+                }
+            },
             enabled: Binding(
                 get: { account.visibleInPopover },
                 set: { newValue in
@@ -131,7 +166,6 @@ struct OtherAccountRows: View {
                     FloatingPanelController.shared.sync()
                 }
             ),
-            floatingAvailable: SettingsStore.shared.floatingEnabled,
             quotaCard: AnyView(OtherAccountQuotaCard(account: .codex(account)).environment(appState)),
             onDelete: { deleteTarget = account }
         )
@@ -147,7 +181,8 @@ struct OtherAccountRows: View {
             fallback: isClaude ? "K" : "G",
             tint: isClaude ? .claudeAccent : (isGoogle ? .googleAccent : .grokAccent),
             email: account.email ?? account.displayName,
-            plan: account.plan,
+            // Claude 的 Max 按档位写成 max_5x / max_20x,显示成 Max / Ultra
+            plan: isClaude ? YYBarWebAccount.AccountPlan.claudePlan(account.plan, account.rateLimitTier) : account.plan,
             renewal: isClaude ? .monthly(from: account.subscriptionStartedAt) : nil,
             // Google 账号不能切换本机 agy 的登录(agy 的登录在钥匙串里),没有单选。
             switchState: isGoogle ? .none : switchState(id: account.id) { await appState.switchCLI(toExtra: account) },
@@ -169,13 +204,21 @@ struct OtherAccountRows: View {
                     FloatingPanelController.shared.sync()
                 }
             ),
-            floatingAvailable: SettingsStore.shared.floatingEnabled,
             quotaCard: AnyView(OtherAccountQuotaCard(account: .extra(account)).environment(appState)),
             onDelete: { extraDeleteTarget = account }
         )
     }
 
     /// 其他账号的单选：点击后切换本机 CLI(切换中显示转圈，期间其他行不可点)。
+    /// 其他 Codex 目录里登录着的账号(切换时可选切进这些目录)。
+    private var linkedCodexHomes: [ImportedCodexAccount] {
+        appState.otherCodexAccounts.filter { $0.homePath != nil }
+    }
+
+    static func dirName(_ path: String) -> String {
+        URL(fileURLWithPath: path).lastPathComponent
+    }
+
     private func switchState(id: String, perform: @escaping () async -> Void) -> AccountSwitchIndicator {
         .switchable(
             busy: appState.switchingAccountId == id,
@@ -217,10 +260,10 @@ struct AddAccountButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.accentColor)
                 Text(tr("Add account…", "添加账号…"))
-                    .font(.system(size: 12.5))
+                    .scaledFont(size: 12.5)
                     .foregroundStyle(.primary)
                 Spacer()
             }
@@ -266,11 +309,11 @@ struct AddImportedCodexAccountSheet: View {
             // 标题栏
             HStack {
                 Text(tr("Add Codex Account", "添加 Codex 账号"))
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .scaledFont(size: 16)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -296,7 +339,7 @@ struct AddImportedCodexAccountSheet: View {
                     // 错误
                     if let err = parseError ?? saveError {
                         Text(err)
-                            .font(.system(size: 11.5))
+                            .scaledFont(size: 11.5)
                             .foregroundStyle(.red)
                             .padding(.horizontal, 2)
                     }
@@ -331,17 +374,17 @@ struct AddImportedCodexAccountSheet: View {
     private var jsonSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(tr("Paste auth.json content", "粘贴 auth.json 内容"))
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: 12, weight: .semibold)
             Text(tr(
                 "Supports a single auth.json or a JSON array of multiple accounts (e.g. cc-switch export). The display name is taken from the email prefix automatically.",
                 "支持单个 auth.json,也支持多账号的 JSON 数组(如 cc-switch 导出)。显示名自动取邮箱 @ 前的部分。"
             ))
-            .font(.system(size: 11))
+            .scaledFont(size: 11)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
             TextEditor(text: $jsonText)
-                .font(.system(size: 11, design: .monospaced))
+                .scaledFont(size: 11, design: .monospaced)
                 .frame(height: 120)
                 .padding(6)
                 .background(.background.secondary)
@@ -363,17 +406,17 @@ struct AddImportedCodexAccountSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if let email = p.email {
                         Text(email)
-                            .font(.system(size: 12, weight: .semibold))
+                            .scaledFont(size: 12, weight: .semibold)
                     }
                     if let plan = p.planType {
                         Text(plan.capitalized)
-                            .font(.system(size: 10.5))
+                            .scaledFont(size: 10.5)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -382,7 +425,7 @@ struct AddImportedCodexAccountSheet: View {
                     }
                 }
                 Text("ID: \(p.chatgptAccountId)")
-                    .font(.system(size: 10, design: .monospaced))
+                    .scaledFont(size: 10, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -401,9 +444,9 @@ struct AddImportedCodexAccountSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                 Text(tr("Found \(batch.count) accounts", "找到 \(batch.count) 个账号"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(.primary)
                 Spacer()
             }
@@ -413,12 +456,12 @@ struct AddImportedCodexAccountSheet: View {
                     HStack(spacing: 8) {
                         if let email = p.email {
                             Text(email)
-                                .font(.system(size: 11.5))
+                                .scaledFont(size: 11.5)
                                 .lineLimit(1)
                         }
                         if let plan = p.planType {
                             Text(plan.capitalized)
-                                .font(.system(size: 10))
+                                .scaledFont(size: 10)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
@@ -427,7 +470,7 @@ struct AddImportedCodexAccountSheet: View {
                         }
                         Spacer()
                         Text(p.chatgptAccountId)
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .scaledFont(size: 9.5, design: .monospaced)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -452,7 +495,7 @@ struct AddImportedCodexAccountSheet: View {
         // 显示开关(单账号 / 批量通用,默认开启)
         Toggle(isOn: $visibleInPopover) {
             Text(tr("Show in popover", "在弹出面板中显示"))
-                .font(.system(size: 12.5))
+                .scaledFont(size: 12.5)
         }
         .toggleStyle(.switch)
         .tint(.green)

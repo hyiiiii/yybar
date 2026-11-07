@@ -437,6 +437,9 @@ private final class GoogleOneRedirectGuard: NSObject, URLSessionTaskDelegate, @u
 struct GeminiChromeSession: Sendable {
     var email: String
     var cookieHeader: String
+    /// 这份 Chrome 登录的指纹(__Secure-1PSID + 异常流量豁免 Cookie 的 SHA-256 前 16 位，不含原文)。
+    /// Google 拒绝过这份登录后，定时刷新就不再拿它去请求，等 Chrome 重新登录 / 通过验证(指纹变了)再继续。
+    var loginID: String
 }
 
 struct GeminiProfileError: Error {
@@ -563,9 +566,13 @@ enum GeminiChromeAuth {
             guard !value.isEmpty, !value.contains(";"), !value.contains("\r"), !value.contains("\n") else { continue }
             cookies[name] = value
         }
-        guard cookies["__Secure-1PSID"] != nil else { throw GeminiChromeAuthError.notSignedIn }
+        guard let psid = cookies["__Secure-1PSID"] else { throw GeminiChromeAuthError.notSignedIn }
+        let fingerprint = Array((psid + "|" + (cookies["GOOGLE_ABUSE_EXEMPTION"] ?? "")).utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        _ = CC_SHA256(fingerprint, CC_LONG(fingerprint.count), &hash)
         return GeminiChromeSession(email: profile.email,
-                                   cookieHeader: cookies.keys.sorted().map { "\($0)=\(cookies[$0]!)" }.joined(separator: "; "))
+                                   cookieHeader: cookies.keys.sorted().map { "\($0)=\(cookies[$0]!)" }.joined(separator: "; "),
+                                   loginID: hash.prefix(8).map { String(format: "%02x", $0) }.joined())
     }
 
     nonisolated static func decryptCookie(_ data: Data, key: Data, host: String, version: Int) throws -> String {

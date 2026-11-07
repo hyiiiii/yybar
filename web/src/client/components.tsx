@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { fmtInt } from "./api";
+import { APP_LABEL, fmtInt, type App, type PlanSummary } from "./api";
 import { SUIT_GLYPH, SUIT_LABEL, type Suit } from "./suits";
 import { DEFAULT_BACK, DEFAULT_FACE } from "../shared/cosmetics";
 import { EmoteSprite } from "./Dealer";
@@ -8,6 +8,7 @@ import { findAchievement } from "../shared/achievements";
 import { loginHref, notifyMeChanged } from "./useMe";
 import { DiceIcon, RobotIcon } from "./icons";
 import { BOT_FACES } from "./bots";
+import { ServiceLogo } from "./UsageCharts";
 
 const DEMO = !!import.meta.env.VITE_DEMO;
 
@@ -199,13 +200,15 @@ export function FeltTable({
                 )
               )}
               {s.peeked && (
-                <div className="seat-cards seat-cards-peeked" title="偷偷看">
+                <div className="seat-cards seat-cards-peeked seat-cards-up" title="偷偷看">
                   {s.peeked.map((c, j) => <PlayingCard key={j} card={c} face={s.face} extra="card-peeked" />)}
                 </div>
               )}
               {/* 弃了牌：自己的牌留在手里变暗；别人的只有一手结束后亮了才摆出来 */}
               {!s.peeked && s.cards && (!s.folded || s.you || s.cards.some((c) => c !== "back")) && (
-                <div className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}${s.folded ? " seat-cards-folded" : ""}`}>
+                <div
+                  className={`seat-cards${s.onShow ? " seat-cards-showable" : ""}${s.folded ? " seat-cards-folded" : ""}${s.cards.some((c) => c !== "back") ? " seat-cards-up" : ""}`}
+                >
                   {/* key 带上牌面和亮没亮：背面翻成正面（摊牌）、弃了的牌亮出来时重新挂载，播翻牌动画 */}
                   {s.cards.map((c, j) => {
                     const up = ((s.upMask ?? 0) >> j) & 1;
@@ -315,6 +318,70 @@ export function Badges({ ids }: { ids?: string[] | null }) {
   return <>{(ids ?? []).map((id) => <Badge key={id} id={id} />)}</>;
 }
 
+/** 订阅档次，和 App 设置里的套餐标签一样着色：免费灰、标准档蓝、高档紫、团队 / 企业青。
+ *  同名档次在不同服务里不一样：ChatGPT Pro 是最高档，Claude Pro 是标准档、Max 才是高档。 */
+export function planTier(app: App, plan: string): "free" | "standard" | "premium" | "team" {
+  const p = plan.toLowerCase();
+  if (p.includes("free") || p === "guest") return "free";
+  if (["team", "business", "enterprise", "edu"].some((k) => p.includes(k))) return "team";
+  if (app === "codex") return p.includes("pro") ? "premium" : "standard";
+  if (app === "claude") return p.includes("max") || p.includes("ultra") ? "premium" : "standard";
+  return p.includes("heavy") || p.includes("ultra") ? "premium" : "standard";
+}
+
+/** 套餐代号换成名字。ChatGPT（Codex 登录里的 chatgpt_plan_type）：Pro 分 Lite / 20x / Max 三档；
+ *  Claude 的 Max 两档按现在的叫法：max_5x → Max、max_20x → Ultra（2026-10-31 前写 Max 5x / Max 20x）。和 App 一致。 */
+const PLAN_NAMES: Partial<Record<App, Record<string, string>>> = {
+  codex: { prolite: "Pro Lite", pro: "Pro 20x", promax: "Pro Max", go: "Go", self_serve_business_prolite: "Business Pro Lite" },
+  claude: { max_5x: "Max", max_20x: "Ultra" },
+};
+
+/** 套餐名：首字母大写；代号换成名字（见 PLAN_NAMES）；Google 的去掉前面的「Google」（前面已经有 Gemini 的标） */
+export function planLabel(app: App, plan: string): string {
+  const named = PLAN_NAMES[app]?.[plan.toLowerCase()];
+  if (named) return named;
+  let p = plan.replace(/[_]+/g, " ").trim();
+  if (app === "gemini" || app === "agy") p = p.replace(/^google\s+/i, "");
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
+/** 同一服务里的先后：高档在前（同是高档再看档位：Pro Max > Pro 20x > Pro Lite、Ultra > Max），免费在最后 */
+function planRank(app: App, plan: string): number {
+  const p = plan.toLowerCase();
+  const base = { premium: 30, team: 20, standard: 10, free: 0 }[planTier(app, plan)];
+  const sub = /max$|20x|heavy|ultra/.test(p) ? 2 : /lite|5x/.test(p) ? 0 : 1;
+  return base + sub;
+}
+
+const APP_ORDER: App[] = ["codex", "claude", "grok", "grokBot", "gemini", "agy"];
+
+/** 个人主页 @ 后面的订阅：服务的标 + 套餐，同一套餐几个账号写「× n」。按服务排，同一服务里高档在前，免费的灰色排最后。 */
+export function PlanChips({ plans }: { plans?: PlanSummary[] | null }) {
+  const t = useT();
+  const list = [...(plans ?? [])].sort(
+    (a, b) => APP_ORDER.indexOf(a.app) - APP_ORDER.indexOf(b.app) || planRank(b.app, b.plan) - planRank(a.app, a.plan) || b.count - a.count,
+  );
+  if (list.length === 0) return null;
+  return (
+    <span className="plan-chips">
+      {list.map((p) => {
+        const label = planLabel(p.app, p.plan);
+        return (
+          <span
+            key={`${p.app}|${p.plan}`}
+            className={`plan-chip tier-${planTier(p.app, p.plan)}`}
+            title={t(`${APP_LABEL[p.app]} ${label} · ${p.count} 个账号`, `${APP_LABEL[p.app]} ${label} · ${p.count} account${p.count > 1 ? "s" : ""}`)}
+          >
+            <ServiceLogo app={p.app} size={12} />
+            {label}
+            {p.count > 1 && <span className="plan-count">×{p.count}</span>}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /** 德州统计的一行小字：手数、胜率、VPIP、PFR、3B */
 export function StatLine({ stats }: { stats: { hands: number; winRate: number | null; vpip: number | null; pfr: number | null; threeBet: number | null } }) {
   const pct = (x: number | null) => (x === null ? "—" : `${Math.round(x * 100)}%`);
@@ -337,13 +404,18 @@ export function StatLine({ stats }: { stats: { hands: number; winRate: number | 
   );
 }
 
+/** 订阅成就的徽章前面带服务的标（白色）：Claude 的、ChatGPT 的（和 Codex 同一个 OpenAI 标） */
+const BADGE_LOGO: Partial<Record<string, App>> = { claude: "claude", gpt: "codex" };
+
 /** 成就徽章：小小一枚，戴在名字后面；悬停显示是哪个成就 */
 export function Badge({ id, big }: { id?: string | null; big?: boolean }) {
   const lang = useLang();
   const a = id ? findAchievement(id) : undefined;
   if (!a) return null;
+  const logo = BADGE_LOGO[a.badge.tier];
   return (
-    <span className={`badge badge-${a.badge.tier}${big ? " badge-big" : ""}`} title={pick(a.name, lang)} aria-label={pick(a.name, lang)}>
+    <span className={`badge badge-${a.badge.tier}${logo ? " badge-logo" : ""}${big ? " badge-big" : ""}`} title={pick(a.name, lang)} aria-label={pick(a.name, lang)}>
+      {logo && <ServiceLogo app={logo} size={big ? 12 : 9} />}
       {a.badge.label}
     </span>
   );

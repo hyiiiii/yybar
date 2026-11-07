@@ -23,7 +23,15 @@ enum CodexJSONLScanner {
             home.appendingPathComponent(".codex/archived_sessions", isDirectory: true)
         ]
         var files: [URL] = []
-        for r in roots { files.append(contentsOf: JSONLDirectoryEnumerator.files(at: r, includeZstd: true)) }
+        // 同一个会话文件(文件名里有时间和会话 ID)在几个 Codex 目录里都有时(备份、复制过去的)只算排在前面的那个
+        var seenNames = Set<String>()
+        for r in roots {
+            for file in JSONLDirectoryEnumerator.files(at: r, includeZstd: true) {
+                var name = file.lastPathComponent.lowercased()
+                if name.hasSuffix(".zst") { name.removeLast(4) }
+                if seenNames.insert(name).inserted { files.append(file) }
+            }
+        }
 
         var newState: [String: ScanFileState] = previous
         var entries: [UsageEntry] = []

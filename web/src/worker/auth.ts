@@ -74,19 +74,21 @@ export async function requireApiToken(c: Context<AppEnv>, next: Next) {
   const m = /^Bearer\s+(\S+)$/i.exec(header);
   if (!m) return c.json({ error: "缺少上传令牌" }, 401);
   const hash = await sha256(m[1]);
-  const user = await c.env.DB.prepare(
-    `SELECT u.* FROM api_tokens t JOIN users u ON u.id = t.user_id
+  const row = await c.env.DB.prepare(
+    `SELECT u.*, t.id AS api_token_id FROM api_tokens t JOIN users u ON u.id = t.user_id
      WHERE t.token_hash = ? AND t.revoked_at IS NULL`,
   )
     .bind(hash)
-    .first<UserRow>();
-  if (!user) return c.json({ error: "上传令牌无效或已撤销" }, 401);
+    .first<UserRow & { api_token_id: number }>();
+  if (!row) return c.json({ error: "上传令牌无效或已撤销" }, 401);
+  const { api_token_id: tokenId, ...user } = row;
   c.executionCtx.waitUntil(
     c.env.DB.prepare("UPDATE api_tokens SET last_used_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE token_hash = ?")
       .bind(hash)
       .run(),
   );
   c.set("user", user);
+  c.set("tokenId", tokenId);
   await next();
 }
 

@@ -1,9 +1,12 @@
 [package]
 name = "yybar"
-version = "0.1.0"
-description = "yybar for Windows: Codex / Claude Code / Grok 额度与用量"
+version = "0.2.0"
+description = "yybar for Windows：Codex / Claude Code / Grok / Antigravity 额度与用量"
 edition = "2021"
 publish = false
+
+[workspace]
+members = [".", "core"]
 
 [lib]
 name = "yybar_lib"
@@ -13,21 +16,27 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+yybar-core = { path = "core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
+# 设置里选文件夹（其他 Codex 目录）
+rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"] }
-chrono = { version = "0.4", features = ["serde"] }
-dirs = "5"
-memchr = "2"
-base64 = "0.22"
+chrono = "0.4"
 log = "0.4"
+resvg = { version = "0.45", default-features = false }
+ab_glyph = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = "0.6"
+# 悬浮窗按着时看左键是否还按着（在窗口外松手前端收不到时，后台自己收尾）；悬浮窗一次改完位置和尺寸；
+# 拖动 / 滑动按屏幕刷新走（DwmFlush）、每帧直接查光标（GetCursorPos）
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 codegen-units = 1

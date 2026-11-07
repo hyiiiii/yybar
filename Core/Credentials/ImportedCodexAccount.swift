@@ -25,6 +25,10 @@ struct ImportedCodexAccount: Sendable, Equatable, Codable, Identifiable {
     var showInFloating: Bool? = nil
     /// 当前付费周期结束日(id_token 的 `chatgpt_subscription_active_until`),导入和每次刷新时更新。
     var subscriptionActiveUntil: Date? = nil
+    /// 本机另一个 Codex 目录里登录着的账号：那个目录(第二个 Codex 用 CODEX_HOME 放在别处、和主目录同时在用)。
+    /// 有它时 token 直接读写这个目录的 auth.json,不存副本、也不删这个目录；算本机账号(一直在用),不能切换过去，
+    /// 但可以把别的账号切换进这个目录。见 AppState.syncLinkedCodexHomes。
+    var homePath: String? = nil
 
     /// 从复合 id 还原出用于 `ChatGPT-Account-Id` HTTP header 的纯 account_id。
     var chatgptAccountId: String {

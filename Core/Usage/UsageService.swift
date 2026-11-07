@@ -117,8 +117,12 @@ final class UsageService {
         async let claudeTask = Task.detached(priority: .utility) {
             ClaudeJSONLScanner.scan(previous: prev.claude, seenMessageIds: prevSeen)
         }.value
+        // 主目录排在前面：同一个会话文件在几个目录里都有时只算主目录的(CodexJSONLScanner)
+        let codexRoots = ([CodexAuth.authFileURL().deletingLastPathComponent()]
+            + CodexAuth.extraHomes(manual: SettingsStore.shared.extraCodexDirs, ignored: SettingsStore.shared.ignoredCodexHomes).map(\.url))
+            .flatMap { [$0.appendingPathComponent("sessions", isDirectory: true), $0.appendingPathComponent("archived_sessions", isDirectory: true)] }
         async let codexTask = Task.detached(priority: .utility) {
-            CodexJSONLScanner.scan(previous: prev.codex)
+            CodexJSONLScanner.scan(previous: prev.codex, roots: codexRoots)
         }.value
 
         async let grokTask = Task.detached(priority: .utility) {

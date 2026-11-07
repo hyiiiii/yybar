@@ -9,6 +9,7 @@ enum MainTab: Hashable, CaseIterable {
     case models
     // 设置
     case services
+    case floating
     case display
     case refresh
     case general
@@ -22,7 +23,7 @@ enum MainTab: Hashable, CaseIterable {
     var isStats: Bool {
         switch self {
         case .overview, .activity, .quota, .models: return true
-        case .services, .display, .refresh, .general, .bar: return false
+        case .services, .floating, .display, .refresh, .general, .bar: return false
         }
     }
 
@@ -33,6 +34,7 @@ enum MainTab: Hashable, CaseIterable {
         case .quota: return tr("Quota changes", "额度变化")
         case .models: return tr("Models", "模型明细")
         case .services: return tr("Services", "服务")
+        case .floating: return tr("Floating window", "悬浮窗")
         case .display: return tr("Display", "显示")
         case .refresh: return tr("Refresh", "刷新")
         case .general: return tr("General", "通用")
@@ -47,6 +49,7 @@ enum MainTab: Hashable, CaseIterable {
         case .quota: return "chart.line.uptrend.xyaxis"
         case .models: return "cpu"
         case .services: return "powerplug"
+        case .floating: return "pip"
         case .display: return "menubar.rectangle"
         case .refresh: return "arrow.clockwise"
         case .general: return "gearshape"
@@ -56,7 +59,7 @@ enum MainTab: Hashable, CaseIterable {
     }
 
     static let statsPages: [MainTab] = [.overview, .quota, .models, .activity]
-    static let settingsPages: [MainTab] = [.services, .display, .refresh, .general]
+    static let settingsPages: [MainTab] = [.services, .floating, .display, .refresh, .general]
 }
 
 struct MainWindowRootView: View {
@@ -70,7 +73,8 @@ struct MainWindowRootView: View {
             // 侧边栏可由标题栏左侧按钮 / ⌃⌘S 隐藏。
             if appState.sidebarVisible {
                 sidebar
-                    .frame(width: 150)
+                    // 侧边栏宽度跟着字号一起放大，名字不被截断
+                    .frame(width: 150 * SettingsStore.shared.textSize.scale)
                     .transition(.move(edge: .leading))
 
                 Divider()
@@ -86,8 +90,14 @@ struct MainWindowRootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 内容比侧边栏右边剩下的宽度还宽时(窗口拉到最窄、字号调大),只裁掉内容右边。
+            // 不加这层，整排被内容撑得比窗口宽、居中摆放，侧边栏左边被裁掉，看起来贴到了窗口左边。
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
-        .frame(minWidth: 760, minHeight: 560)
+        .environment(\.textScale, SettingsStore.shared.textSize.scale)
+        // 800:标准字号下模型明细表格(5 列固定宽 + 模型名)刚好放得下
+        .frame(minWidth: 800 * SettingsStore.shared.textSize.scale, minHeight: 560)
     }
 
     private var sidebar: some View {
@@ -115,7 +125,7 @@ struct MainWindowRootView: View {
                     HStack(spacing: 7) {
                         WebAvatar(profile: profile, size: 20)
                         Text("@\(profile.login)")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .scaledFont(size: 11.5, weight: .medium)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -133,7 +143,7 @@ struct MainWindowRootView: View {
                 Task { await appState.refreshNow() }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(refreshRotation))
             }
@@ -147,7 +157,7 @@ struct MainWindowRootView: View {
         VStack(alignment: .leading, spacing: 1) {
             if let title {
                 Text(title)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .scaledFont(size: 10.5, weight: .semibold)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 4)
@@ -169,13 +179,13 @@ struct MainWindowRootView: View {
                         PlayingCardsIcon(size: 12)
                     } else {
                         Image(systemName: page.icon)
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                     }
                 }
                 .frame(width: 16)
                 .foregroundStyle(active ? Color.white : Color.secondary)
                 Text(page.title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .scaledFont(size: 12.5, weight: .medium)
                     .foregroundStyle(active ? Color.white : Color.primary)
                 Spacer()
             }
@@ -206,7 +216,7 @@ struct SidebarToggleButton: View {
             withAnimation(.easeInOut(duration: 0.2)) { appState.sidebarVisible.toggle() }
         } label: {
             Image(systemName: "sidebar.left")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 22)
                 .contentShape(Rectangle())
@@ -424,10 +434,10 @@ struct SectionHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .scaledFont(size: 18, weight: .semibold)
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(.secondary)
             }
         }
