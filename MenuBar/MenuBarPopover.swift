@@ -3,7 +3,8 @@ import SwiftUI
 // MARK: - MenuBarPopoverView
 //
 // 左键点菜单栏图标弹出的额度浮窗(320pt)。只放一眼要看的东西：
-// 顶部 yybar + 统计 / 设置 / bar 三个按钮(bar 用两张扑克牌的图标，打开主窗口的 bar 页，从那里进 yybar 网站的德州大厅，见 YYBarWeb);
+// 顶部 yybar + 统计 / 设置 / 悬浮窗 / bar 四个按钮(悬浮窗弹出样式浮层：简略 / 详细 / 隐藏，和设置 › 悬浮窗一样;
+// bar 用两张扑克牌的图标，直接在浏览器打开 yybar 网站，见 YYBarWeb);
 // 中间是菜单栏上显示的每个账号(顺序同菜单栏):图标、名称、套餐、官方状态点，下面 5H / WK 的剩余条和重置倒计时
 // (标签和菜单栏一样用 5H / WK;Antigravity 按池写成「Gemini 5H」),刷新失败时名称旁一个小警告(悬停看原因);
 // 底部左边刷新按钮 +「x 前更新」,右边今日花费 / Token。
@@ -20,6 +21,7 @@ struct MenuBarPopoverView: View {
     let openBar: () -> Void
 
     @State private var refreshRotation: Double = 0
+    @State private var showingFloatingStyle = false
 
     private var entries: [QuotaEntry] { QuotaEntry.list(appState, inMenuBar: true) }
 
@@ -69,10 +71,23 @@ struct MenuBarPopoverView: View {
                 headerButton(tr("Settings", "设置"), action: openSettings) {
                     Image(systemName: "gearshape")
                 }
+                headerButton(tr("HUD", "悬浮窗"), action: { showingFloatingStyle.toggle() }) {
+                    Image(systemName: "pip")
+                }
+                .help(tr("Floating window style", "悬浮窗样式"))
+                .popover(isPresented: $showingFloatingStyle, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(tr("Floating window style", "悬浮窗样式"))
+                            .font(.system(size: 12, weight: .semibold))
+                        FloatingStyleOptions()
+                    }
+                    .padding(14)
+                    .frame(width: 270, alignment: .leading)
+                }
                 headerButton("bar", action: openBar) {
                     PlayingCardsIcon(size: 11.5)
                 }
-                .help(tr("Open the bar: yybar's poker tavern", "打开 bar:yybar 的德州小酒馆"))
+                .help(tr("Open the bar (yybar's poker tavern) in the browser", "在浏览器打开 bar:yybar 的德州小酒馆"))
             }
         }
     }
@@ -146,18 +161,21 @@ struct MenuBarPopoverView: View {
         }
     }
 
-    /// 顶部三个按钮一样宽：图标都放在同样大小的框里，文字居中，看起来间距均匀。
+    /// 顶部四个按钮：图标都放在同样大小的框里。中文一样宽、文字居中，看起来间距均匀;
+    /// 英文按文字宽度(Settings 比别的长，四个都按它的宽度放不下 320pt)。
     private func headerButton(_ title: String, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 icon()
                     .font(.system(size: 11.5))
                     .frame(width: 15, height: 13)
                 Text(title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: L10n.current == .zh ? 52 : 66)
+            .frame(width: L10n.current == .zh ? 56 : nil)
+            .padding(.horizontal, L10n.current == .zh ? 0 : 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

@@ -11,6 +11,34 @@ use std::time::{Duration, Instant};
 
 const CACHE_FOR: Duration = Duration::from_secs(600);
 
+/// 系统代理设置的「指纹」：Internet 选项里的手动代理开关和地址、代理脚本地址，加上代理环境变量。
+/// reqwest 只在建 HTTP 客户端时读一次系统代理（PAC 地址也是那时读的）：yybar 开着以后才打开代理工具（Clash 等），
+/// 以前一直直连、连不上 workers.dev，要重开 yybar 才好。指纹变了 quota::client 就重建客户端。
+pub fn settings_fingerprint() -> String {
+    let env: Vec<String> = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"]
+        .iter()
+        .map(|k| std::env::var(k).unwrap_or_default())
+        .collect();
+    format!("{}|{}", system_proxy_settings(), env.join("|"))
+}
+
+#[cfg(windows)]
+fn system_proxy_settings() -> String {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings") else {
+        return String::new();
+    };
+    let enabled: u32 = key.get_value("ProxyEnable").unwrap_or(0);
+    let text = |name: &str| key.get_value::<String, _>(name).unwrap_or_default();
+    format!("{enabled}|{}|{}|{}", text("ProxyServer"), text("ProxyOverride"), text("AutoConfigURL"))
+}
+
+#[cfg(not(windows))]
+fn system_proxy_settings() -> String {
+    String::new()
+}
+
 /// 系统设置了代理脚本（PAC）时，按脚本给每个请求选代理的 reqwest 代理；没设置时为 None。
 pub fn pac_proxy() -> Option<reqwest::Proxy> {
     let script = pac_script_url()?;

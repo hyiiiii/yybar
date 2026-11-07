@@ -1,11 +1,12 @@
 // 左键点托盘图标弹出的额度浮窗（对应 Mac `MenuBarPopoverView`，320 宽）。
-// 顶部 yybar + 统计 / 设置；中间是托盘上显示的每个账号（顺序同托盘，其他账号排在同服务本机账号后面）：图标、名称、套餐、官方状态点，
+// 顶部 yybar + 统计 / 设置 / 悬浮窗 / bar（悬浮窗在顶部下面展开样式面板：简略 / 详细 / 隐藏，和设置 · 悬浮窗一样；
+// bar 直接在浏览器打开 yybar 网站，不先转到主窗口的 bar 页）；中间是托盘上显示的每个账号（顺序同托盘，其他账号排在同服务本机账号后面）：图标、名称、套餐、官方状态点，
 // 下面 5H / WK 的剩余条和重置倒计时（Antigravity 按池写成「Gemini 5H」），刷新失败时名称旁一个小警告（悬停看原因）；
 // 底部左边刷新按钮 +「x 前更新」，右边今日花费 / Token。
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, useAppState, useTicker, useUsage } from "../shared/api";
-import { Icon, QuotaEntryView, quotaEntries, RefreshButton } from "../shared/design";
+import { FloatingStyleOptions, Icon, QuotaEntryView, quotaEntries, RefreshButton } from "../shared/design";
 import { compactToken, cost, relativeShort } from "../shared/format";
 import { tr } from "../shared/l10n";
 import { localShown } from "../shared/types";
@@ -17,11 +18,19 @@ export function Popover() {
   const now = useTicker(1000);
   const rootRef = useRef<HTMLDivElement>(null);
   const [translucent, setTranslucent] = useState(false);
+  /** 顶部「悬浮窗」按钮展开的样式面板 */
+  const [styleOpen, setStyleOpen] = useState(false);
 
   useEffect(() => {
     api.backdrop().then((b) => setTranslucent(b === "mica" || b === "acrylic"));
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") api.hidePopover();
+      if (e.key === "Escape") {
+        // 样式面板开着时 Esc 先收起面板
+        setStyleOpen((open) => {
+          if (!open) api.hidePopover();
+          return false;
+        });
+      }
       if ((e.key === "r" || e.key === "R") && e.ctrlKey) {
         e.preventDefault();
         api.refreshNow();
@@ -70,11 +79,24 @@ export function Popover() {
           <Icon name="gear" size={13} />
           {tr("Settings", "设置")}
         </button>
-        <button className="pop-head-button" onClick={() => api.openMain("bar")}>
+        <button className={`pop-head-button ${styleOpen ? "on" : ""}`} title={tr("Floating window style", "悬浮窗样式")} onClick={() => setStyleOpen(!styleOpen)}>
+          <Icon name="pip" size={13} />
+          {tr("HUD", "悬浮窗")}
+        </button>
+        <button className="pop-head-button" title={tr("Open the bar (yybar's poker tavern) in the browser", "在浏览器打开 bar：yybar 的德州小酒馆")} onClick={() => {
+            api.openSite();
+            api.hidePopover();
+          }}>
           <Icon name="cards" size={13} />
           bar
         </button>
       </header>
+      {styleOpen && (
+        <div className="pop-style panel">
+          <div className="pop-style-title">{tr("Floating window style", "悬浮窗样式")}</div>
+          <FloatingStyleOptions value={settings.floatingStyle} onPick={(v) => api.updateSettings({ floatingStyle: v })} />
+        </div>
+      )}
       <div className="divider" />
       {entries.length === 0 ? (
         <div className="pop-empty">

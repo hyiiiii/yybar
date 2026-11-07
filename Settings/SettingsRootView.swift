@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - SettingsRootView
 //
 // 见 docs/界面布局.md §4。
-// 设置分 4 页(服务 / 显示 / 刷新 / 通用),由主窗口侧边栏切换。
+// 设置分 5 页(服务 / 悬浮窗 / 显示 / 刷新 / 通用),由主窗口侧边栏切换。
 // 每页沿用 PrefsGroup + PrefsRow 卡片结构，内容限宽，避免控件离标签太远。
 
 struct SettingsRootView: View {
@@ -24,6 +24,9 @@ struct SettingsRootView: View {
             settingsSection(.services) {
                 servicesGroup(settings: settings)
                 switchNotice
+            }
+            settingsSection(.floating) {
+                floatingGroup
             }
             settingsSection(.display) {
                 menuBarGroup(settings: settings)
@@ -299,6 +302,20 @@ struct SettingsRootView: View {
             set(newValue)
             FloatingPanelController.shared.sync()
         })
+    }
+
+    // MARK: Floating window
+
+    /// 悬浮窗样式(简略 / 详细 / 隐藏，默认简略)。显示哪些账号仍在「服务」页悬浮窗一列勾选;选「隐藏」时那一列变灰。
+    private var floatingGroup: some View {
+        PrefsGroup(
+            title: "",
+            chinese: "",
+            desc: "Which accounts it shows is ticked in the HUD column on the Services page; with nothing ticked it closes too.",
+            chineseDesc: "显示哪些账号在「服务」页的悬浮窗一列勾选，一个都没勾时也会关掉"
+        ) {
+            FloatingStyleOptions(inCard: true)
+        }
     }
 
     // MARK: Display
@@ -804,8 +821,8 @@ enum ServiceMatrixColumn {
     static let textInset: CGFloat = 14 + radio + 26 + 10
     static let enabled: CGFloat = 56
     static let menuBar: CGFloat = 64
-    /// 悬浮窗列(表头文字右边还有选简略 / 详细的小按钮，2026-10-29 从 56 放宽)。
-    static let floating: CGFloat = 76
+    /// 悬浮窗列(2026-10-29 ~ 11-07 表头带选样式的小按钮时放宽到 76;样式挪到设置 › 悬浮窗后改回 56)。
+    static let floating: CGFloat = 56
     /// 「查看额度」按钮列。
     static let quota: CGFloat = 40
     /// 删除按钮列。
@@ -820,11 +837,7 @@ private struct ServiceMatrixHeader: View {
             Spacer()
             Text(tr("On", "启用")).frame(width: ServiceMatrixColumn.enabled)
             Text(tr("Menu bar", "菜单栏")).frame(width: ServiceMatrixColumn.menuBar)
-            HStack(spacing: 3) {
-                Text(tr("HUD", "悬浮窗"))
-                FloatingStyleButton()
-            }
-            .frame(width: ServiceMatrixColumn.floating)
+            Text(tr("HUD", "悬浮窗")).frame(width: ServiceMatrixColumn.floating)
             Text(tr("Quota", "额度")).frame(width: ServiceMatrixColumn.quota)
             Color.clear.frame(width: ServiceMatrixColumn.action, height: 1)
         }
@@ -835,10 +848,14 @@ private struct ServiceMatrixHeader: View {
     }
 }
 
-/// 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式(简略 / 详细 / 隐藏，默认简略)，和行里「查看额度」按钮一样弹一个浮层。
-/// 悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉；选「隐藏」也关掉，勾选留着。
-private struct FloatingStyleButton: View {
-    @State private var showing = false
+/// 悬浮窗样式的三个选项(简略 / 详细 / 隐藏，默认简略)：设置 › 悬浮窗，和菜单栏浮窗顶部「悬浮窗」按钮弹出的浮层共用。
+/// 悬浮窗本身跟着「服务」页悬浮窗一列的勾选走：有勾的就显示，一个都没勾就关掉;选「隐藏」也关掉，勾选留着(那一列变灰不能点)。
+/// 2026-10-29 ~ 11-07 是服务表头「悬浮窗」右边的小按钮。
+struct FloatingStyleOptions: View {
+    /// 放在设置页的卡片里：每项一行，行间分隔线;否则(浮层里)紧凑的竖排。
+    var inCard = false
+
+    static let styles: [FloatingStyle] = [.compact, .detailed, .hidden]
 
     static func title(_ style: FloatingStyle) -> String {
         switch style {
@@ -850,53 +867,43 @@ private struct FloatingStyleButton: View {
 
     static func detail(_ style: FloatingStyle) -> String {
         switch style {
-        case .compact: return tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比")
-        case .detailed: return tr("Like the menu bar popover: plan, 5H / WK and reset times", "和菜单栏浮窗一样：套餐、5H / WK 和重置时间")
-        case .hidden: return tr("Hide the floating window; your ticks stay. Pick Compact or Detailed to bring it back",
-                                "先不显示悬浮窗，勾选留着；选简略或详细就回来")
+        case .compact: return tr("Each account shows a progress bar and percentage", "每个账号显示进度条和百分比")
+        case .detailed: return tr("Each account shows 5H / WK and reset times", "每个账号显示5H/WK和重置时间")
+        case .hidden: return tr("Turn the floating window off", "关闭悬浮窗")
         }
     }
 
     var body: some View {
         @Bindable var settings = SettingsStore.shared
-        Button {
-            showing.toggle()
-        } label: {
-            Image(systemName: "slider.horizontal.3")
-                .scaledFont(size: 10)
-                .foregroundStyle(showing ? Color.accentColor : Color.secondary)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tr("Floating window style", "悬浮窗样式"))
-        .popover(isPresented: $showing, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(tr("Floating window style", "悬浮窗样式"))
-                    .font(.system(size: 12, weight: .semibold))
-                ForEach([FloatingStyle.compact, .detailed, .hidden], id: \.self) { style in
-                    Button {
-                        settings.floatingStyle = style
-                        FloatingPanelController.shared.sync()
-                    } label: {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: settings.floatingStyle == style ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 13))
-                                .foregroundStyle(settings.floatingStyle == style ? Color.accentColor : Color.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(Self.title(style))
-                                    .font(.system(size: 12))
-                                Text(Self.detail(style))
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: inCard ? 0 : 10) {
+            ForEach(Array(Self.styles.enumerated()), id: \.element) { index, style in
+                if inCard && index > 0 {
+                    Divider().padding(.leading, 14 + 13 + 10)
                 }
+                Button {
+                    settings.floatingStyle = style
+                    FloatingPanelController.shared.sync()
+                } label: {
+                    HStack(alignment: .top, spacing: inCard ? 10 : 8) {
+                        Image(systemName: settings.floatingStyle == style ? "checkmark.circle.fill" : "circle")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(settings.floatingStyle == style ? Color.accentColor : Color.secondary)
+                        VStack(alignment: .leading, spacing: inCard ? 1 : 2) {
+                            Text(Self.title(style))
+                                .scaledFont(size: inCard ? 12.5 : 12)
+                            Text(Self.detail(style))
+                                .scaledFont(size: 10.5)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, inCard ? 10 : 0)
+                    .padding(.horizontal, inCard ? 14 : 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .padding(14)
-            .frame(width: 270, alignment: .leading)
         }
     }
 }
@@ -985,10 +992,13 @@ struct ServiceMatrixRow: View {
 
             Group {
                 if let floating {
+                    // 设置 › 悬浮窗选了「隐藏」:悬浮窗关着，这一列变灰不能点(勾选留着，选回简略 / 详细就照旧)
+                    let floatingOff = SettingsStore.shared.floatingStyle == .hidden
                     Toggle("", isOn: floating)
                         .labelsHidden()
                         .toggleStyle(.checkbox)
-                        .disabled(!enabled || !detected)
+                        .disabled(!enabled || !detected || floatingOff)
+                        .help(floatingOff ? tr("The floating window is off: pick Compact or Detailed in Settings › Floating window", "悬浮窗已关闭：在设置 › 悬浮窗选简略或详细再打开") : "")
                 } else {
                     Color.clear.frame(height: 1)
                 }

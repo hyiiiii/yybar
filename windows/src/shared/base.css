@@ -645,3 +645,90 @@ select {
   color: var(--sys-orange);
   display: inline-flex;
 }
+
+/* ---------- 悬浮窗样式选项（设置 · 悬浮窗，和弹出窗口顶部「悬浮窗」按钮展开的面板共用：FloatingStyleOptions） ---------- */
+
+.style-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  color: var(--text);
+}
+
+.style-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.style-option:hover {
+  background: var(--fill);
+}
+
+.style-radio {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1.2px solid var(--text-tertiary);
+}
+
+.style-option.on .style-radio {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 3.2px, transparent 3.7px);
+}
+
+.style-label {
+  display: block;
+  font-size: 12px;
+}
+
+.style-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* 设置页卡片里：每项一行（和 PrefsRow 一样的边距），行间分隔线 */
+.style-options.in-card {
+  gap: 0;
+}
+
+.style-options.in-card .style-option {
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 0;
+}
+
+.style-options.in-card .style-option {
+  position: relative;
+}
+
+/* 分隔线从文字左边开始（让开圆圈） */
+.style-options.in-card .style-option + .style-option::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 37px;
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+.style-options.in-card .style-label {
+  font-size: 12.5px;
+}
+
+.style-options.in-card .style-desc {
+  margin-top: 1px;
+}

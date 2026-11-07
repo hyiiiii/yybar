@@ -60,20 +60,25 @@ fn set_frame(w: &WebviewWindow, x: i32, y: i32, width: u32, height: u32) {
     let _ = w.set_position(PhysicalPosition::new(x, y));
 }
 
-/// 等到屏幕下一次刷新（DWM 合成完一帧）：拖动、滑动每帧挪一次窗口，跟屏幕刷新率走，和系统拖别的窗口一样顺。
-/// 2026-10-29 前用 tokio 睡 16 毫秒：Windows 默认定时器精度 15.6 毫秒，实际要睡 31 毫秒左右，窗口每秒只动 30 来次，
-/// 拖着看就卡，滑入 / 滑出也比说好的 220 毫秒慢一倍。
-fn wait_frame() {
+/// 拖动、滑动每一步之间等多久：屏幕刷新间隔的一半（60Hz 屏 8 毫秒，120Hz 以上 4 毫秒），每帧至少挪一次，看着和系统拖窗口一样顺。
+/// 用 std 的 sleep：Windows 10 1803 起它用高精度定时器，睡多久就是多久。
+/// 2026-10-29 前用 tokio 睡 16 毫秒：Windows 默认定时器精度 15.6 毫秒，实际要睡 31 毫秒左右，窗口每秒只动 30 来次，拖着看就卡。
+/// 2026-10-29 ~ 11-07 用 DwmFlush 等屏幕刷新：屏幕上没东西要重画时它会一直等着不返回（笔记本接外接屏、悬浮窗在另一块屏上时
+/// 遇到过），拖动线程卡住、窗口不跟鼠标，滑动卡住后按下也一直不理，悬浮窗就拖不动了。
+fn frame_step() -> Duration {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::Graphics::Dwm::DwmFlush;
-        if unsafe { DwmFlush() } >= 0 {
-            return;
+        use windows_sys::Win32::Graphics::Dwm::{DwmGetCompositionTimingInfo, DWM_TIMING_INFO};
+        let mut info: DWM_TIMING_INFO = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<DWM_TIMING_INFO>() as u32;
+        if unsafe { DwmGetCompositionTimingInfo(std::ptr::null_mut(), &mut info) } >= 0 {
+            let (n, d) = (info.rateRefresh.uiNumerator, info.rateRefresh.uiDenominator);
+            if n > 0 && d > 0 {
+                return Duration::from_secs_f64(0.5 * d as f64 / n as f64).clamp(Duration::from_millis(4), Duration::from_millis(8));
+            }
         }
-        std::thread::sleep(Duration::from_millis(8));
     }
-    #[cfg(not(windows))]
-    std::thread::sleep(Duration::from_millis(16));
+    Duration::from_millis(8)
 }
 
 /// 光标位置（物理像素）。Windows 上直接 GetCursorPos，拖动线程每帧查，不绕主线程。
@@ -122,8 +127,12 @@ fn left_button_down() -> bool {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_RBUTTON;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+        // GetAsyncKeyState 查的是物理按键：设了左右键互换（左手习惯）时，主键是物理右键
+        let primary = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 { VK_RBUTTON } else { VK_LBUTTON };
         // 最高位为 1 表示按着
-        (unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } as u16 & 0x8000) != 0
+        (unsafe { GetAsyncKeyState(primary as i32) } as u16 & 0x8000) != 0
     }
     #[cfg(not(windows))]
     {
@@ -142,8 +151,10 @@ pub struct WindowState {
     building: Mutex<HashSet<&'static str>>,
     /// 刚点了展开：等前端换成展开的内容、量好尺寸后（fit_floating），从这条边滑出来
     floating_slide_out: Mutex<Option<DockEdge>>,
-    /// 悬浮窗正在滑入 / 滑出（期间按下不理）
+    /// 悬浮窗正在滑入 / 滑出（期间按下不理）；用 sliding() / start_sliding() 读写
     floating_sliding: AtomicBool,
+    /// 这次滑动开始的时刻（看滑动是不是卡住了）
+    floating_slide_at: Mutex<Option<Instant>>,
     /// 悬浮窗上按着的这一下（松手时取走）
     floating_press: Mutex<Option<FloatingPress>>,
     floating_press_seq: AtomicU64,
@@ -158,6 +169,27 @@ pub struct WindowState {
     floating_alive_at: Mutex<Option<Instant>>,
     /// 右键时的光标位置（物理像素）：菜单窗口量好尺寸后放到这里显示
     floating_menu_at: Mutex<Option<PhysicalPosition<f64>>>,
+}
+
+impl WindowState {
+    /// 悬浮窗正在滑入 / 滑出。滑动按时间走、两三百毫秒就完；过了 2 秒还没完就当它卡住了，清掉，
+    /// 不再一直不理按下、不让看门狗检查（卡住的话悬浮窗就再也拖不动、点不开，要重开 yybar）。
+    fn sliding(&self) -> bool {
+        if !self.floating_sliding.load(Ordering::SeqCst) {
+            return false;
+        }
+        if self.floating_slide_at.lock().unwrap().is_some_and(|t| t.elapsed() > Duration::from_secs(2)) {
+            log::warn!("floating slide stuck; clearing");
+            self.floating_sliding.store(false, Ordering::SeqCst);
+            return false;
+        }
+        true
+    }
+
+    fn start_sliding(&self) {
+        *self.floating_slide_at.lock().unwrap() = Some(Instant::now());
+        self.floating_sliding.store(true, Ordering::SeqCst);
+    }
 }
 
 /// 按下悬浮窗时的鼠标和窗口位置（物理像素），和这一下有没有拖动过。
@@ -481,7 +513,7 @@ pub fn floating_alive(app: &AppHandle) {
 
 fn check_floating(app: &AppHandle) {
     let ws = app.state::<WindowState>();
-    if ws.floating_press.lock().unwrap().is_some() || ws.floating_sliding.load(Ordering::SeqCst) {
+    if ws.floating_press.lock().unwrap().is_some() || ws.sliding() {
         return;
     }
     if !app.state::<AppState>().inner.lock().unwrap().floating_wanted() {
@@ -660,7 +692,7 @@ fn place_floating(app: &AppHandle, window: &WebviewWindow) {
 /// 前端在悬浮窗（展开的或收起的窄条）上按下左键：记下鼠标和窗口位置（物理像素），之后按着的时候每帧跟一次鼠标，
 /// 移动超过 3 像素才算拖动、窗口跟着鼠标走（可以推出屏幕边）——对应 Mac `FloatingMouseView`。
 /// 不再交给系统拖、松手后再看位置：那样分不清单击和拖动，动画中再按一下还会被当成拖动、又收回去。
-/// 跟鼠标靠一个后台线程每次屏幕刷新查一次光标、直接挪窗口（`wait_frame` / `Mover`），不靠网页的 mousemove（窗口跟着光标动时可能收不到）。
+/// 跟鼠标靠一个后台线程每隔半个屏幕刷新间隔查一次光标、直接挪窗口（`frame_step` / `Mover`），不靠网页的 mousemove（窗口跟着光标动时可能收不到）。
 /// 松手：前端报上来（floating_release），或后台看到左键已经松开（在窗口外松手等），先到的算。
 /// 滑入 / 滑出动画进行中按下的不理（对应 Mac 的 `animating`）。
 pub fn floating_press(app: &AppHandle) {
@@ -670,7 +702,7 @@ pub fn floating_press(app: &AppHandle) {
     {
         let mut press = ws.floating_press.lock().unwrap();
         *press = None;
-        if ws.floating_sliding.load(Ordering::SeqCst) {
+        if ws.sliding() {
             return;
         }
         let Some(w) = app.get_webview_window(FLOATING) else { return };
@@ -684,8 +716,9 @@ pub fn floating_press(app: &AppHandle) {
         let scale = w.scale_factor().unwrap_or(1.0);
         let (threshold, pull_start) = (DRAG_THRESHOLD * scale, PULL_START * scale);
         let mover = Mover::new(w);
+        let step = frame_step();
         loop {
-            wait_frame();
+            std::thread::sleep(step);
             if !left_button_down() {
                 let h2 = h.clone();
                 let _ = h.run_on_main_thread(move || finish_press(&h2, Some(id)));
@@ -805,7 +838,7 @@ fn finish_press(app: &AppHandle, only: Option<u64>) {
         slot.take()
     };
     let Some(press) = press else { return };
-    if ws.floating_sliding.load(Ordering::SeqCst) {
+    if ws.sliding() {
         return;
     }
     // 不在这里再跟一次光标：处理松手时光标可能已经移走了，窗口会被带过去（最多差一帧，看不出来）
@@ -829,14 +862,15 @@ fn finish_press(app: &AppHandle, only: Option<u64>) {
 /// 悬浮窗滑动到 to_x（保持 y）：后台线程每次屏幕刷新挪一次窗口，按时间算位置（220 毫秒）；动完在主线程执行 then。
 fn slide_floating(app: &AppHandle, from_x: i32, to_x: i32, y: i32, then: Option<Box<dyn FnOnce(&AppHandle) + Send>>) {
     let ws = app.state::<WindowState>();
-    ws.floating_sliding.store(true, Ordering::SeqCst);
+    ws.start_sliding();
     let h = app.clone();
     std::thread::spawn(move || {
         if let Some(w) = h.get_webview_window(FLOATING) {
             let mover = Mover::new(w);
+            let step = frame_step();
             let start = Instant::now();
             loop {
-                wait_frame();
+                std::thread::sleep(step);
                 let t = (start.elapsed().as_secs_f64() * 1000.0 / SLIDE_MS).min(1.0);
                 let eased = t * t * (3.0 - 2.0 * t);
                 mover.move_to(from_x + ((to_x - from_x) as f64 * eased).round() as i32, y);
@@ -1003,7 +1037,7 @@ pub fn expand_floating(app: &AppHandle) {
     match placed {
         Some((from, to, y)) => {
             // 动画从现在就算开始：按下不理、前端报的尺寸滑完再用
-            ws.floating_sliding.store(true, Ordering::SeqCst);
+            ws.start_sliding();
             crate::app_state::publish(app);
             let h = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -1028,7 +1062,7 @@ pub fn expand_floating(app: &AppHandle) {
 pub fn fit_floating(app: &AppHandle, width: f64, height: f64) {
     let Some(w) = app.get_webview_window(FLOATING) else { return };
     let ws = app.state::<WindowState>();
-    if ws.floating_sliding.load(Ordering::SeqCst) {
+    if ws.sliding() {
         *ws.floating_pending_fit.lock().unwrap() = Some((width, height));
         return;
     }

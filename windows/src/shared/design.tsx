@@ -6,7 +6,7 @@ import { tr } from "./l10n";
 import { shortLabel, windowsFor } from "./quota";
 import { accentVar, colorLogo, displayName, monoLogo } from "./services";
 import { ALL_APPS, floatingShows, localShown, trayShows } from "./types";
-import type { Indicator, QuotaSnapshot, QuotaWindow, RefreshState, ResetTimeDisplay, ServiceStatus, StateSnapshot, UsageApp } from "./types";
+import type { FloatingStyle, Indicator, QuotaSnapshot, QuotaWindow, RefreshState, ResetTimeDisplay, ServiceStatus, StateSnapshot, UsageApp } from "./types";
 
 // ---------- 状态色 ----------
 
@@ -200,6 +200,30 @@ export function Toggle({ checked, onChange, disabled, small, title }: { checked:
   );
 }
 
+/** 悬浮窗样式的三个选项（简略 / 详细 / 隐藏，默认简略）：设置 › 悬浮窗，和弹出窗口顶部「悬浮窗」按钮展开的面板共用（对应 Mac `FloatingStyleOptions`）。
+ *  悬浮窗本身跟着「服务」页悬浮窗一列的勾选走：有勾的就显示，一个都没勾就关掉；选「隐藏」也关掉，勾选留着（那一列变灰不能点）。
+ *  inCard：放在设置页的卡片里，每项一行、行间分隔线。 */
+export function FloatingStyleOptions({ value, onPick, inCard }: { value: FloatingStyle; onPick: (v: FloatingStyle) => void; inCard?: boolean }) {
+  const options: { value: FloatingStyle; label: string; desc: string }[] = [
+    { value: "compact", label: tr("Compact", "简略"), desc: tr("Each account shows a progress bar and percentage", "每个账号显示进度条和百分比") },
+    { value: "detailed", label: tr("Detailed", "详细"), desc: tr("Each account shows 5H / WK and reset times", "每个账号显示5H/WK和重置时间") },
+    { value: "hidden", label: tr("Hide", "隐藏"), desc: tr("Turn the floating window off", "关闭悬浮窗") },
+  ];
+  return (
+    <div className={`style-options ${inCard ? "in-card" : ""}`}>
+      {options.map((o) => (
+        <button key={o.value} type="button" className={`style-option ${value === o.value ? "on" : ""}`} onClick={() => onPick(o.value)}>
+          <span className="style-radio" />
+          <span>
+            <span className="style-label">{o.label}</span>
+            <span className="style-desc">{o.desc}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Checkbox({ checked, onChange, disabled, title }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string }) {
   return (
     <button type="button" role="checkbox" aria-checked={checked} title={title} disabled={disabled} className={`checkbox ${checked ? "on" : ""}`} onClick={() => onChange(!checked)}>
@@ -332,6 +356,13 @@ const PATHS: Record<string, ReactNode> = {
       <rect x="1.8" y="3" width="12.4" height="10" rx="1.5" />
       <path d="M1.8 10.5h12.4" />
       <path d="M10.5 12h2" />
+    </>
+  ),
+  /** 悬浮窗（画中画：大框右下角一个实心小框） */
+  pip: (
+    <>
+      <rect x="1.8" y="3" width="12.4" height="10" rx="1.5" />
+      <rect x="8.3" y="8" width="4.2" height="3.2" rx="0.6" fill="currentColor" />
     </>
   ),
   info: (

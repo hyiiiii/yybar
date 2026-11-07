@@ -95,7 +95,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let root = MenuBarPopoverView(
             openStats: { StatusItemController.shared.openFromPopover(.overview) },
             openSettings: { StatusItemController.shared.openFromPopover(.settings) },
-            openBar: { StatusItemController.shared.openFromPopover(.bar) }
+            openBar: { StatusItemController.shared.openWebsite() }
         ).environment(appState)
         let host = NSHostingController(rootView: root)
         host.sizingOptions = [.preferredContentSize]
@@ -110,6 +110,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func openFromPopover(_ tab: MainTab) {
         popover?.performClose(nil)
         WindowCoordinator.shared.showMain(tab)
+    }
+
+    /// 浮窗的 bar:直接在浏览器打开 yybar 网站(和主窗口 bar 页的「进入」一样到「我的」页),不先转到 App 的 bar 页。
+    private func openWebsite() {
+        popover?.performClose(nil)
+        NSWorkspace.shared.open(YYBarWeb.url.appendingPathComponent("me"))
     }
 
     // MARK: Menu

@@ -357,6 +357,8 @@ final class YYBarWebAccount {
         guard let token, let login = profile?.login, phase == .idle else { return }
         phase = .uploading
         defer { phase = .idle }
+        // 上一次的结果(比如「上传失败」)不留到这次：不然转圈的时候还挂着旧的报错
+        setMessage(nil)
         // 订阅随用量一起传，不管有没有新的天
         await uploadAccountPlans(token: token)
         // 先对一下网站上各天的量(别的电脑传过更多的就不用再传)

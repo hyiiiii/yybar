@@ -1,9 +1,9 @@
-// 设置大页（对应 Mac `SettingsRootView`）：服务 / 显示 / 刷新 / 通用 四部分纵向排列，内容限宽 640。
+// 设置大页（对应 Mac `SettingsRootView`）：服务 / 悬浮窗 / 显示 / 刷新 / 通用 五部分纵向排列，内容限宽 640。
 // 每部分沿用 PrefsGroup + PrefsRow 卡片结构；改动立即生效（间隔变化同步到调度器，不用重启）。
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, useTicker } from "../../shared/api";
-import { Checkbox, Icon, PlanTag, Segmented, Select, ServiceTile, Toggle } from "../../shared/design";
+import { Checkbox, FloatingStyleOptions, Icon, PlanTag, Segmented, Select, ServiceTile, Toggle } from "../../shared/design";
 import { relativeShort, timeString } from "../../shared/format";
 import { isChinese, tr } from "../../shared/l10n";
 import { displayName } from "../../shared/services";
@@ -58,7 +58,7 @@ export function SettingsView({ state, usage, active, request, onActive }: {
                 )}
               </div>
             ) : (
-              <MatrixHeader s={s} />
+              <MatrixHeader />
             )}
             {ALL_APPS.map((app) => {
               const service = state.services.find((x) => x.app === app)!;
@@ -101,6 +101,19 @@ export function SettingsView({ state, usage, active, request, onActive }: {
               "添加的账号只保存在本机（%APPDATA%\\yybar），只有当前 Windows 用户能读；在你切换之前，不影响本机 CLI 自己的登录。",
             )}
           </p>
+        </Section>
+
+        <Section tab="floating" maxWidth={640}>
+          <SectionHeading title={tabTitle("floating")} />
+          {/* 悬浮窗样式（简略 / 详细 / 隐藏，默认简略）。显示哪些账号仍在「服务」页悬浮窗一列勾选；选「隐藏」时那一列变灰 */}
+          <PrefsGroup
+            desc={tr(
+              "Which accounts it shows is ticked in the HUD column on the Services page; with nothing ticked it closes too.",
+              "显示哪些账号在「服务」页的悬浮窗一列勾选，一个都没勾时也会关掉",
+            )}
+          >
+            <FloatingStyleOptions inCard value={s.floatingStyle} onPick={(v) => set({ floatingStyle: v })} />
+          </PrefsGroup>
         </Section>
 
         <Section tab="display" maxWidth={640}>
@@ -348,17 +361,14 @@ function PrefsRow({ label, desc, children }: { label: string; desc?: string; chi
 
 // ---------- 账号矩阵 ----------
 
-function MatrixHeader({ s }: { s: Settings }) {
+function MatrixHeader() {
   return (
     <div className="matrix-row matrix-head">
       <span className="col-radio" />
       <span className="col-name">{tr("Account", "账号")}</span>
       <span className="col-enabled">{tr("On", "启用")}</span>
       <span className="col-tray">{tr("Taskbar", "任务栏")}</span>
-      <span className="col-floating">
-        {tr("HUD", "悬浮窗")}
-        <FloatingStyleButton s={s} />
-      </span>
+      <span className="col-floating">{tr("HUD", "悬浮窗")}</span>
       <span className="col-quota">{tr("Quota", "额度")}</span>
       <span className="col-action" />
     </div>
@@ -395,7 +405,7 @@ function ServiceRow({ state, service, buckets, onDelete }: { state: StateSnapsho
         <Checkbox checked={Boolean(s[keys.tray])} disabled={!enabled || !detected} onChange={(v) => api.updateSettings({ [keys.tray]: v })} />
       </span>
       <span className="col-floating">
-        <Checkbox checked={Boolean(s[keys.floating])} disabled={!enabled || !detected} onChange={(v) => api.updateSettings({ [keys.floating]: v })} />
+        <Checkbox checked={Boolean(s[keys.floating])} disabled={!enabled || !detected || floatingOff(s)} title={floatingOffHint(s)} onChange={(v) => api.updateSettings({ [keys.floating]: v })} />
       </span>
       <span className="col-quota">{detected && <QuotaButton>{() => <QuotaCard state={state} service={service} buckets={buckets} />}</QuotaButton>}</span>
       <span className="col-action">
@@ -492,7 +502,7 @@ function OtherRow({ state, service, account, buckets, onDelete }: {
         <Checkbox checked={account.showInTray} disabled={!account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { showInTray: v })} />
       </span>
       <span className="col-floating">
-        <Checkbox checked={account.showInFloating} disabled={!account.enabled} onChange={(v) => api.updateOtherAccount(account.id, { showInFloating: v })} />
+        <Checkbox checked={account.showInFloating} disabled={!account.enabled || floatingOff(state.settings)} title={floatingOffHint(state.settings)} onChange={(v) => api.updateOtherAccount(account.id, { showInFloating: v })} />
       </span>
       <span className="col-quota">
         <QuotaButton>{() => <QuotaCard state={state} service={service} other={account} buckets={buckets} />}</QuotaButton>
@@ -567,35 +577,12 @@ function QuotaButton({ children }: { children: () => ReactNode }) {
   );
 }
 
-/** 表头「悬浮窗」右边的小按钮：点开选悬浮窗样式（简略 / 详细 / 隐藏，默认简略），和「查看额度」一样弹一个浮层（对应 Mac `FloatingStyleButton`）。
- *  悬浮窗本身跟着这一列的勾选走：有勾的就显示，一个都没勾就关掉；选「隐藏」也关掉，勾选留着。 */
-function FloatingStyleButton({ s }: { s: Settings }) {
-  const options = [
-    { value: "compact", label: tr("Compact", "简略"), desc: tr("One bar and the remaining percent per account", "每个账号一条进度条和剩余百分比") },
-    { value: "detailed", label: tr("Detailed", "详细"), desc: tr("Like the popup: plan, 5H / WK and reset times", "和弹出窗口一样：套餐、5H / WK 和重置时间") },
-    { value: "hidden", label: tr("Hide", "隐藏"), desc: tr("Hide the floating window; your ticks stay. Pick Compact or Detailed to bring it back", "先不显示悬浮窗，勾选留着；选简略或详细就回来") },
-  ] as const;
-  return (
-    <PopoverButton icon="sliders" size={12} title={tr("Floating window style", "悬浮窗样式")} popClass="style-popover">
-      {() => (
-        <div className="style-pop">
-          <div className="style-pop-title">{tr("Floating window style", "悬浮窗样式")}</div>
-          {options.map((o) => (
-            <button key={o.value} className={`style-option ${s.floatingStyle === o.value ? "on" : ""}`} onClick={() => api.updateSettings({ floatingStyle: o.value })}>
-              <span className="style-radio" />
-              <span>
-                <span className="style-label">{o.label}</span>
-                <span className="style-desc">{o.desc}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </PopoverButton>
-  );
-}
+/** 设置 › 悬浮窗选了「隐藏」：悬浮窗关着，「悬浮窗」一列变灰不能点（勾选留着，选回简略 / 详细就照旧）。 */
+const floatingOff = (s: Settings) => s.floatingStyle === "hidden";
+const floatingOffHint = (s: Settings) =>
+  floatingOff(s) ? tr("The floating window is off: pick Compact or Detailed in Settings › Floating window", "悬浮窗已关闭：在设置 › 悬浮窗选简略或详细再打开") : undefined;
 
-/** 小图标按钮 + 浮层（点外面或 Esc 收起）：「查看额度」和表头「悬浮窗样式」共用。 */
+/** 小图标按钮 + 浮层（点外面或 Esc 收起）：「查看额度」用。 */
 function PopoverButton({ icon, size = 15, title, popClass = "", children }: { icon: string; size?: number; title: string; popClass?: string; children: () => ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);

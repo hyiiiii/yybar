@@ -48,7 +48,8 @@ pub async fn ensure_fresh(account: &mut ClaudeAccount) -> Result<String, QuotaEr
         .refresh_token
         .clone()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| QuotaError::TokenRefreshFailed("no refresh_token".into()))?;
+        // 没有 refresh token（Claude Code 退出登录后令牌被清空）：只能重新登录，按「登录已失效」提示（和 Mac 一样）
+        .ok_or(QuotaError::TokenRevoked)?;
     let _guard = LOCK.lock().await;
     let path = account.path.clone();
 

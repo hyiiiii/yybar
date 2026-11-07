@@ -9,7 +9,7 @@ pub mod grok;
 pub mod models;
 pub mod status;
 
-use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -18,15 +18,24 @@ pub use models::*;
 
 /// 共用的 HTTP 客户端。reqwest 会读取 Windows 的系统代理（Internet 选项里手动设置的代理服务器）和 HTTPS_PROXY
 /// 环境变量；设置了代理脚本（PAC）时改按脚本选代理（见 crate::proxy）。
-pub fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
-        if let Some(pac) = crate::proxy::pac_proxy() {
-            builder = builder.proxy(pac);
+/// 共用的 HTTP 客户端。系统代理设置变了（yybar 开着时才打开 / 换了代理工具）就重建，新请求马上按新代理走，
+/// 不用重开 yybar（2026-11-07 前建一次就一直用，代理后开的话一直直连、连不上）。
+pub fn client() -> reqwest::Client {
+    static CLIENT: Mutex<Option<(String, reqwest::Client)>> = Mutex::new(None);
+    let fingerprint = crate::proxy::settings_fingerprint();
+    let mut slot = CLIENT.lock().unwrap();
+    if let Some((seen, client)) = slot.as_ref() {
+        if *seen == fingerprint {
+            return client.clone();
         }
-        builder.build().expect("http client")
-    })
+    }
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+    if let Some(pac) = crate::proxy::pac_proxy() {
+        builder = builder.proxy(pac);
+    }
+    let client = builder.build().expect("http client");
+    *slot = Some((fingerprint, client.clone()));
+    client
 }
 
 /// reqwest 的错误本身只说「发请求出错」，把底下的原因（DNS / 连不上 / 超时 / 证书）接上，一看就知道是不是网络或代理的问题。

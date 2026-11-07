@@ -9,6 +9,7 @@ enum MainTab: Hashable, CaseIterable {
     case models
     // 设置
     case services
+    case floating
     case display
     case refresh
     case general
@@ -22,7 +23,7 @@ enum MainTab: Hashable, CaseIterable {
     var isStats: Bool {
         switch self {
         case .overview, .activity, .quota, .models: return true
-        case .services, .display, .refresh, .general, .bar: return false
+        case .services, .floating, .display, .refresh, .general, .bar: return false
         }
     }
 
@@ -33,6 +34,7 @@ enum MainTab: Hashable, CaseIterable {
         case .quota: return tr("Quota changes", "额度变化")
         case .models: return tr("Models", "模型明细")
         case .services: return tr("Services", "服务")
+        case .floating: return tr("Floating window", "悬浮窗")
         case .display: return tr("Display", "显示")
         case .refresh: return tr("Refresh", "刷新")
         case .general: return tr("General", "通用")
@@ -47,6 +49,7 @@ enum MainTab: Hashable, CaseIterable {
         case .quota: return "chart.line.uptrend.xyaxis"
         case .models: return "cpu"
         case .services: return "powerplug"
+        case .floating: return "pip"
         case .display: return "menubar.rectangle"
         case .refresh: return "arrow.clockwise"
         case .general: return "gearshape"
@@ -56,7 +59,7 @@ enum MainTab: Hashable, CaseIterable {
     }
 
     static let statsPages: [MainTab] = [.overview, .quota, .models, .activity]
-    static let settingsPages: [MainTab] = [.services, .display, .refresh, .general]
+    static let settingsPages: [MainTab] = [.services, .floating, .display, .refresh, .general]
 }
 
 struct MainWindowRootView: View {

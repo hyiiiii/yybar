@@ -243,6 +243,32 @@ async fn sync_uploaded(app: &AppHandle, token: &str, login: &str) {
     app_state::publish(app);
 }
 
+/// 上传没成功：回到空闲并说明原因；网站不再认令牌就断开，让用户重新连接。
+fn upload_failed(app: &AppHandle, e: WebError) {
+    let s = app.state::<AppState>();
+    if e == WebError::Unauthorized {
+        disconnect(app);
+        s.web.lock().unwrap().set_message(
+            tr("The website no longer accepts this PC's token. Connect GitHub again.", "网站不再认这台电脑的授权了，请重新连接 GitHub。"),
+            true,
+        );
+    } else {
+        let mut w = s.web.lock().unwrap();
+        w.phase = Phase::Idle;
+        // 连不上（超时、被拒）多半是网络或代理：代理软件后开的现在不用重开 yybar（会按新代理重连），点一下重试就行
+        let hint = if matches!(e, WebError::Transport(_)) {
+            tr(
+                " Check the network or proxy (turn on the proxy app's system proxy, or TUN / global mode), then try again.",
+                "。请检查网络或代理（在代理软件里打开「系统代理」或 TUN / 全局模式）后再试一次",
+            )
+        } else {
+            String::new()
+        };
+        w.set_message(format!("{}{e}{hint}", tr("Upload failed: ", "上传失败：")), true);
+    }
+    app_state::publish(app);
+}
+
 /// 断开：删掉本机的令牌（网站上的令牌可在「我的」页撤销）。本机的上传标签留着，下次连同一个账号还能用。
 pub fn disconnect(app: &AppHandle) {
     {
@@ -305,12 +331,18 @@ async fn upload(app: &AppHandle, manual: bool) {
             return;
         }
         w.phase = Phase::Uploading;
+        // 上一次的结果（比如「上传失败」）不留到这次：不然转圈的时候还挂着旧的报错
+        w.message = None;
         (token, login)
     };
     app_state::publish(app);
-    // 订阅随用量一起传，不管有没有新的天；没传成功不影响用量
+    // 订阅随用量一起传，不管有没有新的天；没传成功不影响用量。
+    // 但连不上网站（超时、被拒）就直接报失败：后面几步一样连不上，每步都要等二三十秒
     let plans = s.inner.lock().unwrap().web_account_plans();
-    let _ = site::put_accounts(&token, &plans).await;
+    if let Err(e @ WebError::Transport(_)) = site::put_accounts(&token, &plans).await {
+        upload_failed(app, e);
+        return;
+    }
     // 先对一下网站上各天的量（别的电脑传过更多的就不用再传）
     sync_uploaded(app, &token, &login).await;
     let buckets = s.usage.lock().unwrap().buckets();
@@ -354,23 +386,7 @@ async fn upload(app: &AppHandle, manual: bool) {
                 site::save_ledger(&login, &w.ledger);
             }
             Err(e) => {
-                let unauthorized = e == WebError::Unauthorized;
-                {
-                    let mut w = s.web.lock().unwrap();
-                    w.phase = Phase::Idle;
-                    if !unauthorized {
-                        w.set_message(format!("{}{e}", tr("Upload failed: ", "上传失败：")), true);
-                    }
-                }
-                if unauthorized {
-                    disconnect(app);
-                    let mut w = s.web.lock().unwrap();
-                    w.set_message(
-                        tr("The website no longer accepts this PC's token. Connect GitHub again.", "网站不再认这台电脑的授权了，请重新连接 GitHub。"),
-                        true,
-                    );
-                }
-                app_state::publish(app);
+                upload_failed(app, e);
                 return;
             }
         }

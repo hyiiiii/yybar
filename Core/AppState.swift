@@ -2395,7 +2395,8 @@ final class AppState {
             return
         }
         guard account.accessToken != nil else {
-            markClaudeFailure(QuotaError.missingToken.description)
+            // 凭据条目还在、令牌被清空(Claude Code 退出登录 / refresh token 到期):提示重新登录，而不是 missing access token
+            markClaudeFailure(QuotaError.tokenRevoked.description, error: .tokenRevoked)
             return
         }
         let refreshed = await ClaudeTokenRefresher.ensureFreshAccessToken(account: &account)
