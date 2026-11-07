@@ -258,8 +258,8 @@ fn upload_failed(app: &AppHandle, e: WebError) {
         // 连不上（超时、被拒）多半是网络或代理：代理软件后开的现在不用重开 yybar（会按新代理重连），点一下重试就行
         let hint = if matches!(e, WebError::Transport(_)) {
             tr(
-                " Check the network or proxy (turn on the proxy app's system proxy, or TUN / global mode), then try again.",
-                "。请检查网络或代理（在代理软件里打开「系统代理」或 TUN / 全局模式）后再试一次",
+                " Check your network or proxy settings (e.g. turn on the proxy app's system proxy, or TUN / global mode) and try again.",
+                "。请检查网络或代理设置（如在代理软件中开启「系统代理」或 TUN / 全局模式）后重试",
             )
         } else {
             String::new()

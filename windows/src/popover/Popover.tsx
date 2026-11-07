@@ -83,7 +83,7 @@ export function Popover() {
           <Icon name="pip" size={13} />
           {tr("HUD", "悬浮窗")}
         </button>
-        <button className="pop-head-button" title={tr("Open the bar (yybar's poker tavern) in the browser", "在浏览器打开 bar：yybar 的德州小酒馆")} onClick={() => {
+        <button className="pop-head-button" title={tr("Open the bar (yybar's poker tavern) in your browser", "在浏览器中打开 bar（yybar 德州小酒馆）")} onClick={() => {
             api.openSite();
             api.hidePopover();
           }}>

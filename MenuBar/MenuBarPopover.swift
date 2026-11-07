@@ -63,6 +63,7 @@ struct MenuBarPopoverView: View {
         HStack(spacing: 6) {
             Text("yybar")
                 .font(.system(size: 13, weight: .semibold))
+                .fixedSize()
             Spacer(minLength: 8)
             HStack(spacing: 2) {
                 headerButton(tr("Stats", "统计"), action: openStats) {
@@ -87,7 +88,7 @@ struct MenuBarPopoverView: View {
                 headerButton("bar", action: openBar) {
                     PlayingCardsIcon(size: 11.5)
                 }
-                .help(tr("Open the bar (yybar's poker tavern) in the browser", "在浏览器打开 bar:yybar 的德州小酒馆"))
+                .help(tr("Open the bar (yybar's poker tavern) in your browser", "在浏览器中打开 bar（yybar 德州小酒馆）"))
             }
         }
     }
@@ -161,8 +162,9 @@ struct MenuBarPopoverView: View {
         }
     }
 
-    /// 顶部四个按钮：图标都放在同样大小的框里。中文一样宽、文字居中，看起来间距均匀;
-    /// 英文按文字宽度(Settings 比别的长，四个都按它的宽度放不下 320pt)。
+    /// 顶部四个按钮：图标都放在同样大小的框里，按钮按内容宽度、左右各留 4pt,相邻两个按钮的内容间距都一样
+    /// (英文 Settings 较长，左右再多留就放不下 320pt)。
+    /// (2026-11-07 前中文定宽 56pt、内容居中：字数不同的按钮两边空白不同，看着间距不均。)
     private func headerButton(_ title: String, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) -> some View {
         Button(action: action) {
             HStack(spacing: 3) {
@@ -174,8 +176,7 @@ struct MenuBarPopoverView: View {
                     .lineLimit(1)
                     .fixedSize()
             }
-            .frame(width: L10n.current == .zh ? 56 : nil)
-            .padding(.horizontal, L10n.current == .zh ? 0 : 4)
+            .padding(.horizontal, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

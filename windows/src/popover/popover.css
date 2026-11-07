@@ -47,8 +47,8 @@ body,
   align-items: center;
   justify-content: center;
   gap: 4px;
-  /* 统计 / 设置 / 悬浮窗 / bar 四个按钮：至少一样宽，「悬浮窗」「Settings」字多的按文字宽度（四个都按 66 放不下 320） */
-  min-width: 52px;
+  /* 统计 / 设置 / 悬浮窗 / bar 四个按钮按内容宽度、左右内边距一样，相邻按钮的内容间距都相等
+     （2026-11-07 前设了最小宽度、内容居中，字数不同的按钮两边空白不同，看着间距不均） */
   border: none;
   background: transparent;
   font-size: 11.5px;

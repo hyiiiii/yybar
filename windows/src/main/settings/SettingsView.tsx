@@ -53,8 +53,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
             {noAccounts ? (
               <div className="services-empty">
                 {tr(
-                  "No accounts yet. A CLI signed in on this PC shows up here automatically, or add an account below.",
-                  "还没有账号。本机 CLI 登录后会自动出现在这里，也可以点下方「添加账号…」添加。",
+                  "No accounts yet. A CLI signed in on this PC appears here automatically, or you can add an account below.",
+                  "暂无账号。本机 CLI 登录后会自动显示在这里，也可以点击下方「添加账号…」手动添加。",
                 )}
               </div>
             ) : (
@@ -97,8 +97,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
           <SwitchNoticeView notice={state.switchNotice} />
           <p className="group-note">
             {tr(
-              "Accounts you add are saved only on this PC (%APPDATA%\\yybar), readable by your Windows user, and don't affect the CLIs' own sign-ins until you switch.",
-              "添加的账号只保存在本机（%APPDATA%\\yybar），只有当前 Windows 用户能读；在你切换之前，不影响本机 CLI 自己的登录。",
+              "Accounts you add are stored only on this PC (%APPDATA%\\yybar) and are readable only by your Windows user. They don't affect the CLIs' own sign-ins until you switch to them.",
+              "添加的账号仅保存在本机（%APPDATA%\\yybar），只有当前 Windows 用户可以读取；切换之前不会影响本机 CLI 的登录状态。",
             )}
           </p>
         </Section>
@@ -108,8 +108,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
           {/* 悬浮窗样式（简略 / 详细 / 隐藏，默认简略）。显示哪些账号仍在「服务」页悬浮窗一列勾选；选「隐藏」时那一列变灰 */}
           <PrefsGroup
             desc={tr(
-              "Which accounts it shows is ticked in the HUD column on the Services page; with nothing ticked it closes too.",
-              "显示哪些账号在「服务」页的悬浮窗一列勾选，一个都没勾时也会关掉",
+              "Choose which accounts to show in the HUD column on the Services page.",
+              "在「服务」页的「悬浮窗」列中选择要显示的账号",
             )}
           >
             <FloatingStyleOptions inCard value={s.floatingStyle} onPick={(v) => set({ floatingStyle: v })} />
@@ -118,7 +118,7 @@ export function SettingsView({ state, usage, active, request, onActive }: {
 
         <Section tab="display" maxWidth={640}>
           <SectionHeading title={tabTitle("display")} />
-          <PrefsGroup title={tr("Taskbar", "任务栏")} desc={tr("Which services appear is set on the Services page.", "显示哪些服务在「服务」页勾选")}>
+          <PrefsGroup title={tr("Taskbar", "任务栏")} desc={tr("Choose which services to show in the Taskbar column on the Services page.", "在「服务」页的「任务栏」列中选择要显示的服务")}>
             <PrefsRow label={tr("Quota period", "额度周期")} desc={tr("Grok always shows its billing period.", "Grok 始终显示计费周期")}>
               <Segmented
                 options={[
@@ -140,7 +140,7 @@ export function SettingsView({ state, usage, active, request, onActive }: {
             <div className="divider" />
             <PrefsRow
               label={tr("Hold logo while waiting for approval", "等待审批保持 logo")}
-              desc={tr("When a CLI is waiting for you to approve a tool call, its icon keeps showing the logo.", "CLI 等待你批准工具调用时，图标保持显示 logo、不闪烁")}
+              desc={tr("While a CLI is waiting for a tool call to be approved, its icon keeps showing the logo instead of pulsing.", "CLI 等待批准工具调用时，图标保持显示 logo，不再闪烁")}
             >
               <Toggle checked={s.menuBarHoldColorWhileWaiting} onChange={(v) => set({ menuBarHoldColorWhileWaiting: v })} />
             </PrefsRow>
@@ -180,8 +180,8 @@ export function SettingsView({ state, usage, active, request, onActive }: {
             <PrefsRow
               label={tr("Include WSL", "也统计 WSL")}
               desc={tr(
-                "Also read sign-ins and logs from running WSL distros (\\\\wsl.localhost). Stopped distros are left alone.",
-                "同时读取正在运行的 WSL 发行版里的 CLI 登录和日志（\\\\wsl.localhost），没在运行的发行版不碰",
+                "Also reads CLI sign-ins and logs from running WSL distros (\\\\wsl.localhost). Distros that aren't running are not accessed.",
+                "同时读取正在运行的 WSL 发行版中的 CLI 登录信息和日志（\\\\wsl.localhost），不会访问未运行的发行版",
               )}
             >
               <Toggle checked={s.scanWsl} onChange={(v) => set({ scanWsl: v })} />
@@ -522,7 +522,7 @@ function CodexDirs({ state }: { state: StateSnapshot }) {
   const s = state.settings;
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   const add = async () => {
-    const dir = await api.pickFolder(tr("Choose the other Codex folder (the one CODEX_HOME points to)", "选择另一个 Codex 的目录（CODEX_HOME 指向的那个）"));
+    const dir = await api.pickFolder(tr("Choose the other Codex data folder (where CODEX_HOME points)", "选择另一个 Codex 的数据目录（即 CODEX_HOME 指向的目录）"));
     if (!dir || s.extraCodexDirs.some((d) => same(d, dir))) return;
     api.updateSettings({ extraCodexDirs: [...s.extraCodexDirs, dir], ignoredCodexHomes: s.ignoredCodexHomes.filter((d) => !same(d, dir)) });
   };
@@ -535,8 +535,8 @@ function CodexDirs({ state }: { state: StateSnapshot }) {
       <PrefsRow
         label={tr("Other Codex folders", "其他 Codex 目录")}
         desc={tr(
-          "When another Codex keeps its data elsewhere (CODEX_HOME), its account and logs count too. .codex-* folders in your user folder and the CODEX_HOME variable are found automatically.",
-          "另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号和会话记录也一起统计。用户目录下的 .codex-* 和环境变量 CODEX_HOME 会自动找到",
+          "If another Codex stores its data elsewhere via CODEX_HOME, add that folder to include its account and logs. .codex-* folders in your user folder and the folder set in the CODEX_HOME variable are detected automatically.",
+          "通过 CODEX_HOME 将 Codex 数据放在其他目录时，添加该目录即可一并统计其账号和会话记录。用户目录下的 .codex-* 和环境变量 CODEX_HOME 指向的目录会自动识别",
         )}
       >
         <button className="button" onClick={add}>
@@ -580,7 +580,7 @@ function QuotaButton({ children }: { children: () => ReactNode }) {
 /** 设置 › 悬浮窗选了「隐藏」：悬浮窗关着，「悬浮窗」一列变灰不能点（勾选留着，选回简略 / 详细就照旧）。 */
 const floatingOff = (s: Settings) => s.floatingStyle === "hidden";
 const floatingOffHint = (s: Settings) =>
-  floatingOff(s) ? tr("The floating window is off: pick Compact or Detailed in Settings › Floating window", "悬浮窗已关闭：在设置 › 悬浮窗选简略或详细再打开") : undefined;
+  floatingOff(s) ? tr("The floating window is off. Choose Compact or Detailed in Settings › Floating window to turn it back on.", "悬浮窗已关闭，可在「设置 › 悬浮窗」中选择简略或详细重新开启") : undefined;
 
 /** 小图标按钮 + 浮层（点外面或 Esc 收起）：「查看额度」用。 */
 function PopoverButton({ icon, size = 15, title, popClass = "", children }: { icon: string; size?: number; title: string; popClass?: string; children: () => ReactNode }) {

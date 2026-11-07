@@ -311,8 +311,8 @@ struct SettingsRootView: View {
         PrefsGroup(
             title: "",
             chinese: "",
-            desc: "Which accounts it shows is ticked in the HUD column on the Services page; with nothing ticked it closes too.",
-            chineseDesc: "显示哪些账号在「服务」页的悬浮窗一列勾选，一个都没勾时也会关掉"
+            desc: "Choose which accounts to show in the HUD column on the Services page.",
+            chineseDesc: "在「服务」页的「悬浮窗」列中选择要显示的账号"
         ) {
             FloatingStyleOptions(inCard: true)
         }
@@ -324,8 +324,8 @@ struct SettingsRootView: View {
         PrefsGroup(
             title: "Menu Bar",
             chinese: "菜单栏",
-            desc: "Which services appear is set on the Services page.",
-            chineseDesc: "显示哪些服务在「服务」页勾选"
+            desc: "Choose which services to show in the Menu bar column on the Services page.",
+            chineseDesc: "在「服务」页的「菜单栏」列中选择要显示的服务"
         ) {
             PrefsRow(label: "Quota period", chinese: "额度周期") {
                 Picker("", selection: Binding(get: { settings.menuBarWindow }, set: { settings.menuBarWindow = $0 })) {
@@ -352,8 +352,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Hold colour while waiting for approval",
                 chinese: "等待审批保持颜色",
-                desc: "When a CLI is waiting for you to approve a tool call, its icon stays in its own colour.",
-                chineseDesc: "CLI 等待你批准工具调用时，图标保持自身颜色不闪烁"
+                desc: "While a CLI is waiting for a tool call to be approved, its icon stays in its own colour instead of pulsing.",
+                chineseDesc: "CLI 等待批准工具调用时，图标保持自身颜色，不再闪烁"
             ) {
                 Toggle("", isOn: Binding(get: { settings.menuBarHoldColorWhileWaiting }, set: { settings.menuBarHoldColorWhileWaiting = $0 }))
                     .labelsHidden()
@@ -363,8 +363,8 @@ struct SettingsRootView: View {
             PrefsRow(
                 label: "Drive breathing with CLI hooks",
                 chinese: "用 hook 驱动呼吸",
-                desc: "Adds yybar's own hooks to Codex, Claude Code, Grok and agy so the icon reacts the moment a prompt, tool call, approval or reply happens. Your existing hooks are left alone; turning this off removes only yybar's.",
-                chineseDesc: "给 Codex、Claude Code、Grok、agy 挂上 yybar 自己的 hook:提问、调用工具、请求审批、回答结束时图标立刻响应。不动你已有的 hook,关掉只删 yybar 的"
+                desc: "Installs yybar hooks for Codex, Claude Code, Grok and agy so the icon updates as soon as a prompt, tool call, approval request or reply happens. Existing hooks are left unchanged; turning this off removes only the hooks yybar added.",
+                chineseDesc: "为 Codex、Claude Code、Grok、agy 安装 yybar 的 hook，在提问、调用工具、请求审批和回答结束时即时更新图标。不会改动已有的 hook，关闭后仅移除 yybar 添加的部分"
             ) {
                 HStack(spacing: 6) {
                     if hookWorking { ProgressView().controlSize(.small) }
@@ -488,15 +488,15 @@ struct SettingsRootView: View {
         PrefsRow(
             label: "Other Codex folders",
             chinese: "其他 Codex 目录",
-            desc: "When another Codex keeps its data elsewhere (CODEX_HOME), its account and logs count too. .codex-* folders in your home folder are found automatically.",
-            chineseDesc: "另一个 Codex 用 CODEX_HOME 放在别处时，它登录的账号和会话记录也一起统计。用户目录下的 .codex-* 会自动找到"
+            desc: "If another Codex stores its data elsewhere via CODEX_HOME, add that folder to include its account and logs. .codex-* folders in your home folder are detected automatically.",
+            chineseDesc: "通过 CODEX_HOME 将 Codex 数据放在其他目录时，添加该目录即可一并统计其账号和会话记录。用户目录下的 .codex-* 会自动识别"
         ) {
             Button(tr("Add…", "添加…")) {
                 let panel = NSOpenPanel()
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.showsHiddenFiles = true
-                panel.message = tr("Choose the other Codex folder (the one CODEX_HOME points to)", "选择另一个 Codex 的目录(CODEX_HOME 指向的那个)")
+                panel.message = tr("Choose the other Codex data folder (where CODEX_HOME points)", "选择另一个 Codex 的数据目录（即 CODEX_HOME 指向的目录）")
                 guard panel.runModal() == .OK, let path = panel.url?.path,
                       !settings.extraCodexDirs.contains(where: { same($0, path) }) else { return }
                 settings.extraCodexDirs.append(path)
@@ -611,8 +611,8 @@ struct SettingsRootView: View {
             PrefsGroup(title: "Claude Projects", chinese: "Claude 云端项目") {
                 PrefsRow(
                     label: "Sync cloud usage", chinese: "同步云端用量",
-                    desc: "Uses the local Claude Code account. First sync starts yesterday; checks at least 5 minutes apart.",
-                    chineseDesc: "使用本机 Claude Code 账号。首次回补昨天起的记录，至少间隔 5 分钟同步"
+                    desc: "Syncs with the local Claude Code account. The first sync backfills records from yesterday onward; syncs run at least 5 minutes apart.",
+                    chineseDesc: "使用本机 Claude Code 账号同步。首次同步补齐昨天以来的记录，两次同步至少间隔 5 分钟"
                 ) {
                     Toggle("", isOn: Binding(
                         get: { settings.claudeCloudUsageEnabled },
@@ -998,7 +998,7 @@ struct ServiceMatrixRow: View {
                         .labelsHidden()
                         .toggleStyle(.checkbox)
                         .disabled(!enabled || !detected || floatingOff)
-                        .help(floatingOff ? tr("The floating window is off: pick Compact or Detailed in Settings › Floating window", "悬浮窗已关闭：在设置 › 悬浮窗选简略或详细再打开") : "")
+                        .help(floatingOff ? tr("The floating window is off. Choose Compact or Detailed in Settings › Floating window to turn it back on.", "悬浮窗已关闭，可在「设置 › 悬浮窗」中选择简略或详细重新开启") : "")
                 } else {
                     Color.clear.frame(height: 1)
                 }
