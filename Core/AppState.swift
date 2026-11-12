@@ -2242,7 +2242,7 @@ final class AppState {
             let message: String
             if case .missingToken = error {
                 message = GoogleQuotaClient.isAgyInstalled
-                    ? "agy 未登录，请在终端运行 agy 用 Google 账号登录"
+                    ? "agy 未登录或登录刷新失败。网络正常时请在终端运行 agy 重新登录"
                     : "没有找到 agy CLI(Gemini / Antigravity 额度通过它读取)"
             } else {
                 message = error.description

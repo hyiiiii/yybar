@@ -53,9 +53,33 @@ fn isolated_env(cmd: &mut tokio::process::Command, home: &std::path::Path) {
     cmd.env("GEMINI_CLI_HOME", home).env("SSH_TTY", "yybar");
 }
 
+/// agy 的登录刷新不了时（断网、代理没开、登录过期），print 模式会自己打开浏览器登录页：Windows 上调
+/// `rundll32 url.dll,FileProtocolHandler <网址>`，Mac / Linux 调 `open` / `xdg-open`，都是按 PATH 找的。
+/// 定时刷新每跑一次就弹一个网页，所以在 PATH 最前面放几个什么都不做的同名替身：这里只查额度，不替用户发起登录。
+fn path_without_browser(work: &std::path::Path, binary: &std::path::Path) -> std::ffi::OsString {
+    let shim = work.join("bin");
+    let original = paths::child_path(binary);
+    if std::fs::create_dir_all(&shim).is_err() {
+        return original;
+    }
+    let _ = std::fs::write(shim.join("rundll32.cmd"), "@exit /b 0\r\n");
+    for name in ["open", "xdg-open"] {
+        let file = shim.join(name);
+        if std::fs::write(&file, "#!/bin/sh\nexit 0\n").is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o700));
+            }
+        }
+    }
+    let dirs = std::iter::once(shim).chain(std::env::split_paths(&original));
+    std::env::join_paths(dirs).unwrap_or(original)
+}
+
 async fn run(binary: &PathBuf, work: &PathBuf, home: Option<&std::path::Path>) -> Result<UsageResult, QuotaError> {
     let mut cmd = tokio::process::Command::new(binary);
-    cmd.env("PATH", paths::child_path(binary));
+    cmd.env("PATH", path_without_browser(work, binary));
     if let Some(home) = home {
         isolated_env(&mut cmd, home);
     }

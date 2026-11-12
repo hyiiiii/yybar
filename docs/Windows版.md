@@ -113,7 +113,7 @@ Windows 任务栏不能常驻文字，所以**每个勾选了「任务栏」的�
 
 - **凭据**：`%USERPROFILE%\.codex\auth.json`（`CODEX_HOME`）、`%USERPROFILE%\.claude\.credentials.json`（`CLAUDE_CONFIG_DIR`；邮箱和订阅开始日从 `.claude.json` 补）、`%USERPROFILE%\.grok\auth.json`（只认 xAI 自己的账号）。Windows 上 Claude Code 不用钥匙串，所以没有 Mac 的钥匙串授权提示。
 - **token 续期**：Codex 剩余不到 5 分钟、Claude 不到 30 秒时续期并原子写回原文件（Claude 先重读文件、礼让刚写入的新 token、invalid_grant 软恢复）；Grok 将过期或 401 时调用本机 `grok models`（只读）续期。
-- **额度**：Codex `chatgpt.com/backend-api/wham/usage`，Claude `api.anthropic.com/api/oauth/usage`，Grok `cli-chat-proxy.grok.com/v1/billing`（订阅等级取 `/v1/settings`，6 小时一次），Antigravity `agy -p /usage --output-format json`（定时刷新至少间隔 100 秒）。走系统代理设置。
+- **额度**：Codex `chatgpt.com/backend-api/wham/usage`，Claude `api.anthropic.com/api/oauth/usage`，Grok `cli-chat-proxy.grok.com/v1/billing`（订阅等级取 `/v1/settings`，6 小时一次），Antigravity `agy -p /usage --output-format json`（定时刷新至少间隔 100 秒；运行时 PATH 最前面放一个空的 `rundll32.cmd`，agy 登录刷新失败时想打开浏览器登录页会被拦下，只提示未登录）。走系统代理设置。
 - **本地用量**：`.codex/sessions` + `archived_sessions`（含 `.jsonl.zst`）、`.claude/projects`（以及 Claude 桌面 App Cowork 会话 `%APPDATA%\Claude\local-agent-mode-sessions`）、`.grok/sessions/**/updates.jsonl`、`.gemini/antigravity-cli/conversations/*.db`（用系统自带的 `winsqlite3.dll` 只读复制出来的副本）。
 - **WSL**：打开「也统计 WSL」时，凭据和日志也从正在运行的发行版的 `/home/*`、`/root` 读取（`\\wsl.localhost\`），没在运行的发行版不碰，避免把它们拉起来。本机找到的凭据优先。
 - **服务状态**：OpenAI / Anthropic Statuspage 的 CLI 相关组件、xAI 状态 RSS、Google incidents（Gemini），5 分钟一次。

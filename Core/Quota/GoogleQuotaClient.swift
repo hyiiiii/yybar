@@ -12,6 +12,7 @@ import Darwin
 // 它用 agy 自己的登录(钥匙串里的 Google 账号)查额度，不发模型请求、不消耗额度，yybar 不碰任何凭据。
 // 在私有临时目录里运行，日志也写到这个临时目录(--log-file),不在 ~/.gemini 留文件。一次约 10~15 秒，
 // 定时刷新最快 2 分钟一次(见 AppState)。
+// agy 没登录或登录刷新失败时会想打开浏览器登录页，yybar 拦掉(见 runUsage 里的 `open` 替身),只报「未登录」。
 // 其他 Google 账号：每个账号一个独立目录，用 GEMINI_CLI_HOME 指过去(agy 用它替代 ~/.gemini),
 // 同时设 SSH_TTY 让 agy 把登录存成该目录里的文件，不碰钥匙串里本机 agy 的登录。登录只能在终端里
 // 交互完成(print 模式不接受授权码),见 `loginCommand(home:)`。
@@ -129,7 +130,14 @@ enum GoogleQuotaClient {
                              "--log-file", workDir.appendingPathComponent("agy.log").path]
         process.currentDirectoryURL = workDir
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "\(fm.homeDirectoryForCurrentUser.path)/.local/bin", "/usr/bin", "/bin"].joined(separator: ":")
+        // agy 的登录刷新不了时(断网、代理没开、登录过期),print 模式会自己调 `open` 打开浏览器登录页;
+        // 定时刷新每跑一次就弹一个网页。PATH 最前面放一个什么都不做的 `open`,这里只查额度，不替用户发起登录。
+        let shimDir = workDir.appendingPathComponent("bin", isDirectory: true)
+        try? fm.createDirectory(at: shimDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let shim = shimDir.appendingPathComponent("open")
+        try? Data("#!/bin/sh\nexit 0\n".utf8).write(to: shim)
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shim.path)
+        env["PATH"] = [shimDir.path, "/opt/homebrew/bin", "/usr/local/bin", "\(fm.homeDirectoryForCurrentUser.path)/.local/bin", "/usr/bin", "/bin"].joined(separator: ":")
         if let home { env.merge(isolatedEnvironment(home: home)) { _, new in new } }
         process.environment = env
         let out = Pipe()
