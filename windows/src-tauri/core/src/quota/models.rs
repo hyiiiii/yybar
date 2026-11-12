@@ -204,7 +204,7 @@ impl QuotaError {
                 UsageApp::Codex => tr("Not signed in. Run codex login in a terminal.", "未登录，请在终端运行 codex login"),
                 UsageApp::Claude => tr("Not signed in. Run claude in a terminal and log in.", "未登录，请在终端运行 claude 登录"),
                 UsageApp::Grok => tr("Grok isn't signed in. Run grok login.", "Grok 未登录，请运行 grok login"),
-                UsageApp::Agy => tr("agy isn't signed in. Run agy in a terminal and sign in with Google.", "agy 未登录，请在终端运行 agy 用 Google 账号登录"),
+                UsageApp::Agy => tr("agy isn't signed in, or it couldn't renew its sign-in. If your network is fine, run agy in a terminal and sign in again.", "agy 未登录或登录刷新失败。网络正常时请在终端运行 agy 重新登录"),
             },
             QuotaError::Http(401 | 403, _) => match app {
                 UsageApp::Codex => tr("Codex sign-in expired. Run codex login again.", "Codex 登录已失效，请在终端运行 codex login 重新登录"),
