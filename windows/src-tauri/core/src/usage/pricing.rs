@@ -26,6 +26,7 @@ const fn p(input: f64, output: f64, cache_read: f64, cache_creation: f64) -> Mod
 /// 内置价格表（与 Mac 版一致）。键为归一化后的模型名。
 pub const TABLE: &[(&str, ModelPrice)] = &[
     // Claude（input 已不含 cache_read）。cacheCreation 用 5 分钟缓存写入价。
+    ("claude-fable-5-2", p(8.0, 40.0, 0.20, 10.0)),
     ("claude-fable-5-1", p(10.0, 50.0, 0.25, 12.50)),
     ("claude-fable-5", p(10.0, 50.0, 1.00, 12.50)),
     ("claude-opus-5-5", p(4.0, 20.0, 0.20, 5.0)),

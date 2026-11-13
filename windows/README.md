@@ -4,7 +4,9 @@ Tauri 2（Rust + React）实现的 Windows 版，流程和界面对照 Mac 版�
 
 ## 下载
 
-在 GitHub 仓库的 Actions →「Windows 客户端」里打开最近一次成功的运行，下载 `yybar-windows-installer`，解压后运行 `yybar_x.y.z_x64-setup.exe`（装到当前用户，不需要管理员权限）。安装包没有代码签名，第一次运行 SmartScreen 会拦一下，点「更多信息 → 仍要运行」。
+到仓库的 [Releases](https://github.com/hyiiiii/yybar/releases/latest) 下载 `yybar_x.y.z_x64-setup.exe` 运行（装到当前用户，不需要管理员权限）。安装包没有代码签名，第一次运行 SmartScreen 会拦一下，点「更多信息 → 仍要运行」。
+
+还没发版的最新改动：在 Actions →「Windows 客户端」里打开最近一次成功的运行，下载 `yybar-windows-installer`，解压后运行其中的 `nsis/yybar_x.y.z_x64-setup.exe`。
 
 ## 本地开发
 

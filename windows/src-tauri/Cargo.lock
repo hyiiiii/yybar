@@ -6036,7 +6036,7 @@ dependencies = [
 
 [[package]]
 name = "yybar"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "ab_glyph",
  "chrono",
@@ -6059,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "yybar-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

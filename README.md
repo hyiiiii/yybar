@@ -115,26 +115,30 @@ yybar 会自动认出本机 CLI 登录的账号。想看别的账号，可以在
 
 ### macOS
 
-暂未提供签名公证过的安装包，需要从源码构建。
+到 [Releases](https://github.com/hyiiiii/yybar/releases/latest) 下载 `yybar-x.y.z.dmg`，打开后把 yybar 拖进「应用程序」。
 
-要求：
-
-- macOS 14 Sonoma 或更新版本，Xcode 26 或更新版本
-- 已在终端登录过要看的 CLI：`codex login`、`claude`、`grok login`
+- 支持 macOS 14 Sonoma 及以上，Apple 芯片和 Intel 的 Mac 都能用
+- 安装包没有经过 Apple 公证，第一次打开会提示无法验证。点「完成」，再到「系统设置 › 隐私与安全性」页面底部点「仍要打开」，只需一次。也可以在终端运行 `xattr -dr com.apple.quarantine /Applications/yybar.app`
+- 要看的 CLI 需要先在终端登录过：`codex login`、`claude`、`grok login`
+- yybar 第一次读取 Claude Code 等的登录信息时，macOS 会询问是否允许访问钥匙串，点「始终允许」
 - 可选：`brew install zstd`（统计 Codex 压缩过的旧会话需要）
+- 升级：下载新的 DMG，拖进「应用程序」替换即可，设置和统计数据不受影响
+
+**从源码构建**（需要 Xcode 26 或更新版本）：
 
 ```bash
 git clone https://github.com/hyiiiii/yybar.git
 cd yybar
 scripts/make_signing_cert.sh    # 只需一次：在登录钥匙串里创建本机自签代码签名证书
 scripts/build_and_install.sh    # 构建 Release 并安装到 /Applications/yybar.app
+scripts/make_dmg.sh             # 可选：打发布用的 DMG（Apple 芯片 + Intel 通用），产物在 dist/
 ```
 
-固定的自签证书让每次构建的签名身份保持一致；不创建证书也能安装，脚本会改用 ad-hoc 签名。以后更新时 `git pull` 后再运行一次 `scripts/build_and_install.sh` 即可，设置和统计数据不受影响。
+固定的自签证书让每次构建的签名身份保持一致；不创建证书也能安装，脚本会改用 ad-hoc 签名。以后更新时 `git pull` 后再运行一次 `scripts/build_and_install.sh` 即可。打包和发布流程见 [docs/打包发布.md](docs/打包发布.md)。
 
 ### Windows
 
-在仓库的 Actions →「Windows 客户端」里打开最近一次成功的运行，下载 `yybar-windows-installer`，解压后运行 `yybar_x.y.z_x64-setup.exe`（装到当前用户，不需要管理员权限）。安装包没有代码签名，第一次运行时 SmartScreen 会拦截，点「更多信息 → 仍要运行」。需要 WebView2（Windows 11 自带）。从源码构建见 [windows/README.md](windows/README.md)。
+到 [Releases](https://github.com/hyiiiii/yybar/releases/latest) 下载 `yybar_x.y.z_x64-setup.exe` 运行（装到当前用户，不需要管理员权限）。安装包没有代码签名，第一次运行时 SmartScreen 会拦截，点「更多信息 → 仍要运行」。需要 WebView2（Windows 11 自带）。还没发版的最新改动可以在 Actions →「Windows 客户端」的最近一次成功运行里下载 `yybar-windows-installer`。从源码构建见 [windows/README.md](windows/README.md)。
 
 首次启动会弹出引导窗口，列出识别到的账号并做几项基本设置。
 
@@ -191,7 +195,7 @@ Mac：用 Xcode 打开 `yybar.xcodeproj`，scheme 选 `yybar` 运行。
 | `Onboarding/` | 首次启动引导 |
 | `Core/` | 凭据、额度请求、刷新调度、日志扫描、本地存储、网站上传 |
 | `Tests/` | 日志扫描回归测试 |
-| `scripts/` | 构建安装、签名证书、生成 App 图标 |
+| `scripts/` | 构建安装、打 DMG、签名证书、生成 App 图标 |
 | `windows/` | Windows 版（Tauri 2：Rust 后台 + React 界面），见 [windows/README.md](windows/README.md) |
 | `web/` | yybar 网站：GitHub 登录、用量上传、排行榜、德州、商场、成就（Cloudflare Workers + D1），见 [web/README.md](web/README.md) |
 
@@ -220,16 +224,19 @@ yybar is a menu bar app for macOS (with a Windows version in `[windows/](windows
 - **bar & website** (optional): connect with GitHub to upload daily per-model usage totals to the [yybar website](https://yybar-web.hyi030618.workers.dev) and turn spending into chips ($1 = 1 chip) for leaderboards, multiplayer Texas hold'em, a shop and achievements.
 - Chinese / English UI, adjustable text size, launch at login, first-run onboarding. About 25 MB of memory and 0.1% CPU in the background on macOS.
 
-**macOS — build from source** (macOS 14+, Xcode 26+; optional `brew install zstd`):
+**macOS** (14+, Apple silicon or Intel): download `yybar-x.y.z.dmg` from [Releases](https://github.com/hyiiiii/yybar/releases/latest) and drag yybar into Applications. The app is self-signed and not notarized, so the first launch is blocked: click Done, then **Open Anyway** under System Settings › Privacy & Security (or run `xattr -dr com.apple.quarantine /Applications/yybar.app`). Optional: `brew install zstd`.
+
+To build from source (Xcode 26+):
 
 ```bash
 git clone https://github.com/hyiiiii/yybar.git
 cd yybar
 scripts/make_signing_cert.sh    # once: creates a local self-signed code signing certificate
 scripts/build_and_install.sh    # builds Release and installs /Applications/yybar.app
+scripts/make_dmg.sh             # optional: builds a universal DMG into dist/
 ```
 
-**Windows**: download `yybar-windows-installer` from the latest successful "Windows 客户端" run under Actions and run the setup (per-user, no admin rights; unsigned, so SmartScreen asks once). See [windows/README.md](windows/README.md) to build it yourself.
+**Windows**: download `yybar_x.y.z_x64-setup.exe` from [Releases](https://github.com/hyiiiii/yybar/releases/latest) and run it (per-user, no admin rights; unsigned, so SmartScreen asks once). See [windows/README.md](windows/README.md) to build it yourself.
 
 **Privacy**: yybar reads only token counts, models and timestamps from local logs, never conversation content. It talks to each service's own quota and token-refresh endpoints and their status pages. Nothing is uploaded unless you connect the yybar website; then only daily usage totals and account plans (accounts as hashes, no emails) are sent, and auto upload is off by default.
 

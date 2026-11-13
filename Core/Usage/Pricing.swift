@@ -60,7 +60,9 @@ enum Pricing {
     nonisolated static let table: [String: ModelPrice] = [
         // —— Claude（input 已不含 cache_read）。cacheCreation 用 5 分钟缓存写入价。
         // 2026-10-08 官方 prompt caching 价目：platform.claude.com/docs/en/build-with-claude/prompt-caching
-        // Sonnet 5.5 缓存读取按模型页为输入价的 5%（$0.10），Fable 5.1 为 2.5%（$0.25）。
+        // Sonnet 5.5 缓存读取按模型页为输入价的 5%（$0.10），Fable 5.1 / 5.2 为 2.5%（$0.25 / $0.20）。
+        // Fable 5.2（2026-11 官方价）：$8 / $40，缓存读取 $0.20，5 分钟缓存写入按输入价 1.25 倍。
+        "claude-fable-5-2":  .init(input: 8,   output: 40,  cacheRead: 0.20, cacheCreation: 10),
         "claude-fable-5-1":  .init(input: 10,  output: 50,  cacheRead: 0.25, cacheCreation: 12.50),
         "claude-fable-5":    .init(input: 10,  output: 50,  cacheRead: 1.00, cacheCreation: 12.50),
         "claude-opus-5-5":   .init(input: 4,   output: 20,  cacheRead: 0.20, cacheCreation: 5),
