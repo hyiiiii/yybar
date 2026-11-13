@@ -1,34 +1,34 @@
-<p align="center">
-  <img src="Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="yybar">
+<p align="center">  
+  <img src="Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="yybar">  
 </p>
 
 <h1 align="center">yybar</h1>
 
-<p align="center">
-  在菜单栏上看 Codex、Claude Code、Grok、Gemini 还剩多少额度，本机用了多少 Token、花了多少钱
+<p align="center">  
+  在菜单栏上看 Codex、Claude Code、Grok、Gemini 还剩多少额度，本机用了多少 Token、花了多少钱  
 </p>
 
-<p align="center">
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-14+-blue.svg">
-  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4.svg">
-  <img alt="Xcode" src="https://img.shields.io/badge/Xcode-26+-orange.svg">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey.svg">
+<p align="center">  
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-14+-blue.svg">  
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4.svg">  
+  <img alt="Xcode" src="https://img.shields.io/badge/Xcode-26+-orange.svg">  
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey.svg">  
 </p>
 
 <p align="center">中文 · <a href="#english">English</a></p>
 
-<p align="center">
-  <img src="docs/Screenshots/menubar-breathing.gif" width="360" alt="菜单栏上的 yybar：正在干活的 CLI 图标会呼吸">
+<p align="center">  
+  <img src="docs/Screenshots/menubar-breathing.gif" width="360" alt="菜单栏上的 yybar：正在干活的 CLI 图标会呼吸">  
 </p>
 
 yybar 是一个 macOS 菜单栏小工具，在 [nanvon/cc-bar](https://github.com/nanvon/cc-bar) 的基础上改的。它把 Codex、Claude Code、Grok 这些 AI 编码工具的剩余额度放在菜单栏上，顺便统计本机用了多少 Token、大概花了多少钱。每天的用量还可以传到 yybar 网站换筹码，拿去打德州。
 
-也有 Windows 版，代码在 [`windows/`](windows/)，功能跟 Mac 版基本一致，差别见 [docs/Windows版.md](docs/Windows版.md#5-和-mac-版的差别)。
+也有 Windows 版，代码在 `[windows/](windows/)`，功能跟 Mac 版基本一致，差别见 [docs/Windows版.md](docs/Windows版.md#5-和-mac-版的差别)。
 
 ## 支持的服务
 
 | 服务 | 额度 | 本机用量 | 登录从哪来 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Codex | 5 小时 / 每周 | 有 | `codex login` |
 | Claude Code | 5 小时 / 每周 | 有，含桌面 App 的 Cowork 会话 | `claude` |
 | Grok | 当前计费周期 | 有 | `grok login` |
@@ -46,8 +46,8 @@ yybar 是一个 macOS 菜单栏小工具，在 [nanvon/cc-bar](https://github.co
 
 ### 额度弹出窗口
 
-<p align="center">
-  <img src="docs/Screenshots/popover.png" width="340" alt="额度弹出窗口">
+<p align="center">  
+  <img src="docs/Screenshots/popover.png" width="340" alt="额度弹出窗口">  
 </p>
 
 点菜单栏图标弹出。每个账号一块：套餐、5 小时和每周额度各剩多少、多久后重置，右上角的圆点是这家服务官方状态页的状态。某个账号刷新失败时，名字旁边会有个小警告，鼠标放上去看原因。底部是今天的花费和 Token。
@@ -56,8 +56,8 @@ yybar 是一个 macOS 菜单栏小工具，在 [nanvon/cc-bar](https://github.co
 
 ### 桌面悬浮窗
 
-<p align="center">
-  <img src="docs/Screenshots/floating-window.gif" width="500" alt="悬浮窗：贴边收起、滑出、拖动，右键切换样式">
+<p align="center">  
+  <img src="docs/Screenshots/floating-window.gif" width="500" alt="悬浮窗：贴边收起、滑出、拖动，右键切换样式">  
 </p>
 
 一个始终在最上层的小窗口，不抢焦点。有三种样式：
@@ -70,8 +70,8 @@ yybar 是一个 macOS 菜单栏小工具，在 [nanvon/cc-bar](https://github.co
 
 ### 统计
 
-<p align="center">
-  <img src="docs/Screenshots/stats.png" width="760" alt="统计页">
+<p align="center">  
+  <img src="docs/Screenshots/stats.png" width="760" alt="统计页">  
 </p>
 
 数据全部来自本机 CLI 的会话日志，只读 Token 数、模型和时间，不读对话内容。
@@ -96,12 +96,10 @@ yybar 会自动认出本机 CLI 登录的账号。想看别的账号，可以在
 
 ### bar 和 yybar 网站
 
-主窗口侧边栏的 bar 通向 [yybar 网站](https://yybar-web.hyi030618.workers.dev)。用 GitHub 连接后，可以把已经过完的每一天的用量传上去，花费 $1 换 1 个筹码。每天能手动传一次，也可以打开每天 0:30 自动上传。
+主窗口侧边栏的 bar 通向 [yybar 网站](https://yybar-web.hyi030618.workers.dev)。用 GitHub 连接后，可以把已经过完的每一天的用量传上去， 模型等效消耗 $1 为 1 个筹码。
 
-网站上有 Token 燃烧榜和财富榜、多人德州扑克（人不够有机器人桌）、用筹码换牌背和道具的商场，还有一些成就。
-
-<p align="center">
-  <img src="docs/Screenshots/bar.png" width="640" alt="主窗口里的 bar 页">
+<p align="center">  
+  <img src="docs/Screenshots/bar.png" width="640" alt="主窗口里的 bar 页">  
 </p>
 
 这部分完全可选，不连 GitHub 就什么都不会上传。
@@ -142,31 +140,31 @@ scripts/build_and_install.sh    # 构建 Release 并安装到 /Applications/yyba
 
 ## 常见问题
 
-**Claude Code 显示小警告，提示登录已失效？**
+**Claude Code 显示小警告，提示登录已失效？**  
 Claude Code 的登录过期后会清空本机保存的令牌。在终端运行 `claude`，按提示输入 `/login` 重新登录，回到 yybar 点刷新即可。
 
-**统计里少了 Codex 的旧会话？**
+**统计里少了 Codex 的旧会话？**  
 Codex 会把旧会话压缩成 `.jsonl.zst`，Mac 上需要本机有 `zstd` 命令（`brew install zstd`），装好后下一次扫描会自动补上。
 
-**模型显示「未定价」，费用是「—」？**
+**模型显示「未定价」，费用是「—」？**  
 新模型还没有内置价格。到 设置 · 通用 · 模型价格 填写，历史费用会按新价格重算。
 
-**Antigravity 提示「agy 未登录或登录刷新失败」？**
+**Antigravity 提示「agy 未登录或登录刷新失败」？**  
 多半是当时网络或代理不通，agy 没能续上登录，网络恢复后会自己好。一直不好的话，在终端运行 `agy` 重新登录一次。yybar 查额度时不会再替 agy 弹出浏览器登录页。
 
-**切换账号后 CLI 还在用旧账号？**
+**切换账号后 CLI 还在用旧账号？**  
 已经在运行的 CLI 会话需要重启才会使用新账号。
 
-**Codex / Grok 的缓存写入为什么是「—」？**
+**Codex / Grok 的缓存写入为什么是「—」？**  
 这两家的日志不单独记录缓存写入，无法统计，不是漏算。
 
-**Windows 上上传失败，提示连接超时？**
+**Windows 上上传失败，提示连接超时？**  
 yybar 网站在 Cloudflare Workers 上，部分网络需要代理。在代理软件中开启「系统代理」或 TUN / 全局模式后重试即可，yybar 会自动使用新的代理设置，不用重开。
 
-**Grok Bot / Gemini App 如何显示额度？**
+**Grok Bot / Gemini App 如何显示额度？**  
 Grok Bot 需要已登录桌面 App。Gemini 需要 Chrome 当前个人资料登录与 Gemini App 相同的 Google 账号，并能打开 gemini.google.com。首次可能需要在 macOS 钥匙串窗口允许 yybar 读取对应的 Safe Storage 条目。两项都不发送推理请求。Gemini 额外读取近期会话的回答次数和模型名，不保存正文或会话 ID，没有 token / 费用明细。Google 要求网页验证时保留上次额度并暂停请求 10 分钟。
 
-**额度在掉，统计里却没有对应的用量？**
+**额度在掉，统计里却没有对应的用量？**  
 本机 CLI 和 Claude 桌面 App 的 Cowork 会话从日志统计；Claude 桌面端的「项目」可在 设置 · 刷新 · Claude 云端项目 开启同步。普通 claude.ai 网页 / App 对话没有可读取的用量数据，暂不支持。
 
 ## 数据与隐私
@@ -185,7 +183,7 @@ Grok Bot 需要已登录桌面 App。Gemini 需要 Chrome 当前个人资料登�
 Mac：用 Xcode 打开 `yybar.xcodeproj`，scheme 选 `yybar` 运行。
 
 | 目录 | 内容 |
-|---|---|
+| --- | --- |
 | `MenuBar/` | 菜单栏图标、额度弹出窗口 |
 | `Main/` | 主窗口：统计、设置、bar |
 | `Floating/` | 桌面悬浮窗 |
@@ -197,15 +195,11 @@ Mac：用 Xcode 打开 `yybar.xcodeproj`，scheme 选 `yybar` 运行。
 | `windows/` | Windows 版（Tauri 2：Rust 后台 + React 界面），见 [windows/README.md](windows/README.md) |
 | `web/` | yybar 网站：GitHub 登录、用量上传、排行榜、德州、商场、成就（Cloudflare Workers + D1），见 [web/README.md](web/README.md) |
 
-产品需求、技术实现、设计风格、界面布局等文档见 [docs/](docs/README.md)。
-
 ## 致谢
 
-- [cc-bar](https://github.com/nanvon/cc-bar) —— yybar 的起点
+- [cc-bar](https://github.com/nanvon/cc-bar) —— 在此基础上进行开发
 - [cc-switch](https://github.com/farion1231/cc-switch) —— 多 Provider 账号切换器，启发了多账号管理与导入流程
-- [cockpit-tools](https://github.com/jlcodes99/cockpit-tools) —— 多平台 AI 编码助手仪表盘，在额度与刷新策略上提供了参考
 - [CodexBar](https://github.com/steipete/CodexBar) —— macOS 菜单栏 AI 用量监控，在菜单栏交互与本地解析思路上多有借鉴
-- [TokenYou](https://github.com/diegoparras/tokenyou) / [Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) —— Gemini Apps 网页额度协议参考
 
 ## 许可
 
@@ -213,11 +207,10 @@ Mac：用 Xcode 打开 `yybar.xcodeproj`，scheme 选 `yybar` 运行。
 
 ---
 
-<a id="english"></a>
 
 ## English
 
-yybar is a menu bar app for macOS (with a Windows version in [`windows/`](windows/)) that shows how much quota you have left on **Codex**, **Claude Code**, **Grok**, **Grok Bot**, **Gemini** and **Antigravity**, plus how many tokens you've used locally and what they cost.
+yybar is a menu bar app for macOS (with a Windows version in `[windows/](windows/)`) that shows how much quota you have left on **Codex**, **Claude Code**, **Grok**, **Grok Bot**, **Gemini** and **Antigravity**, plus how many tokens you've used locally and what they cost.
 
 - **Menu bar / taskbar**: each service's logo with its remaining 5-hour / weekly quota. An icon breathes in its own colour while that CLI is working and stays lit while it waits for your approval (optionally driven by CLI hooks on macOS).
 - **Quota popup**: click the icon for every account's 5H / WK bars, reset countdowns, plan, service status and today's cost. Buttons at the top open Stats, Settings, a floating-window style picker, and the yybar website.
