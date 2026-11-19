@@ -477,7 +477,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\n\nSOURCE=\"${SRCROOT}/Helpers/YYBarClaudeWatchdog/main.swift\"\nOUTPUT_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nOUTPUT_BIN=\"${OUTPUT_DIR}/YYBarClaudeWatchdog\"\n\nmkdir -p \"${OUTPUT_DIR}\"\n\n# 编译为当前架构。yybar 是个人 / 单机分发,native arch 够用;\n# 真要做 universal 在这里加 lipo 即可。\nARCH=\"${NATIVE_ARCH_ACTUAL:-$(uname -m)}\"\nDEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-13.0}\"\n\nxcrun -sdk macosx swiftc -O \\\n  -target \"${ARCH}-apple-macos${DEPLOYMENT_TARGET}\" \\\n  -o \"${OUTPUT_BIN}\" \\\n  \"${SOURCE}\"\n\n# 跟父 target 同一个签名身份,签上;Debug 下 EXPANDED_CODE_SIGN_IDENTITY 可能是 -,\n# 等价 ad-hoc 签名,够用。\nIDENT=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"${IDENT}\" --options runtime --timestamp=none \"${OUTPUT_BIN}\"\n\necho \"embedded watchdog: ${OUTPUT_BIN}\"\n";
+			shellScript = "set -euo pipefail\n\nSOURCE=\"${SRCROOT}/Helpers/YYBarClaudeWatchdog/main.swift\"\nOUTPUT_DIR=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers\"\nOUTPUT_BIN=\"${OUTPUT_DIR}/YYBarClaudeWatchdog\"\n\nmkdir -p \"${OUTPUT_DIR}\"\n\n# 和主程序同样的架构:Debug(只编本机架构)编一份;Release 按 ARCHS 每个架构各编一份，再用 lipo 合成\n# (scripts/make_dmg.sh 打发布包时是 arm64 + x86_64 通用二进制)。\nDEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-13.0}\"\nif [ \"${ONLY_ACTIVE_ARCH:-NO}\" = \"YES\" ] || [ -z \"${ARCHS:-}\" ]; then\n  BUILD_ARCHS=\"${NATIVE_ARCH_ACTUAL:-$(uname -m)}\"\nelse\n  BUILD_ARCHS=\"${ARCHS}\"\nfi\nSLICES=()\nfor ARCH in ${BUILD_ARCHS}; do\n  xcrun -sdk macosx swiftc -O \\\n    -target \"${ARCH}-apple-macos${DEPLOYMENT_TARGET}\" \\\n    -o \"${OUTPUT_BIN}-${ARCH}\" \\\n    \"${SOURCE}\"\n  SLICES+=(\"${OUTPUT_BIN}-${ARCH}\")\ndone\nlipo -create \"${SLICES[@]}\" -output \"${OUTPUT_BIN}\"\nrm -f \"${SLICES[@]}\"\n\n# 跟父 target 同一个签名身份,签上;Debug 下 EXPANDED_CODE_SIGN_IDENTITY 可能是 -,\n# 等价 ad-hoc 签名,够用。\nIDENT=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"${IDENT}\" --options runtime --timestamp=none \"${OUTPUT_BIN}\"\n\necho \"embedded watchdog: ${OUTPUT_BIN}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -693,7 +693,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yybar.app;
 				PRODUCT_NAME = yybar;
 				REGISTER_APP_GROUPS = YES;
@@ -726,7 +726,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yybar.app;
 				PRODUCT_NAME = yybar;
 				REGISTER_APP_GROUPS = YES;

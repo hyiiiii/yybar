@@ -1,0 +1,110 @@
+name: 发布
+
+# 手动运行（Actions →「发布」→ Run workflow）：macOS 机器打 Apple 芯片 + Intel 通用 DMG，Windows 机器打 NSIS 安装包，
+# 一起发到 GitHub Releases，tag 是 v<版本号>（Mac 和 Windows 的版本号必须一致，见 docs/打包发布.md）。
+# 改了打包脚本或本文件的 PR 只试跑 Mac 打包，不发布。
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "本次更新内容（Markdown，放在 Release 说明最前面，可留空）"
+        required: false
+        default: ""
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "scripts/build_release.sh"
+      - "scripts/make_dmg.sh"
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-26
+    env:
+      # 仓库 Secrets 里配了自签证书（docs/打包发布.md）就用它签名，每个版本签名身份不变；没配则 ad-hoc 签名。
+      MAC_SIGNING_CERT_P12: ${{ secrets.MAC_SIGNING_CERT_P12 }}
+      MAC_SIGNING_CERT_PASSWORD: ${{ secrets.MAC_SIGNING_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version
+      - name: 导入签名证书
+        if: env.MAC_SIGNING_CERT_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$MAC_SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MAC_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+      - name: 打 DMG
+        run: scripts/make_dmg.sh
+      - name: 检查
+        run: |
+          APP=/private/tmp/yybar-release/Build/Products/Release/yybar.app
+          for BIN in "$APP/Contents/MacOS/yybar" "$APP/Contents/Helpers/YYBarClaudeWatchdog"; do
+            ARCHS=$(lipo -archs "$BIN")
+            echo "$BIN: $ARCHS"
+            [[ "$ARCHS" == *arm64* && "$ARCHS" == *x86_64* ]] || { echo "::error::$BIN 不是通用二进制"; exit 1; }
+          done
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E '^(Authority|Signature|Identifier)' || true
+          hdiutil verify dist/*.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yybar-mac-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/windows.yml
+
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version windows/src-tauri/tauri.conf.json)
+          for MAC_VERSION in $(grep -E 'MARKETING_VERSION = ' yybar.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/'); do
+            [ "$MAC_VERSION" = "$VERSION" ] || { echo "::error::Mac 版本号 $MAC_VERSION 和 Windows 版本号 $VERSION 不一致"; exit 1; }
+          done
+          DMG="artifacts/yybar-mac-dmg/yybar-$VERSION.dmg"
+          EXE="artifacts/yybar-windows-installer/nsis/yybar_${VERSION}_x64-setup.exe"
+          ls -lR artifacts
+          [ -f "$DMG" ] && [ -f "$EXE" ]
+
+          {
+            if [ -n "$NOTES" ]; then printf '%s\n\n' "$NOTES"; fi
+            cat <<EOF
+          ## 下载安装
+
+          | 系统 | 文件 |
+          | --- | --- |
+          | macOS 14 及以上（Apple 芯片 / Intel） | \`yybar-$VERSION.dmg\` |
+          | Windows 10 / 11（x64） | \`yybar_${VERSION}_x64-setup.exe\` |
+
+          **macOS**：打开 DMG，把 yybar 拖进「应用程序」。安装包没有经过 Apple 公证，第一次打开会提示无法验证：点「完成」，再到「系统设置 › 隐私与安全性」页面底部点「仍要打开」；也可以在终端运行 \`xattr -dr com.apple.quarantine /Applications/yybar.app\`。读取 Claude Code 等的登录信息时 macOS 会询问能否访问钥匙串，点「始终允许」。
+
+          **Windows**：运行安装程序（装到当前用户，不需要管理员权限）。安装包没有代码签名，SmartScreen 拦下时点「更多信息 → 仍要运行」。需要 WebView2（Windows 11 自带）。
+
+          升级：装新版本覆盖旧版本即可，设置和统计数据不受影响。
+          EOF
+          } > notes.md
+          cat notes.md
+
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "yybar $VERSION" --notes-file notes.md "$DMG" "$EXE"

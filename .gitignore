@@ -60,3 +60,6 @@ usage-rollup.json
 
 # Scratch files (logs, fixtures, test binaries)
 work/
+
+# 发布用的安装包(scripts/make_dmg.sh)
+dist/

@@ -135,7 +135,7 @@ export function demoState(): StateSnapshot {
     repricing: false,
     autostart: true,
     agyInstalled: true,
-    version: "0.2.0",
+    version: "1.0.0",
     others: [
       {
         id: "claude:work@example.com",

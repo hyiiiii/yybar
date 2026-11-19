@@ -60,7 +60,9 @@ enum Pricing {
     nonisolated static let table: [String: ModelPrice] = [
         // —— Claude（input 已不含 cache_read）。cacheCreation 用 5 分钟缓存写入价。
         // 2026-10-08 官方 prompt caching 价目：platform.claude.com/docs/en/build-with-claude/prompt-caching
-        // Sonnet 5.5 缓存读取按模型页为输入价的 5%（$0.10），Fable 5.1 为 2.5%（$0.25）。
+        // Sonnet 5.5 缓存读取按模型页为输入价的 5%（$0.10），Fable 5.1 / 5.2 为 2.5%（$0.25 / $0.20）。
+        // Fable 5.2（2026-11 官方价）：$8 / $40，缓存读取 $0.20，5 分钟缓存写入按输入价 1.25 倍。
+        "claude-fable-5-2":  .init(input: 8,   output: 40,  cacheRead: 0.20, cacheCreation: 10),
         "claude-fable-5-1":  .init(input: 10,  output: 50,  cacheRead: 0.25, cacheCreation: 12.50),
         "claude-fable-5":    .init(input: 10,  output: 50,  cacheRead: 1.00, cacheCreation: 12.50),
         "claude-opus-5-5":   .init(input: 4,   output: 20,  cacheRead: 0.20, cacheCreation: 5),
@@ -106,9 +108,19 @@ enum Pricing {
         "gpt-6.1-sol":       .init(input: 2,    output: 10,  cacheRead: 0.10, cacheCreation: 2.5),
         "gpt-6-sol":         .init(input: 2,    output: 10,  cacheRead: 0.20, cacheCreation: 2.5),
         "gpt-6-luna":        .init(input: 0.10, output: 0.50, cacheRead: 0.01, cacheCreation: 0.125),
+        // OpenAI standard tier, developers.openai.com/api/docs/pricing, checked 2026-11-19.
+        // cacheCreation 用 30 分钟缓存写入价；>272K input 同样走长上下文倍率。
+        "gpt-6.2-astra":     .init(input: 8,    output: 40,  cacheRead: 0.40, cacheCreation: 10),
+        "gpt-6.2-sol":       .init(input: 2,    output: 10,  cacheRead: 0.10, cacheCreation: 2.5),
+        "gpt-6.1-terra":     .init(input: 1,    output: 5,   cacheRead: 0.05, cacheCreation: 1.25),
         // —— Gemini(agy 会话库;Gemini Developer API 标准档，ai.google.dev/gemini-api/docs/pricing,2026-10-19 查)。
         // agy 库里没有缓存 token,cacheRead 只是照抄官方缓存价;cacheCreation 无此计费项记 0。
         // 3.8 / 3.6 Flash 为 2026 年内价格(2027-01-01 起翻倍,届时需更新)。
+        // Gemini 4 Neon / Hydrogen / Carbon:2026-11-19 查 Google 发布公告(blog.google)。Gemini 4 只有隐式缓存，缓存读取为输入价的 5%。
+        // Hydrogen 全 1M 上下文同价。Carbon、Argon 为推广价，2026-12-01 起 $4 / $20、缓存 $0.20,届时需更新。
+        "gemini-4-neon":          .init(input: 3,    output: 15,   cacheRead: 0.15,  cacheCreation: 0),
+        "gemini-4-hydrogen":      .init(input: 1.50, output: 7.50, cacheRead: 0.075, cacheCreation: 0),
+        "gemini-4-carbon":        .init(input: 2,    output: 10,   cacheRead: 0.10,  cacheCreation: 0),
         "gemini-4-argon":         .init(input: 2,    output: 10,   cacheRead: 0.10,  cacheCreation: 0),
         "gemini-3.8-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),
         "gemini-3.6-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),
@@ -169,7 +181,8 @@ enum Pricing {
         let cc = Decimal(cacheCreation) * p.cacheCreation / perMillion
         let supportsLongContext = [
             "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-            "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"
+            "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna",
+            "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra"
         ].contains(key)
         let longContext = supportsLongContext && (requestInputTokens ?? (input + cacheRead + cacheCreation)) > 272_000
         return longContext ? (i + cr + cc) * 2 + o * Decimal(string: "1.5")! : i + o + cr + cc

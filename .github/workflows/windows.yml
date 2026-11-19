@@ -12,6 +12,8 @@ on:
       - "Resources/Logos/**"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
+  # 「发布」工作流（release.yml）调用它打 Windows 安装包
+  workflow_call:
 
 jobs:
   test:

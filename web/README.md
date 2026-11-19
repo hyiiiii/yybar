@@ -76,7 +76,7 @@ npm test && npm run typecheck
 ```
 
 - 字段与 App 里的 `UsageBucket` 一致；`day` 是用户本地日期，`costUSD` 用十进制字符串。
-- **花费由服务端算**：App 里可以自己改模型价格，所以不用 App 报的 `costUSD`，而是按服务端的价格表 `model_prices`（迁移 `0012_model_prices.sql`，初始值和 App 内置的官方价一致；美元 / 百万 token，token 数 × 单价正好是微美元）和 token 数现算，存进 `daily_usage.cost_micro`；App 报的另存在 `client_cost_micro`，只作对照。查价前把模型名归一化（小写，去掉 `openai/`、`xai/` 前缀、`@` 版本和日期后缀，`src/shared/pricing.ts`），先找完全一样的，再找最长的 `*` 前缀。Grok 那一行是 `grok-*`、`billed = 1`：App 读的是 xAI 账单里的实际扣费，收它但不超过按 Grok 4 公开价（$3 / $15 / 缓存 $0.75）算的数。表里没有的模型、Grok Bot（只有合计 token）、Gemini（只有回答次数）花费是 0。迁移时已经按这张表重算了以前上传的花费（OpenAI 超过 272K 上下文的阶梯价、claude.ai 云端用量的接口金额都按表价算，总共少了约 $28）。以后改价直接改这张表；`GET /api/prices` 返回整张表。`app` 是 `codex / claude / grok / grokBot / gemini / agy` 之一（和 App 的 `UsageApp` 一致）。Gemini 没有 token 和花费，只传 `answers`（那天的回答次数），不换筹码；其他字段缺省按 0。
+- **花费由服务端算**：App 里可以自己改模型价格，所以不用 App 报的 `costUSD`，而是按服务端的价格表 `model_prices`（迁移 `0012_model_prices.sql`，初始值和 App 内置的官方价一致；美元 / 百万 token，token 数 × 单价正好是微美元）和 token 数现算，存进 `daily_usage.cost_micro`；App 报的另存在 `client_cost_micro`，只作对照。查价前把模型名归一化（小写，去掉 `openai/`、`xai/` 前缀、`@` 版本和日期后缀，`src/shared/pricing.ts`），先找完全一样的，再找最长的 `*` 前缀。Grok 那一行是 `grok-*`、`billed = 1`：App 读的是 xAI 账单里的实际扣费，收它但不超过按 Grok 4 公开价（$3 / $15 / 缓存 $0.75）算的数。表里没有的模型、Grok Bot（只有合计 token）、Gemini（只有回答次数）花费是 0。迁移时已经按这张表重算了以前上传的花费（OpenAI 超过 272K 上下文的阶梯价、claude.ai 云端用量的接口金额都按表价算，总共少了约 $28）。以后改价直接改这张表，新模型的价格用新的迁移加（`0016_model_prices_2026_11.sql`：Claude Fable 5.2、GPT-6.2 Astra / Sol、GPT-6.1 Terra、Gemini 4 Neon / Hydrogen / Carbon，并按新价重算以前上传的这几个模型的花费）；`GET /api/prices` 返回整张表。`app` 是 `codex / claude / grok / grokBot / gemini / agy` 之一（和 App 的 `UsageApp` 一致）。Gemini 没有 token 和花费，只传 `answers`（那天的回答次数），不换筹码；其他字段缺省按 0。
 - 每个 `day` 是那天的完整汇总，**每一天的每个服务只记一份，量变多了才换**：收下后把 (日期, 服务) 和这次的量（`total`：token 总数，Gemini 是回答次数）记进 `usage_uploads`（迁移 `0007_usage_uploads.sql`，`0009_usage_apps.sql` 改成按服务记，以前标过的日子当作 Codex / Claude / Grok 都传过了；`0015_upload_totals.sql` 加 `total`，以前的按已存的用量补上）。以后再传同一天同一个服务：量比记下的多（比如 App 新加了一个 Codex 目录，找到了另一个账号那天的会话）就整份换成新的、筹码跟着重算；一样多或更少就跳过、不改也不加。所以重复上传、换台电脑上传都不会叠加筹码（几台电脑各有一部分时取量最多的那份）；App 以后新支持的服务，已经传过的日子还能补上。删旧的、写新的、改标记在同一个事务里，条件都按标记里记的量判断，并发的两次上传不会叠加，量少的不会盖掉量多的。返回 `{ "ok": true, "accepted": [这次有新内容收下或换掉的日期], "skipped": [所有服务都没变、整天跳过的日期] }`。
 - App 只传今天以前（本地日期）、已经过完的天；服务端只收不晚于 UTC 今天的日期（任何时区的「本地昨天」都不晚于 UTC 今天）。
 - 限制：一次最多 120 天、每天 300 条；日期不早于 2023-01-01；单日总花费（App 报的或按价格表算的）超过 $5000 整个请求拒收（422）。
@@ -167,7 +167,7 @@ npm test && npm run typecheck
 
 ## 页脚
 
-- 每页最下面靠右：GitHub 主页和邮箱（`Layout.tsx` 的 `CONTACT`，仓库是私有的所以链到主页）。
+- 每页最下面靠右：yybar 的 GitHub 仓库（github.com/hyiiiii/yybar）和邮箱（`Layout.tsx` 的 `CONTACT`）。
 
 ## 德州牌桌
 

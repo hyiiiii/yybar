@@ -8,7 +8,7 @@ yybar(产物 `yybar.app`)是一个原生 macOS 菜单栏 App，用 Swift / Swift
 
 项目主体功能已开发完成，后续以新需求和迭代为主，不再按初始里程碑推进。
 
-当前安装版本(2026-10-16 定为暂定最终版):`/Applications/yybar.app`,Release 构建。构建并安装用 `scripts/build_and_install.sh`:用本机登录钥匙串里的「yybar Local Code Signing」自签证书签名(由 `scripts/make_signing_cert.sh` 创建，20 年有效),每次构建签名身份相同(钥匙串访问列表按证书识别，不会因重新构建失效);不要再用 ad-hoc 签名(`--sign -` 每次构建都变)。但这张证书没有 Apple 团队 ID,钥匙串的分区列表只能按每次构建的 cdhash 记录，App 自己写进钥匙串的条目每次重新构建后都会再要登录密码——所以其他账号的 token 改存本用户私有文件(`Core/Credentials/AccountTokenFiles.swift`),不要再把 App 自己的数据放进钥匙串。bundle id `com.yybar.app`,数据目录 `~/Library/Application Support/yybar`(扫描进度在 `~/Library/Caches/yybar`),设置键 `yybar.settings.*`;旧版本(bundle id `com.nanvon.ccbar`、目录 `CCBar`、键 `ccbar.settings.*`)的数据由 `LegacyDataMigration`(`Core/Storage/Settings.swift`)在启动时一次性搬过来。App 图标由 `scripts/make_app_icon.swift` 生成。
+当前安装版本(2026-10-16 定为暂定最终版):`/Applications/yybar.app`,Release 构建。构建并安装用 `scripts/build_and_install.sh`:用本机登录钥匙串里的「yybar Local Code Signing」自签证书签名(由 `scripts/make_signing_cert.sh` 创建，20 年有效),每次构建签名身份相同(钥匙串访问列表按证书识别，不会因重新构建失效);不要再用 ad-hoc 签名(`--sign -` 每次构建都变)。但这张证书没有 Apple 团队 ID,钥匙串的分区列表只能按每次构建的 cdhash 记录，App 自己写进钥匙串的条目每次重新构建后都会再要登录密码——所以其他账号的 token 改存本用户私有文件(`Core/Credentials/AccountTokenFiles.swift`),不要再把 App 自己的数据放进钥匙串。bundle id `com.yybar.app`,数据目录 `~/Library/Application Support/yybar`(扫描进度在 `~/Library/Caches/yybar`),设置键 `yybar.settings.*`;旧版本(bundle id `com.nanvon.ccbar`、目录 `CCBar`、键 `ccbar.settings.*`)的数据由 `LegacyDataMigration`(`Core/Storage/Settings.swift`)在启动时一次性搬过来。App 图标由 `scripts/make_app_icon.swift` 生成。发布安装包：Actions「发布」工作流(`.github/workflows/release.yml`)在 macOS 机器上用 `scripts/make_dmg.sh` 打通用二进制 DMG、在 Windows 机器上打安装包，一起挂到 GitHub Releases(tag `v<版本号>`);版本号两边同步，见 `docs/打包发布.md`。
 
 工程结构：
 

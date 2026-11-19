@@ -1,6 +1,6 @@
 [package]
 name = "yybar-core"
-version = "0.2.0"
+version = "1.0.0"
 description = "yybar for Windows：凭据、额度、日志扫描、价格、存储（对应 Mac 版 Core/）"
 edition = "2021"
 publish = false

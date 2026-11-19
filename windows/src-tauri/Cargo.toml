@@ -1,6 +1,6 @@
 [package]
 name = "yybar"
-version = "0.2.0"
+version = "1.0.0"
 description = "yybar for Windows：Codex / Claude Code / Grok / Antigravity 额度与用量"
 edition = "2021"
 publish = false

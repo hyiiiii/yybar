@@ -150,4 +150,4 @@ Windows 任务栏不能常驻文字，所以**每个勾选了「任务栏」的�
 
 ## 6. 构建
 
-见 [`windows/README.md`](../windows/README.md)。推送改动到 `windows/`（或 `Resources/Logos/`）后，GitHub Actions（`.github/workflows/windows.yml`）在 Windows 机器上跑 `cargo test --workspace`、构建界面并打出安装包（NSIS `.exe` 和 `.msi`），在该次运行的 Artifacts 里下载。
+见 [`windows/README.md`](../windows/README.md)。推送改动到 `windows/`（或 `Resources/Logos/`）后，GitHub Actions（`.github/workflows/windows.yml`）在 Windows 机器上跑 `cargo test --workspace`、构建界面并打出安装包（NSIS `.exe` 和 `.msi`），在该次运行的 Artifacts 里下载。正式版本的安装包和 Mac 版 DMG 一起发布在 GitHub Releases，流程见 [打包发布.md](打包发布.md)。

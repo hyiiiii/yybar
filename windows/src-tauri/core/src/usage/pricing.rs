@@ -26,6 +26,7 @@ const fn p(input: f64, output: f64, cache_read: f64, cache_creation: f64) -> Mod
 /// 内置价格表（与 Mac 版一致）。键为归一化后的模型名。
 pub const TABLE: &[(&str, ModelPrice)] = &[
     // Claude（input 已不含 cache_read）。cacheCreation 用 5 分钟缓存写入价。
+    ("claude-fable-5-2", p(8.0, 40.0, 0.20, 10.0)),
     ("claude-fable-5-1", p(10.0, 50.0, 0.25, 12.50)),
     ("claude-fable-5", p(10.0, 50.0, 1.00, 12.50)),
     ("claude-opus-5-5", p(4.0, 20.0, 0.20, 5.0)),
@@ -66,7 +67,13 @@ pub const TABLE: &[(&str, ModelPrice)] = &[
     ("gpt-6.1-sol", p(2.0, 10.0, 0.10, 2.5)),
     ("gpt-6-sol", p(2.0, 10.0, 0.20, 2.5)),
     ("gpt-6-luna", p(0.10, 0.50, 0.01, 0.125)),
+    ("gpt-6.2-astra", p(8.0, 40.0, 0.40, 10.0)),
+    ("gpt-6.2-sol", p(2.0, 10.0, 0.10, 2.5)),
+    ("gpt-6.1-terra", p(1.0, 5.0, 0.05, 1.25)),
     // Gemini（agy 会话库；Gemini Developer API 标准档）。
+    ("gemini-4-neon", p(3.0, 15.0, 0.15, 0.0)),
+    ("gemini-4-hydrogen", p(1.50, 7.50, 0.075, 0.0)),
+    ("gemini-4-carbon", p(2.0, 10.0, 0.10, 0.0)),
     ("gemini-4-argon", p(2.0, 10.0, 0.10, 0.0)),
     ("gemini-3.8-flash", p(0.75, 3.75, 0.075, 0.0)),
     ("gemini-3.6-flash", p(0.75, 3.75, 0.075, 0.0)),
@@ -82,7 +89,7 @@ pub const TABLE: &[(&str, ModelPrice)] = &[
 ];
 
 /// >272K 输入时输入与缓存 2 倍、输出 1.5 倍的模型。
-const LONG_CONTEXT: &[&str] = &["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
+const LONG_CONTEXT: &[&str] = &["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra"];
 
 pub fn builtin(key: &str) -> Option<ModelPrice> {
     TABLE.iter().find(|(k, _)| *k == key).map(|(_, p)| *p)
@@ -205,5 +212,13 @@ mod tests {
         let long = cost("gpt-6-sol", 1_000_000, 0, 0, 0, Some(300_000));
         assert!((normal - 2.0).abs() < 1e-9);
         assert!((long - 4.0).abs() < 1e-9);
+        // 2026-11 新模型：GPT-6.2 Astra 1M 输入 + 1M 输出，超过 272K 时输入 2 倍、输出 1.5 倍
+        let astra = cost("gpt-6.2-astra", 1_000_000, 1_000_000, 0, 0, Some(100));
+        let astra_long = cost("gpt-6.2-astra", 1_000_000, 1_000_000, 0, 0, Some(300_000));
+        assert!((astra - 48.0).abs() < 1e-9);
+        assert!((astra_long - 76.0).abs() < 1e-9);
+        assert!((cost("gpt-6.1-terra", 1_000_000, 1_000_000, 1_000_000, 0, Some(100)) - 6.05).abs() < 1e-9);
+        // Gemini 4 Hydrogen 全 1M 上下文同价，不走长上下文倍率
+        assert!((cost("gemini-4-hydrogen", 1_000_000, 1_000_000, 0, 0, Some(300_000)) - 9.0).abs() < 1e-9);
     }
 }
