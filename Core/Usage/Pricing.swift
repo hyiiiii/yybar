@@ -116,6 +116,11 @@ enum Pricing {
         // —— Gemini(agy 会话库;Gemini Developer API 标准档，ai.google.dev/gemini-api/docs/pricing,2026-10-19 查)。
         // agy 库里没有缓存 token,cacheRead 只是照抄官方缓存价;cacheCreation 无此计费项记 0。
         // 3.8 / 3.6 Flash 为 2026 年内价格(2027-01-01 起翻倍,届时需更新)。
+        // Gemini 4 Neon / Hydrogen / Carbon:2026-11-19 查 Google 发布公告(blog.google)。Gemini 4 只有隐式缓存，缓存读取为输入价的 5%。
+        // Hydrogen 全 1M 上下文同价。Carbon、Argon 为推广价，2026-12-01 起 $4 / $20、缓存 $0.20,届时需更新。
+        "gemini-4-neon":          .init(input: 3,    output: 15,   cacheRead: 0.15,  cacheCreation: 0),
+        "gemini-4-hydrogen":      .init(input: 1.50, output: 7.50, cacheRead: 0.075, cacheCreation: 0),
+        "gemini-4-carbon":        .init(input: 2,    output: 10,   cacheRead: 0.10,  cacheCreation: 0),
         "gemini-4-argon":         .init(input: 2,    output: 10,   cacheRead: 0.10,  cacheCreation: 0),
         "gemini-3.8-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),
         "gemini-3.6-flash":       .init(input: 0.75, output: 3.75, cacheRead: 0.075, cacheCreation: 0),

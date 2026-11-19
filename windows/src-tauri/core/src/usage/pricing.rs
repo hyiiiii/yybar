@@ -71,6 +71,9 @@ pub const TABLE: &[(&str, ModelPrice)] = &[
     ("gpt-6.2-sol", p(2.0, 10.0, 0.10, 2.5)),
     ("gpt-6.1-terra", p(1.0, 5.0, 0.05, 1.25)),
     // Gemini（agy 会话库；Gemini Developer API 标准档）。
+    ("gemini-4-neon", p(3.0, 15.0, 0.15, 0.0)),
+    ("gemini-4-hydrogen", p(1.50, 7.50, 0.075, 0.0)),
+    ("gemini-4-carbon", p(2.0, 10.0, 0.10, 0.0)),
     ("gemini-4-argon", p(2.0, 10.0, 0.10, 0.0)),
     ("gemini-3.8-flash", p(0.75, 3.75, 0.075, 0.0)),
     ("gemini-3.6-flash", p(0.75, 3.75, 0.075, 0.0)),
@@ -215,5 +218,7 @@ mod tests {
         assert!((astra - 48.0).abs() < 1e-9);
         assert!((astra_long - 76.0).abs() < 1e-9);
         assert!((cost("gpt-6.1-terra", 1_000_000, 1_000_000, 1_000_000, 0, Some(100)) - 6.05).abs() < 1e-9);
+        // Gemini 4 Hydrogen 全 1M 上下文同价，不走长上下文倍率
+        assert!((cost("gemini-4-hydrogen", 1_000_000, 1_000_000, 0, 0, Some(300_000)) - 9.0).abs() < 1e-9);
     }
 }
