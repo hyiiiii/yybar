@@ -108,6 +108,11 @@ enum Pricing {
         "gpt-6.1-sol":       .init(input: 2,    output: 10,  cacheRead: 0.10, cacheCreation: 2.5),
         "gpt-6-sol":         .init(input: 2,    output: 10,  cacheRead: 0.20, cacheCreation: 2.5),
         "gpt-6-luna":        .init(input: 0.10, output: 0.50, cacheRead: 0.01, cacheCreation: 0.125),
+        // OpenAI standard tier, developers.openai.com/api/docs/pricing, checked 2026-11-19.
+        // cacheCreation 用 30 分钟缓存写入价；>272K input 同样走长上下文倍率。
+        "gpt-6.2-astra":     .init(input: 8,    output: 40,  cacheRead: 0.40, cacheCreation: 10),
+        "gpt-6.2-sol":       .init(input: 2,    output: 10,  cacheRead: 0.10, cacheCreation: 2.5),
+        "gpt-6.1-terra":     .init(input: 1,    output: 5,   cacheRead: 0.05, cacheCreation: 1.25),
         // —— Gemini(agy 会话库;Gemini Developer API 标准档，ai.google.dev/gemini-api/docs/pricing,2026-10-19 查)。
         // agy 库里没有缓存 token,cacheRead 只是照抄官方缓存价;cacheCreation 无此计费项记 0。
         // 3.8 / 3.6 Flash 为 2026 年内价格(2027-01-01 起翻倍,届时需更新)。
@@ -171,7 +176,8 @@ enum Pricing {
         let cc = Decimal(cacheCreation) * p.cacheCreation / perMillion
         let supportsLongContext = [
             "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-            "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"
+            "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna",
+            "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra"
         ].contains(key)
         let longContext = supportsLongContext && (requestInputTokens ?? (input + cacheRead + cacheCreation)) > 272_000
         return longContext ? (i + cr + cc) * 2 + o * Decimal(string: "1.5")! : i + o + cr + cc

@@ -67,6 +67,9 @@ pub const TABLE: &[(&str, ModelPrice)] = &[
     ("gpt-6.1-sol", p(2.0, 10.0, 0.10, 2.5)),
     ("gpt-6-sol", p(2.0, 10.0, 0.20, 2.5)),
     ("gpt-6-luna", p(0.10, 0.50, 0.01, 0.125)),
+    ("gpt-6.2-astra", p(8.0, 40.0, 0.40, 10.0)),
+    ("gpt-6.2-sol", p(2.0, 10.0, 0.10, 2.5)),
+    ("gpt-6.1-terra", p(1.0, 5.0, 0.05, 1.25)),
     // Gemini（agy 会话库；Gemini Developer API 标准档）。
     ("gemini-4-argon", p(2.0, 10.0, 0.10, 0.0)),
     ("gemini-3.8-flash", p(0.75, 3.75, 0.075, 0.0)),
@@ -83,7 +86,7 @@ pub const TABLE: &[(&str, ModelPrice)] = &[
 ];
 
 /// >272K 输入时输入与缓存 2 倍、输出 1.5 倍的模型。
-const LONG_CONTEXT: &[&str] = &["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
+const LONG_CONTEXT: &[&str] = &["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra"];
 
 pub fn builtin(key: &str) -> Option<ModelPrice> {
     TABLE.iter().find(|(k, _)| *k == key).map(|(_, p)| *p)
@@ -206,5 +209,11 @@ mod tests {
         let long = cost("gpt-6-sol", 1_000_000, 0, 0, 0, Some(300_000));
         assert!((normal - 2.0).abs() < 1e-9);
         assert!((long - 4.0).abs() < 1e-9);
+        // 2026-11 新模型：GPT-6.2 Astra 1M 输入 + 1M 输出，超过 272K 时输入 2 倍、输出 1.5 倍
+        let astra = cost("gpt-6.2-astra", 1_000_000, 1_000_000, 0, 0, Some(100));
+        let astra_long = cost("gpt-6.2-astra", 1_000_000, 1_000_000, 0, 0, Some(300_000));
+        assert!((astra - 48.0).abs() < 1e-9);
+        assert!((astra_long - 76.0).abs() < 1e-9);
+        assert!((cost("gpt-6.1-terra", 1_000_000, 1_000_000, 1_000_000, 0, Some(100)) - 6.05).abs() < 1e-9);
     }
 }
