@@ -167,7 +167,7 @@ npm test && npm run typecheck
 
 ## 页脚
 
-- 每页最下面靠右：GitHub 主页和邮箱（`Layout.tsx` 的 `CONTACT`，仓库是私有的所以链到主页）。
+- 每页最下面靠右：yybar 的 GitHub 仓库（github.com/hyiiiii/yybar）和邮箱（`Layout.tsx` 的 `CONTACT`）。
 
 ## 德州牌桌
 
