@@ -204,6 +204,7 @@ Mac：用 Xcode 打开 `yybar.xcodeproj`，scheme 选 `yybar` 运行。
 - [cc-bar](https://github.com/nanvon/cc-bar) —— 在此基础上进行开发
 - [cc-switch](https://github.com/farion1231/cc-switch) —— 多 Provider 账号切换器，启发了多账号管理与导入流程
 - [CodexBar](https://github.com/steipete/CodexBar) —— macOS 菜单栏 AI 用量监控，在菜单栏交互与本地解析思路上多有借鉴
+- [LINUX DO](https://linux.do/) —— 感谢社区为开源项目提供展示和交流的空间。
 
 ## 许可
 
